@@ -45,6 +45,18 @@ The UI talks to the daemon over `localhost`, and the daemon streams output back 
 
 ---
 
+## Implementation Specs
+
+The stepwise build plan now lives in `docs/`:
+
+- `docs/README.md` for read order
+- `docs/SYSTEM_ARCHITECTURE.md` for the final target topology
+- `docs/API_CONTRACTS.md` for stable daemon/UI/runner contracts
+- `docs/IMPLEMENTATION_PLAN.md` for milestone-by-milestone execution
+- `docs/SETUP_PI_ZERO.md`, `docs/POLICY.md`, and `docs/UX.md` for hardware, safety, and device behavior
+
+---
+
 ## Quick start (dev / laptop)
 
 1) Copy env and set keys:

@@ -5,6 +5,7 @@
 - The repo is still documentation-first. Expected paths from `README.md` such as `apps/ui/`, `scripts/`, `.env.example`, and `workspaces/` are not committed yet.
 - Confirm files exist before building commands, tests, or automation around README examples.
 - Until code lands, favor docs, scaffolds, tests, and agent instruction assets over speculative implementation.
+- The new `docs/` folder is now the stepwise spec set; use it before inventing structure.
 
 ## System Model
 
@@ -32,3 +33,10 @@
 - Keep project-specific skills under `.codex/skills/<skill-name>/`.
 - Keep each skill concise; split dense notes into skill-local `references/` files if needed.
 - Current shipped skills: `dumplbot-pi-bringup`, `dumplbot-run-triage`, `dumplbot-workspace-seed`.
+
+## Spec Docs
+
+- `docs/README.md`: read order.
+- `docs/SYSTEM_ARCHITECTURE.md`: process split, repo shape, hardware assumptions.
+- `docs/API_CONTRACTS.md`: stable endpoint and SSE contracts.
+- `docs/IMPLEMENTATION_PLAN.md`: milestone-by-milestone execution order.
