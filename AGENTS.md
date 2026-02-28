@@ -28,5 +28,9 @@ Read first: [.codex/AGENTS.md](.codex/AGENTS.md)
 - Read them directly from the repo, or copy proven ones into `$CODEX_HOME/skills` later.
 - Shipped now:
 - `dumplbot-pi-bringup`: Pi install, service bring-up, and field diagnostics.
+- `dumplbot-run-triage`: end-to-end run tracing across UI, daemon, and runner.
+- `dumplbot-workspace-seed`: workspace scaffolding, policy defaults, and scheduler presets.
+- `dumplbot-run-triage`: end-to-end run tracing across UI, daemon, and runner.
+- `dumplbot-workspace-seed`: workspace scaffolding, policy defaults, and scheduler presets.
 - Shipped now:
 - `dumplbot-pi-bringup`: Pi install, service bring-up, and field diagnostics.

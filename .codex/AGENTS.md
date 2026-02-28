@@ -31,4 +31,4 @@
 
 - Keep project-specific skills under `.codex/skills/<skill-name>/`.
 - Keep each skill concise; split dense notes into skill-local `references/` files if needed.
-- Current shipped skill: `dumplbot-pi-bringup`.
+- Current shipped skills: `dumplbot-pi-bringup`, `dumplbot-run-triage`, `dumplbot-workspace-seed`.

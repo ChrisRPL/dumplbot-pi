@@ -1,0 +1,4 @@
+interface:
+  display_name: "DumplBot Run Triage"
+  short_description: "Trace broken end-to-end DumplBot runs"
+  default_prompt: "Trace a broken DumplBot run across the UI, daemon, and agent runner, then isolate the failing hop."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DumplBot Workspace Seed"
+  short_description: "Create or tune DumplBot workspaces and policies"
+  default_prompt: "Create or refine a DumplBot workspace, including instructions, default skill selection, tool policy, and scheduler defaults."
