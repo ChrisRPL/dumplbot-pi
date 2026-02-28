@@ -12,6 +12,8 @@ Push-to-talk → transcribe → agent uses real tools (files/shell/web) → resp
 
 A **portable, always-with-you agent** that can **talk, code, run tools, and schedule jobs**—without needing a desktop “agent box”.
 
+Current repo status: architecture, policy, install, and workspace scaffolds are committed; the main app implementations are still in progress.
+
 ---
 
 ## Key features
