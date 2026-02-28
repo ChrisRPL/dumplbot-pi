@@ -1,0 +1,20 @@
+[Unit]
+Description=DumplBot daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/dumplbot
+EnvironmentFile=-/etc/dumplbot/secrets.env
+ExecStart=/usr/bin/env node /opt/dumplbot/apps/host/dist/server.js
+Restart=on-failure
+RestartSec=2
+MemoryMax=256M
+CPUQuota=75%
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

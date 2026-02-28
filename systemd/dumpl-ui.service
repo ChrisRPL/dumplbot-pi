@@ -1,0 +1,20 @@
+[Unit]
+Description=DumplBot device UI
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/dumplbot
+EnvironmentFile=-/etc/dumplbot/secrets.env
+ExecStart=/usr/bin/env python3 /opt/dumplbot/apps/ui/dumpl_ui.py
+Restart=on-failure
+RestartSec=2
+MemoryMax=128M
+CPUQuota=50%
+TimeoutStartSec=20
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
