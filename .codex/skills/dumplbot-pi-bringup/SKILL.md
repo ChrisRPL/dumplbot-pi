@@ -9,9 +9,10 @@ Use this skill to keep Pi work hardware-first and ordered.
 
 ## Quick Pass
 
-1. Confirm the repo actually contains the files you plan to use. The README is future-facing; if `scripts/install_pi.sh` or unit files are missing, stop at docs or scaffolding and note the gap.
-2. Validate the hardware assumptions from `README.md`: Raspberry Pi Zero 2 WH, PiSugar 3, PiSugar Whisplay HAT, Wi-Fi path.
-3. Check the planned config surfaces before deeper changes: `/etc/dumplbot/config.yaml` and `/etc/dumplbot/secrets.env`.
+1. Read `docs/SETUP_PI_ZERO.md` first, then `docs/SYSTEM_ARCHITECTURE.md`.
+2. Confirm the repo actually contains the files you plan to use. The README is future-facing; if `scripts/install_pi.sh` or unit files are missing, stop at docs or scaffolding and note the gap.
+3. Validate the hardware assumptions from `README.md`: Raspberry Pi Zero 2 WH, PiSugar 3, PiSugar Whisplay HAT, Wi-Fi path.
+4. Check the planned config surfaces before deeper changes: `/etc/dumplbot/config.yaml` and `/etc/dumplbot/secrets.env`.
 
 ## Bring-Up Order
 
@@ -30,3 +31,4 @@ Use this skill to keep Pi work hardware-first and ordered.
 ## Reference
 
 - Read `references/checklist.md` for the device touchpoints and stop conditions.
+- Read `docs/POLICY.md` before relaxing safety assumptions during debugging.

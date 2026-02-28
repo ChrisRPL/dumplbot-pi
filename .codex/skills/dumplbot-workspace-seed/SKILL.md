@@ -9,11 +9,12 @@ Use this skill to keep workspace setup explicit, least-privilege, and reusable.
 
 ## Seed Order
 
-1. Confirm the workspace target and the repo roots it should expose.
-2. Write the workspace instruction file at `workspaces/<name>/CLAUDE.md` unless the repo later standardizes on a different instruction surface.
-3. Define the minimum tool allowlist and permission mode that still supports the task.
-4. Pick one default skill and document when to switch away from it.
-5. Add scheduler defaults only for jobs with clear ownership and observable output.
+1. Read `docs/IMPLEMENTATION_PLAN.md` for Milestone 5 and Milestone 7, then `docs/POLICY.md`.
+2. Confirm the workspace target and the repo roots it should expose.
+3. Write the workspace instruction file at `workspaces/<name>/CLAUDE.md` unless the repo later standardizes on a different instruction surface.
+4. Define the minimum tool allowlist and permission mode that still supports the task.
+5. Pick one default skill and document when to switch away from it.
+6. Add scheduler defaults only for jobs with clear ownership and observable output.
 
 ## Policy Rules
 
@@ -25,6 +26,7 @@ Use this skill to keep workspace setup explicit, least-privilege, and reusable.
 
 - If `workspaces/` is missing, scaffold docs first and note the missing runtime hooks instead of guessing final runtime shape.
 - Keep the seed compatible with a mixed Node and Python system; the README shows both runtimes.
+- Distinguish Codex helper skills in `.codex/skills/` from runtime DumplBot skills planned for `skills/<skill-id>/skill.yaml`.
 
 ## Reference
 
