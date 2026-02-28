@@ -1,0 +1,32 @@
+server:
+  host: 127.0.0.1
+  port: 4123
+
+stt:
+  provider: openai
+  model: whisper-1
+  language: auto
+  prompt_bias: ""
+
+ui:
+  display_driver: whisplay
+  fallback_display_driver: st7789
+  audio_capture_cmd: arecord
+  ptt_wav_path: /tmp/dumplbot/ptt.wav
+
+runtime:
+  default_workspace: default
+  default_skill: coding
+  permission_mode: balanced
+  max_run_seconds: 180
+
+sandbox:
+  enabled: true
+  backend: bwrap
+
+scheduler:
+  enabled: true
+  store: file
+
+logging:
+  level: info
