@@ -15,7 +15,7 @@ Use this as the appliance bring-up checklist for a new Raspberry Pi Zero 2 WH.
 2. Boot once and confirm SSH.
 3. Install PiSugar / Whisplay driver stack using PiSugar-provided scripts.
 4. Verify LCD, buttons, mic, and speaker before DumplBot install.
-5. Run `scripts/install_pi.sh` once this repo ships it.
+5. Run `scripts/install_pi.sh`.
 6. Place config in `/etc/dumplbot/`.
 7. Enable `dumplbotd.service` and `dumpl-ui.service`.
 

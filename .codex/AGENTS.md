@@ -2,7 +2,7 @@
 
 ## Current Repo Reality
 
-- The repo is still documentation-first. Expected paths from `README.md` such as `apps/ui/`, `scripts/`, `.env.example`, and `workspaces/` are not committed yet.
+- The repo is now scaffold-first. Core paths such as `apps/`, `scripts/`, `systemd/`, `skills/`, `config/`, and `workspaces/` exist, but most app logic is still missing.
 - Confirm files exist before building commands, tests, or automation around README examples.
 - Until code lands, favor docs, scaffolds, tests, and agent instruction assets over speculative implementation.
 - The new `docs/` folder is now the stepwise spec set; use it before inventing structure.
@@ -16,7 +16,7 @@
 
 ## Operational Touchpoints
 
-- Planned install entrypoint: `bash scripts/install_pi.sh` once that file exists.
+- Planned install entrypoint: `bash scripts/install_pi.sh`.
 - Planned systemd units: `dumplbotd.service`, `dumpl-ui.service`.
 - Planned config surfaces: `/etc/dumplbot/config.yaml`, `/etc/dumplbot/secrets.env`.
 - README dev loop is mixed-runtime: Node.js for daemon-side work, Python for the UI mock loop.
