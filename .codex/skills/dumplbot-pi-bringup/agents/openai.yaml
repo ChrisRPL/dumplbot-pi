@@ -1,0 +1,4 @@
+interface:
+  display_name: "DumplBot Pi Bring-Up"
+  short_description: "Set up and debug DumplBot on Raspberry Pi hardware"
+  default_prompt: "Set up or debug DumplBot on Raspberry Pi Zero 2 WH hardware, including service bring-up and Whisplay checks."
