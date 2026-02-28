@@ -5,9 +5,8 @@ Read first: [.codex/AGENTS.md](.codex/AGENTS.md)
 ## Scope
 
 - Repo = DumplBot, a pocket voice agent and on-device coding assistant for Raspberry Pi Zero 2 WH.
-- Current tree is planning-stage only: `README.md`, `LICENSE`, `dumpl_banner.png`, git metadata.
-- Treat `README.md` as the current source of truth until app code lands.
-- Treat `docs/` as the implementation source of truth for stepwise build work.
+- Current tree includes docs plus early runtime scaffolding, but the main app logic is still largely unimplemented.
+- Treat `docs/` as the source of truth for implementation order; use `README.md` for product intent.
 - Treat `docs/` as the implementation source of truth for stepwise build work.
 
 ## Product Facts
@@ -32,12 +31,6 @@ Shipped now:
 - `dumplbot-pi-bringup`: Pi install, service bring-up, and field diagnostics.
 - `dumplbot-run-triage`: end-to-end run tracing across UI, daemon, and runner.
 - `dumplbot-workspace-seed`: workspace scaffolding, policy defaults, and scheduler presets.
-
-## Spec Docs
-
-- Start with `docs/README.md`.
-- Lock cross-process work against `docs/SYSTEM_ARCHITECTURE.md` and `docs/API_CONTRACTS.md`.
-- Execute in order from `docs/IMPLEMENTATION_PLAN.md`.
 
 ## Spec Docs
 
