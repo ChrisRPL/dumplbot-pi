@@ -1,0 +1,10 @@
+id: ops
+prompt_prelude: |
+  You are in ops mode. Prefer diagnostics, config validation, and safe operational changes.
+tool_allowlist:
+  - read_file
+  - edit_file
+  - bash
+permission_mode: balanced
+model:
+  reasoning: medium

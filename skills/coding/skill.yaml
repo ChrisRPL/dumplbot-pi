@@ -1,0 +1,11 @@
+id: coding
+prompt_prelude: |
+  You are in coding mode. Prefer file edits, tests, and concise execution updates.
+tool_allowlist:
+  - read_file
+  - edit_file
+  - bash
+  - web_search
+permission_mode: balanced
+model:
+  reasoning: high

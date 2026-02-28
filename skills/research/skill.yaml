@@ -1,0 +1,10 @@
+id: research
+prompt_prelude: |
+  You are in research mode. Prefer reading, synthesis, and source-backed answers before code changes.
+tool_allowlist:
+  - read_file
+  - web_search
+  - web_fetch
+permission_mode: strict
+model:
+  reasoning: medium
