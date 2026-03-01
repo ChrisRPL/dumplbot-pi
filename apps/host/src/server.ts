@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
-import type { DumplDoneEvent, DumplEvent, DumplStatusEvent } from "../../../packages/core/src";
+import type { DumplDoneEvent, DumplErrorEvent, DumplEvent } from "../../../packages/core/src";
+
+import { streamRunnerEvents } from "./runner";
 
 type DumplTalkRequest = {
   text: string;
@@ -21,20 +23,18 @@ const sendJson = (
   response.end(JSON.stringify(payload));
 };
 
-const sendSse = (response: ServerResponse, events: DumplEvent[]): void => {
+const sendSseHeaders = (response: ServerResponse): void => {
   response.writeHead(200, {
     "cache-control": "no-cache",
     connection: "keep-alive",
     "content-type": "text/event-stream; charset=utf-8",
   });
+};
 
-  for (const event of events) {
-    const { type, ...payload } = event;
-    response.write(`event: ${type}\n`);
-    response.write(`data: ${JSON.stringify(payload)}\n\n`);
-  }
-
-  response.end();
+const writeSseEvent = (response: ServerResponse, event: DumplEvent): void => {
+  const { type, ...payload } = event;
+  response.write(`event: ${type}\n`);
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
 };
 
 const readJson = async <T>(request: IncomingMessage): Promise<T> => {
@@ -54,28 +54,63 @@ const handleHealth = (_request: IncomingMessage, response: ServerResponse): void
 
 const handleTalk = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
   const body = await readJson<DumplTalkRequest>(request);
+  const prompt = body.text?.trim();
 
-  if (!body.text || body.text.trim().length === 0) {
+  if (!prompt) {
     sendJson(response, 400, { error: "text is required" });
     return;
   }
 
-  const events: Array<DumplStatusEvent | DumplDoneEvent> = [
-    {
-      type: "status",
-      message: `Queued prompt for ${body.workspace ?? "default"} (${body.skill ?? "default"})`,
-    },
-    {
-      type: "done",
-      summary: "Host SSE scaffold responded successfully.",
-    },
-  ];
+  sendSseHeaders(response);
 
-  sendSse(response, events);
+  let sawTerminalEvent = false;
+
+  for await (const event of streamRunnerEvents({
+    prompt,
+    workspace: body.workspace,
+    skill: body.skill,
+  })) {
+    if (event.type === "done" || event.type === "error") {
+      sawTerminalEvent = true;
+    }
+
+    writeSseEvent(response, event);
+  }
+
+  if (!sawTerminalEvent) {
+    const doneEvent: DumplDoneEvent = {
+      type: "done",
+      summary: "Run finished",
+    };
+    writeSseEvent(response, doneEvent);
+  }
+
+  response.end();
 };
 
 const handleNotFound = (_request: IncomingMessage, response: ServerResponse): void => {
   sendJson(response, 404, { error: "not found" });
+};
+
+const handleInternalError = (
+  response: ServerResponse,
+  message: string,
+): void => {
+  if (!response.headersSent) {
+    sendJson(response, 500, { error: message });
+    return;
+  }
+
+  if (response.writableEnded) {
+    return;
+  }
+
+  const event: DumplErrorEvent = {
+    type: "error",
+    message,
+  };
+  writeSseEvent(response, event);
+  response.end();
 };
 
 export const createHostServer = (): Server =>
@@ -94,7 +129,7 @@ export const createHostServer = (): Server =>
       handleNotFound(request, response);
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
-      sendJson(response, 500, { error: message });
+      handleInternalError(response, message);
     }
   });
 
