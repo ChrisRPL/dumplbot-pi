@@ -10,6 +10,22 @@ import urllib.error
 import urllib.request
 
 SCREEN_WIDTH = 48
+WHISPLAY_TEXT_WIDTH = 28
+WHISPLAY_DEFAULT_WIDTH = 170
+WHISPLAY_DEFAULT_HEIGHT = 320
+WHISPLAY_BACKGROUND = (10, 15, 20)
+WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
+WHISPLAY_FOREGROUND = (242, 244, 247)
+WHISPLAY_PHASE_RGB = {
+    "Idle": (0, 64, 16),
+    "Listening": (0, 48, 96),
+    "Transcribing": (0, 64, 96),
+    "Thinking": (96, 72, 0),
+    "Tool": (96, 40, 0),
+    "Answer": (32, 80, 24),
+    "Saved": (0, 72, 32),
+    "Error": (96, 0, 0),
+}
 
 
 @dataclass
@@ -42,10 +58,10 @@ def iter_sse_events(response: Any) -> Iterator[tuple[str, dict[str, Any]]]:
             yield current_event, data
 
 
-def format_field(label: str, value: str) -> list[str]:
+def format_field(label: str, value: str, width: int = SCREEN_WIDTH) -> list[str]:
     prefix = f"{label}: " if label else ""
-    width = max(8, SCREEN_WIDTH - len(prefix))
-    wrapped = textwrap.wrap(value, width=width) or [""]
+    wrap_width = max(8, width - len(prefix))
+    wrapped = textwrap.wrap(value, width=wrap_width) or [""]
     lines = [f"{prefix}{wrapped[0]}"]
     indent = " " * len(prefix)
 
@@ -55,19 +71,22 @@ def format_field(label: str, value: str) -> list[str]:
     return lines
 
 
-def build_screen_lines(state: ScreenState) -> list[str]:
+def build_screen_lines(
+    state: ScreenState,
+    width: int = SCREEN_WIDTH,
+) -> list[str]:
     lines = [
         f"Status: {state.status}",
     ]
 
     if state.prompt:
-        lines.extend(format_field("Prompt", state.prompt))
+        lines.extend(format_field("Prompt", state.prompt, width))
 
     if state.transcript:
-        lines.extend(format_field("Heard", state.transcript))
+        lines.extend(format_field("Heard", state.transcript, width))
 
     if state.tool_banner:
-        lines.extend(format_field("Tool", state.tool_banner))
+        lines.extend(format_field("Tool", state.tool_banner, width))
 
     show_answer = bool(
         state.prompt
@@ -77,12 +96,45 @@ def build_screen_lines(state: ScreenState) -> list[str]:
 
     if show_answer:
         lines.append("Answer:")
-        lines.extend(format_field("", state.answer or "(waiting for tokens)"))
+        lines.extend(format_field("", state.answer or "(waiting for tokens)", width))
 
     if state.error:
-        lines.extend(format_field("Error", state.error))
+        lines.extend(format_field("Error", state.error, width))
 
     return lines
+
+
+def get_phase_rgb(phase: str) -> tuple[int, int, int]:
+    return WHISPLAY_PHASE_RGB.get(phase, (32, 32, 32))
+
+
+def load_pillow() -> Optional[tuple[Any, Any, Any]]:
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return None
+
+    return Image, ImageDraw, ImageFont
+
+
+def load_whisplay_board() -> Optional[Any]:
+    try:
+        from WhisPlay import WhisPlayBoard
+    except ImportError:
+        return None
+
+    return WhisPlayBoard
+
+
+def image_to_rgb565(image: Any) -> list[int]:
+    pixel_data: list[int] = []
+
+    for red, green, blue in image.convert("RGB").getdata():
+        rgb565 = ((red & 0xF8) << 8) | ((green & 0xFC) << 3) | (blue >> 3)
+        pixel_data.append((rgb565 >> 8) & 0xFF)
+        pixel_data.append(rgb565 & 0xFF)
+
+    return pixel_data
 
 
 class ConsoleRenderer:
@@ -110,7 +162,97 @@ class ConsoleRenderer:
 
 class WhisplayRenderer(ConsoleRenderer):
     def __init__(self) -> None:
-        super().__init__("Whisplay (console fallback)")
+        super().__init__("Whisplay")
+        self._board: Any = None
+        self._image_module: Any = None
+        self._draw_module: Any = None
+        self._font: Any = None
+        self._width = WHISPLAY_DEFAULT_WIDTH
+        self._height = WHISPLAY_DEFAULT_HEIGHT
+        self._fallback_reason = self._connect_hardware()
+
+        if self._fallback_reason:
+            self.surface_name = "Whisplay (console fallback)"
+
+    def _connect_hardware(self) -> Optional[str]:
+        pillow = load_pillow()
+
+        if pillow is None:
+            return "Pillow is not installed"
+
+        board_class = load_whisplay_board()
+
+        if board_class is None:
+            return "WhisPlay driver is not installed"
+
+        try:
+            board = board_class()
+        except Exception as error:
+            return f"Whisplay init failed: {error}"
+
+        image_module, draw_module, font_module = pillow
+        self._board = board
+        self._image_module = image_module
+        self._draw_module = draw_module
+        self._font = font_module.load_default()
+        self._width = int(getattr(board, "LCD_WIDTH", WHISPLAY_DEFAULT_WIDTH))
+        self._height = int(getattr(board, "LCD_HEIGHT", WHISPLAY_DEFAULT_HEIGHT))
+
+        try:
+            self._board.set_backlight(70)
+        except Exception:
+            pass
+
+        return None
+
+    def render_notice(self, message: str) -> None:
+        if self._fallback_reason:
+            message = f"{message} ({self._fallback_reason})"
+
+        self.render(ScreenState(status=message))
+
+    def render(self, state: ScreenState) -> None:
+        if self._board is None:
+            super().render(state)
+            return
+
+        image = self._image_module.new(
+            "RGB",
+            (self._width, self._height),
+            WHISPLAY_BACKGROUND,
+        )
+        draw = self._draw_module.Draw(image)
+        accent = get_phase_rgb(state.phase)
+
+        draw.rectangle(
+            (0, 0, self._width - 1, 28),
+            fill=WHISPLAY_HEADER_BACKGROUND,
+        )
+        draw.text((10, 9), state.phase.upper(), fill=accent, font=self._font)
+
+        cursor_y = 38
+
+        for line in build_screen_lines(state, width=WHISPLAY_TEXT_WIDTH):
+            if cursor_y >= self._height - 12:
+                break
+
+            draw.text((10, cursor_y), line, fill=WHISPLAY_FOREGROUND, font=self._font)
+            cursor_y += 12
+
+        try:
+            self._board.set_rgb(*accent)
+            self._board.draw_image(
+                0,
+                0,
+                self._width,
+                self._height,
+                image_to_rgb565(image),
+            )
+        except Exception as error:
+            self._fallback_reason = f"Whisplay draw failed: {error}"
+            self._board = None
+            self.surface_name = "Whisplay (console fallback)"
+            super().render(state)
 
 
 def apply_stream_event(
