@@ -60,6 +60,9 @@ class ConsoleRenderer:
         self.surface_name = surface_name
         self._interactive = sys.stdout.isatty()
 
+    def render_notice(self, message: str) -> None:
+        self.render(ScreenState(status=message))
+
     def render(self, state: ScreenState) -> None:
         lines = [
             f"{self.surface_name} | {state.phase}",
@@ -75,8 +78,15 @@ class ConsoleRenderer:
         if state.tool_banner:
             lines.extend(format_field("Tool", state.tool_banner))
 
-        lines.append("Answer:")
-        lines.extend(format_field("", state.answer or "(waiting for tokens)"))
+        show_answer = bool(
+            state.prompt
+            or state.answer
+            or state.phase in {"Thinking", "Transcribing", "Tool", "Answer", "Error"}
+        )
+
+        if show_answer:
+            lines.append("Answer:")
+            lines.extend(format_field("", state.answer or "(waiting for tokens)"))
 
         if state.error:
             lines.extend(format_field("Error", state.error))
@@ -88,6 +98,11 @@ class ConsoleRenderer:
 
         sys.stdout.write("\n".join(lines) + "\n")
         sys.stdout.flush()
+
+
+class WhisplayRenderer(ConsoleRenderer):
+    def __init__(self) -> None:
+        super().__init__("Whisplay (console fallback)")
 
 
 def apply_stream_event(
@@ -203,10 +218,28 @@ def run_mock_loop(base_url: str, workspace: str, skill: str) -> None:
         stream_talk(base_url, prompt, workspace, skill, renderer)
 
 
+def run_single_prompt(
+    base_url: str,
+    workspace: str,
+    skill: str,
+    prompt: str,
+    renderer: ConsoleRenderer,
+) -> int:
+    cleaned_prompt = prompt.strip()
+
+    if not cleaned_prompt:
+        renderer.render_notice("Prompt must be non-empty")
+        return 1
+
+    stream_talk(base_url, cleaned_prompt, workspace, skill, renderer)
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DumplBot device UI scaffold")
     parser.add_argument("--mock", action="store_true", help="Run the text-only mock client")
     parser.add_argument("--host-url", default="http://127.0.0.1:4123", help="Base URL for dumplbotd")
+    parser.add_argument("--prompt", help="Run one prompt and exit")
     parser.add_argument("--workspace", default="default", help="Workspace to use for mock talk requests")
     parser.add_argument("--skill", default="coding", help="Skill to use for mock talk requests")
     return parser.parse_args()
@@ -214,12 +247,22 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    renderer: ConsoleRenderer = ConsoleRenderer() if args.mock else WhisplayRenderer()
+
+    if args.prompt is not None:
+        return run_single_prompt(
+            args.host_url,
+            args.workspace,
+            args.skill,
+            args.prompt,
+            renderer,
+        )
 
     if args.mock:
         run_mock_loop(args.host_url, args.workspace, args.skill)
         return 0
 
-    print("Whisplay mode is not implemented yet. Use --mock for now.", file=sys.stderr)
+    renderer.render_notice("Button loop not implemented yet. Use --prompt or --mock.")
     return 1
 
 
