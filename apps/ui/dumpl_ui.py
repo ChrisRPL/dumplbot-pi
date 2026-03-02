@@ -50,6 +50,19 @@ class UiRuntimeConfig:
     ptt_wav_path: str = "/tmp/dumplbot/ptt.wav"
 
 
+@dataclass(frozen=True)
+class ButtonEvent:
+    kind: str
+    value: Optional[str] = None
+
+
+@dataclass
+class CaptureFlowState:
+    phase: str = "Idle"
+    saved_path: Optional[str] = None
+    error: Optional[str] = None
+
+
 def load_ui_runtime_config(
     config_path: str = "/etc/dumplbot/config.yaml",
 ) -> UiRuntimeConfig:
