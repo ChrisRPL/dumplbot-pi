@@ -63,6 +63,40 @@ class CaptureFlowState:
     error: Optional[str] = None
 
 
+def reduce_button_event(
+    state: CaptureFlowState,
+    event: ButtonEvent,
+) -> CaptureFlowState:
+    if event.kind == "press":
+        if state.phase in {"Idle", "Saved", "Error"}:
+            return CaptureFlowState(phase="Listening")
+        return state
+
+    if event.kind == "release":
+        if state.phase == "Listening":
+            return CaptureFlowState(
+                phase="Saved",
+                saved_path=event.value or state.saved_path,
+            )
+        return state
+
+    if event.kind == "long_press":
+        if state.phase == "Listening":
+            return CaptureFlowState()
+        return state
+
+    if event.kind == "capture_failed":
+        return CaptureFlowState(
+            phase="Error",
+            error=event.value or "Audio capture failed",
+        )
+
+    if event.kind == "reset":
+        return CaptureFlowState()
+
+    return state
+
+
 def load_ui_runtime_config(
     config_path: str = "/etc/dumplbot/config.yaml",
 ) -> UiRuntimeConfig:
