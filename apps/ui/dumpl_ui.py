@@ -306,6 +306,9 @@ class ConsoleRenderer:
     def close(self) -> None:
         return
 
+    def poll_button_pressed(self) -> Optional[bool]:
+        return None
+
     def render_notice(self, message: str) -> None:
         self.render(ScreenState(status=message))
 
@@ -417,6 +420,18 @@ class WhisplayRenderer(ConsoleRenderer):
             self._board = None
             self.surface_name = "Whisplay (console fallback)"
             super().render(state)
+
+    def poll_button_pressed(self) -> Optional[bool]:
+        if self._board is None:
+            return None
+
+        try:
+            return bool(self._board.button_pressed())
+        except Exception as error:
+            self._fallback_reason = f"Whisplay button read failed: {error}"
+            self._board = None
+            self.surface_name = "Whisplay (console fallback)"
+            return None
 
     def close(self) -> None:
         if self._board is None:
