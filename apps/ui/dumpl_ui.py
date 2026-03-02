@@ -124,6 +124,13 @@ def build_capture_screen_state(state: CaptureFlowState) -> ScreenState:
     )
 
 
+def render_capture_flow(
+    renderer: "ConsoleRenderer",
+    state: CaptureFlowState,
+) -> None:
+    renderer.render(build_capture_screen_state(state))
+
+
 def load_ui_runtime_config(
     config_path: str = "/etc/dumplbot/config.yaml",
 ) -> UiRuntimeConfig:
@@ -614,55 +621,41 @@ def run_record_smoke(
         return 1
 
     recorder = ArecordRecorder(config)
-    state = ScreenState(
-        phase="Listening",
-        status="Recording audio",
-        transcript=str(recorder.output_path),
-    )
+    flow_state = reduce_button_event(CaptureFlowState(), ButtonEvent("press"))
 
     try:
         recorder.start()
-        renderer.render(state)
+        render_capture_flow(renderer, flow_state)
         time.sleep(duration_seconds)
 
         if cancel_at_end:
             recorder.cancel()
-            renderer.render(
-                ScreenState(
-                    phase="Idle",
-                    status="Audio capture cancelled",
-                )
-            )
+            flow_state = reduce_button_event(flow_state, ButtonEvent("long_press"))
+            render_capture_flow(renderer, flow_state)
             return 0
 
         saved_path = recorder.stop()
     except FileNotFoundError as error:
-        renderer.render(
-            ScreenState(
-                phase="Error",
-                status="Capture command missing",
-                error=str(error),
-            )
+        flow_state = reduce_button_event(
+            flow_state,
+            ButtonEvent("capture_failed", str(error)),
         )
+        render_capture_flow(renderer, flow_state)
         return 1
     except (RuntimeError, subprocess.SubprocessError) as error:
         recorder.cancel()
-        renderer.render(
-            ScreenState(
-                phase="Error",
-                status="Audio capture failed",
-                error=str(error),
-            )
+        flow_state = reduce_button_event(
+            flow_state,
+            ButtonEvent("capture_failed", str(error)),
         )
+        render_capture_flow(renderer, flow_state)
         return 1
 
-    renderer.render(
-        ScreenState(
-            phase="Saved",
-            status="Audio capture saved",
-            transcript=str(saved_path),
-        )
+    flow_state = reduce_button_event(
+        flow_state,
+        ButtonEvent("release", str(saved_path)),
     )
+    render_capture_flow(renderer, flow_state)
     return 0
 
 
