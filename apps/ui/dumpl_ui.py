@@ -50,6 +50,11 @@ class ScreenState:
 class UiRuntimeConfig:
     audio_capture_cmd: str = "arecord"
     ptt_wav_path: str = "/tmp/dumplbot/ptt.wav"
+    button_debug: bool = False
+
+
+def parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -190,6 +195,8 @@ def load_ui_runtime_config(
                 config.audio_capture_cmd = value
             elif key == "ptt_wav_path" and value:
                 config.ptt_wav_path = value
+            elif key == "button_debug" and value:
+                config.button_debug = parse_bool(value)
 
     config.audio_capture_cmd = os.environ.get(
         "DUMPLBOT_UI_AUDIO_CAPTURE_CMD",
@@ -199,6 +206,8 @@ def load_ui_runtime_config(
         "DUMPLBOT_UI_PTT_WAV_PATH",
         config.ptt_wav_path,
     )
+    if "DUMPLBOT_UI_BUTTON_DEBUG" in os.environ:
+        config.button_debug = parse_bool(os.environ["DUMPLBOT_UI_BUTTON_DEBUG"])
     return config
 
 
