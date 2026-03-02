@@ -131,6 +131,34 @@ def render_capture_flow(
     renderer.render(build_capture_screen_state(state))
 
 
+def process_capture_button_event(
+    state: CaptureFlowState,
+    event: ButtonEvent,
+    recorder: "ArecordRecorder",
+) -> CaptureFlowState:
+    if event.kind == "press" and state.phase in {"Idle", "Saved", "Error"}:
+        try:
+            recorder.start()
+        except FileNotFoundError as error:
+            return reduce_button_event(state, ButtonEvent("capture_failed", str(error)))
+        except (RuntimeError, subprocess.SubprocessError) as error:
+            return reduce_button_event(state, ButtonEvent("capture_failed", str(error)))
+
+    if event.kind == "release" and state.phase == "Listening":
+        try:
+            saved_path = recorder.stop()
+        except (RuntimeError, subprocess.SubprocessError) as error:
+            recorder.cancel()
+            return reduce_button_event(state, ButtonEvent("capture_failed", str(error)))
+
+        event = ButtonEvent("release", str(saved_path))
+
+    if event.kind == "long_press" and state.phase == "Listening":
+        recorder.cancel()
+
+    return reduce_button_event(state, event)
+
+
 def load_ui_runtime_config(
     config_path: str = "/etc/dumplbot/config.yaml",
 ) -> UiRuntimeConfig:
@@ -621,42 +649,21 @@ def run_record_smoke(
         return 1
 
     recorder = ArecordRecorder(config)
-    flow_state = reduce_button_event(CaptureFlowState(), ButtonEvent("press"))
-
-    try:
-        recorder.start()
-        render_capture_flow(renderer, flow_state)
-        time.sleep(duration_seconds)
-
-        if cancel_at_end:
-            recorder.cancel()
-            flow_state = reduce_button_event(flow_state, ButtonEvent("long_press"))
-            render_capture_flow(renderer, flow_state)
-            return 0
-
-        saved_path = recorder.stop()
-    except FileNotFoundError as error:
-        flow_state = reduce_button_event(
-            flow_state,
-            ButtonEvent("capture_failed", str(error)),
-        )
-        render_capture_flow(renderer, flow_state)
-        return 1
-    except (RuntimeError, subprocess.SubprocessError) as error:
-        recorder.cancel()
-        flow_state = reduce_button_event(
-            flow_state,
-            ButtonEvent("capture_failed", str(error)),
-        )
-        render_capture_flow(renderer, flow_state)
-        return 1
-
-    flow_state = reduce_button_event(
-        flow_state,
-        ButtonEvent("release", str(saved_path)),
+    flow_state = process_capture_button_event(
+        CaptureFlowState(),
+        ButtonEvent("press"),
+        recorder,
     )
     render_capture_flow(renderer, flow_state)
-    return 0
+
+    if flow_state.phase == "Error":
+        return 1
+
+    time.sleep(duration_seconds)
+    event = ButtonEvent("long_press") if cancel_at_end else ButtonEvent("release")
+    flow_state = process_capture_button_event(flow_state, event, recorder)
+    render_capture_flow(renderer, flow_state)
+    return 1 if flow_state.phase == "Error" else 0
 
 
 def parse_args() -> argparse.Namespace:
