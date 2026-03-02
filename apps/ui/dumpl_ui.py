@@ -21,6 +21,8 @@ WHISPLAY_DEFAULT_HEIGHT = 320
 WHISPLAY_BACKGROUND = (10, 15, 20)
 WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
+BUTTON_POLL_INTERVAL_SECONDS = 0.05
+BUTTON_LONG_PRESS_SECONDS = 1.2
 WHISPLAY_PHASE_RGB = {
     "Idle": (0, 64, 16),
     "Listening": (0, 48, 96),
@@ -679,6 +681,66 @@ def run_record_smoke(
     flow_state = process_capture_button_event(flow_state, event, recorder)
     render_capture_flow(renderer, flow_state)
     return 1 if flow_state.phase == "Error" else 0
+
+
+def run_button_capture_loop(
+    renderer: ConsoleRenderer,
+    config: UiRuntimeConfig,
+) -> int:
+    recorder = ArecordRecorder(config)
+    flow_state = CaptureFlowState()
+    was_pressed = False
+    long_press_sent = False
+    pressed_started_at: Optional[float] = None
+
+    render_capture_flow(renderer, flow_state)
+
+    while True:
+        is_pressed = renderer.poll_button_pressed()
+
+        if is_pressed is None:
+            renderer.render_notice("Button polling unavailable")
+            return 1
+
+        now = time.monotonic()
+
+        if is_pressed and not was_pressed:
+            pressed_started_at = now
+            long_press_sent = False
+            flow_state = process_capture_button_event(
+                flow_state,
+                ButtonEvent("press"),
+                recorder,
+            )
+            render_capture_flow(renderer, flow_state)
+        elif (
+            is_pressed
+            and was_pressed
+            and not long_press_sent
+            and pressed_started_at is not None
+            and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
+        ):
+            flow_state = process_capture_button_event(
+                flow_state,
+                ButtonEvent("long_press"),
+                recorder,
+            )
+            render_capture_flow(renderer, flow_state)
+            long_press_sent = True
+        elif not is_pressed and was_pressed:
+            if not long_press_sent:
+                flow_state = process_capture_button_event(
+                    flow_state,
+                    ButtonEvent("release"),
+                    recorder,
+                )
+                render_capture_flow(renderer, flow_state)
+
+            pressed_started_at = None
+            long_press_sent = False
+
+        was_pressed = is_pressed
+        time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
 
 
 def parse_args() -> argparse.Namespace:
