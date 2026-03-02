@@ -55,6 +55,36 @@ def format_field(label: str, value: str) -> list[str]:
     return lines
 
 
+def build_screen_lines(state: ScreenState) -> list[str]:
+    lines = [
+        f"Status: {state.status}",
+    ]
+
+    if state.prompt:
+        lines.extend(format_field("Prompt", state.prompt))
+
+    if state.transcript:
+        lines.extend(format_field("Heard", state.transcript))
+
+    if state.tool_banner:
+        lines.extend(format_field("Tool", state.tool_banner))
+
+    show_answer = bool(
+        state.prompt
+        or state.answer
+        or state.phase in {"Thinking", "Transcribing", "Tool", "Answer", "Error"}
+    )
+
+    if show_answer:
+        lines.append("Answer:")
+        lines.extend(format_field("", state.answer or "(waiting for tokens)"))
+
+    if state.error:
+        lines.extend(format_field("Error", state.error))
+
+    return lines
+
+
 class ConsoleRenderer:
     def __init__(self, surface_name: str = "Mock UI") -> None:
         self.surface_name = surface_name
@@ -66,30 +96,8 @@ class ConsoleRenderer:
     def render(self, state: ScreenState) -> None:
         lines = [
             f"{self.surface_name} | {state.phase}",
-            f"Status: {state.status}",
+            *build_screen_lines(state),
         ]
-
-        if state.prompt:
-            lines.extend(format_field("Prompt", state.prompt))
-
-        if state.transcript:
-            lines.extend(format_field("Heard", state.transcript))
-
-        if state.tool_banner:
-            lines.extend(format_field("Tool", state.tool_banner))
-
-        show_answer = bool(
-            state.prompt
-            or state.answer
-            or state.phase in {"Thinking", "Transcribing", "Tool", "Answer", "Error"}
-        )
-
-        if show_answer:
-            lines.append("Answer:")
-            lines.extend(format_field("", state.answer or "(waiting for tokens)"))
-
-        if state.error:
-            lines.extend(format_field("Error", state.error))
 
         if self._interactive:
             sys.stdout.write("\033[2J\033[H")
