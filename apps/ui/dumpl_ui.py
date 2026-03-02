@@ -97,6 +97,33 @@ def reduce_button_event(
     return state
 
 
+def build_capture_screen_state(state: CaptureFlowState) -> ScreenState:
+    if state.phase == "Listening":
+        return ScreenState(
+            phase="Listening",
+            status="Recording audio",
+        )
+
+    if state.phase == "Saved":
+        return ScreenState(
+            phase="Saved",
+            status="Audio capture saved",
+            transcript=state.saved_path,
+        )
+
+    if state.phase == "Error":
+        return ScreenState(
+            phase="Error",
+            status="Audio capture failed",
+            error=state.error or "Unknown error",
+        )
+
+    return ScreenState(
+        phase="Idle",
+        status="Ready for push-to-talk",
+    )
+
+
 def load_ui_runtime_config(
     config_path: str = "/etc/dumplbot/config.yaml",
 ) -> UiRuntimeConfig:
