@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import signal
+import subprocess
 import sys
 import textwrap
 from typing import Any, Iterator, Optional
@@ -316,6 +318,74 @@ class WhisplayRenderer(ConsoleRenderer):
             pass
 
         self._board = None
+
+
+class ArecordRecorder:
+    def __init__(self, config: UiRuntimeConfig) -> None:
+        self._config = config
+        self._process: Optional[subprocess.Popen[bytes]] = None
+
+    @property
+    def output_path(self) -> Path:
+        return Path(self._config.ptt_wav_path)
+
+    def start(self) -> Path:
+        if self._process is not None:
+            raise RuntimeError("recording is already active")
+
+        output_path = self.output_path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        self._process = subprocess.Popen(
+            [
+                self._config.audio_capture_cmd,
+                "-q",
+                "-f",
+                "S16_LE",
+                "-r",
+                "16000",
+                "-c",
+                "1",
+                str(output_path),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        return output_path
+
+    def stop(self) -> Path:
+        process = self._process
+
+        if process is None:
+            raise RuntimeError("recording is not active")
+
+        self._process = None
+        process.send_signal(signal.SIGINT)
+        _, stderr = process.communicate(timeout=5)
+
+        if process.returncode not in (0, None):
+            message = stderr.decode("utf-8", errors="replace").strip() or "arecord failed"
+            raise RuntimeError(message)
+
+        return self.output_path
+
+    def cancel(self) -> None:
+        process = self._process
+
+        if process is None:
+            return
+
+        self._process = None
+        process.terminate()
+
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
+
+        self.output_path.unlink(missing_ok=True)
 
 
 def apply_stream_event(
