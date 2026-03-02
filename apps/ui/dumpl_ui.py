@@ -3,6 +3,8 @@
 import argparse
 from dataclasses import dataclass
 import json
+import os
+from pathlib import Path
 import sys
 import textwrap
 from typing import Any, Iterator, Optional
@@ -43,6 +45,47 @@ class ScreenState:
 class UiRuntimeConfig:
     audio_capture_cmd: str = "arecord"
     ptt_wav_path: str = "/tmp/dumplbot/ptt.wav"
+
+
+def load_ui_runtime_config(
+    config_path: str = "/etc/dumplbot/config.yaml",
+) -> UiRuntimeConfig:
+    config = UiRuntimeConfig()
+    path = Path(os.environ.get("DUMPLBOT_CONFIG_PATH", config_path))
+
+    if path.is_file():
+        in_ui_block = False
+
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            stripped = raw_line.strip()
+
+            if not stripped or stripped.startswith("#"):
+                continue
+
+            if not raw_line.startswith(" "):
+                in_ui_block = stripped == "ui:"
+                continue
+
+            if not in_ui_block or not raw_line.startswith("  ") or ":" not in stripped:
+                continue
+
+            key, _, raw_value = stripped.partition(":")
+            value = raw_value.strip().strip("'\"")
+
+            if key == "audio_capture_cmd" and value:
+                config.audio_capture_cmd = value
+            elif key == "ptt_wav_path" and value:
+                config.ptt_wav_path = value
+
+    config.audio_capture_cmd = os.environ.get(
+        "DUMPLBOT_UI_AUDIO_CAPTURE_CMD",
+        config.audio_capture_cmd,
+    )
+    config.ptt_wav_path = os.environ.get(
+        "DUMPLBOT_UI_PTT_WAV_PATH",
+        config.ptt_wav_path,
+    )
+    return config
 
 
 def iter_sse_events(response: Any) -> Iterator[tuple[str, dict[str, Any]]]:
