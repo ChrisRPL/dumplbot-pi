@@ -39,6 +39,12 @@ class ScreenState:
     error: Optional[str] = None
 
 
+@dataclass
+class UiRuntimeConfig:
+    audio_capture_cmd: str = "arecord"
+    ptt_wav_path: str = "/tmp/dumplbot/ptt.wav"
+
+
 def iter_sse_events(response: Any) -> Iterator[tuple[str, dict[str, Any]]]:
     current_event = "message"
 
