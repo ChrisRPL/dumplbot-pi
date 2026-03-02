@@ -3,8 +3,32 @@
 import argparse
 import json
 import sys
+from typing import Any, Iterator
 import urllib.error
 import urllib.request
+
+
+def iter_sse_events(response: Any) -> Iterator[tuple[str, dict[str, Any]]]:
+    current_event = "message"
+
+    for raw_line in response:
+        line = raw_line.decode("utf-8").strip()
+
+        if not line:
+            current_event = "message"
+            continue
+
+        if line.startswith("event: "):
+            current_event = line.removeprefix("event: ")
+            continue
+
+        if line.startswith("data: "):
+            data = json.loads(line.removeprefix("data: "))
+            yield current_event, data
+
+
+def emit_raw_event(event_type: str, data: dict[str, Any]) -> None:
+    print(f"[{event_type}] {json.dumps(data)}")
 
 
 def stream_talk(base_url: str, prompt: str, workspace: str, skill: str) -> None:
@@ -22,22 +46,8 @@ def stream_talk(base_url: str, prompt: str, workspace: str, skill: str) -> None:
 
     try:
         with urllib.request.urlopen(request) as response:
-            current_event = "message"
-
-            for raw_line in response:
-                line = raw_line.decode("utf-8").strip()
-
-                if not line:
-                    current_event = "message"
-                    continue
-
-                if line.startswith("event: "):
-                    current_event = line.removeprefix("event: ")
-                    continue
-
-                if line.startswith("data: "):
-                    data = json.loads(line.removeprefix("data: "))
-                    print(f"[{current_event}] {json.dumps(data)}")
+            for event_type, data in iter_sse_events(response):
+                emit_raw_event(event_type, data)
     except urllib.error.URLError as error:
         print(f"[error] {error}", file=sys.stderr)
 
