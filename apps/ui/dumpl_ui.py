@@ -138,6 +138,14 @@ def render_capture_flow(
     renderer.render(build_capture_screen_state(state))
 
 
+def emit_button_debug(enabled: bool, message: str) -> None:
+    if not enabled:
+        return
+
+    sys.stderr.write(f"[button] {message}\n")
+    sys.stderr.flush()
+
+
 def process_capture_button_event(
     state: CaptureFlowState,
     event: ButtonEvent,
@@ -708,12 +716,14 @@ def run_button_capture_loop(
         is_pressed = renderer.poll_button_pressed()
 
         if is_pressed is None:
+            emit_button_debug(config.button_debug, "polling unavailable")
             renderer.render_notice("Button polling unavailable")
             return 1
 
         now = time.monotonic()
 
         if is_pressed and not was_pressed:
+            emit_button_debug(config.button_debug, "press")
             pressed_started_at = now
             long_press_sent = False
             flow_state = process_capture_button_event(
@@ -729,6 +739,7 @@ def run_button_capture_loop(
             and pressed_started_at is not None
             and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
         ):
+            emit_button_debug(config.button_debug, "long_press")
             flow_state = process_capture_button_event(
                 flow_state,
                 ButtonEvent("long_press"),
@@ -738,6 +749,7 @@ def run_button_capture_loop(
             long_press_sent = True
         elif not is_pressed and was_pressed:
             if not long_press_sent:
+                emit_button_debug(config.button_debug, "release")
                 flow_state = process_capture_button_event(
                     flow_state,
                     ButtonEvent("release"),
