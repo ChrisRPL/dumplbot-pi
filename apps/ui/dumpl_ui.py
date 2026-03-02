@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 
 import argparse
+from dataclasses import dataclass
 import json
 import sys
-from typing import Any, Iterator
+import textwrap
+from typing import Any, Iterator, Optional
 import urllib.error
 import urllib.request
+
+SCREEN_WIDTH = 48
+
+
+@dataclass
+class ScreenState:
+    phase: str = "Idle"
+    status: str = "Ready"
+    prompt: str = ""
+    transcript: Optional[str] = None
+    tool_banner: Optional[str] = None
+    answer: str = ""
+    error: Optional[str] = None
 
 
 def iter_sse_events(response: Any) -> Iterator[tuple[str, dict[str, Any]]]:
@@ -27,11 +42,119 @@ def iter_sse_events(response: Any) -> Iterator[tuple[str, dict[str, Any]]]:
             yield current_event, data
 
 
-def emit_raw_event(event_type: str, data: dict[str, Any]) -> None:
-    print(f"[{event_type}] {json.dumps(data)}")
+def format_field(label: str, value: str) -> list[str]:
+    prefix = f"{label}: " if label else ""
+    width = max(8, SCREEN_WIDTH - len(prefix))
+    wrapped = textwrap.wrap(value, width=width) or [""]
+    lines = [f"{prefix}{wrapped[0]}"]
+    indent = " " * len(prefix)
+
+    for line in wrapped[1:]:
+        lines.append(f"{indent}{line}")
+
+    return lines
 
 
-def stream_talk(base_url: str, prompt: str, workspace: str, skill: str) -> None:
+class ConsoleRenderer:
+    def __init__(self, surface_name: str = "Mock UI") -> None:
+        self.surface_name = surface_name
+        self._interactive = sys.stdout.isatty()
+
+    def render(self, state: ScreenState) -> None:
+        lines = [
+            f"{self.surface_name} | {state.phase}",
+            f"Status: {state.status}",
+        ]
+
+        if state.prompt:
+            lines.extend(format_field("Prompt", state.prompt))
+
+        if state.transcript:
+            lines.extend(format_field("Heard", state.transcript))
+
+        if state.tool_banner:
+            lines.extend(format_field("Tool", state.tool_banner))
+
+        lines.append("Answer:")
+        lines.extend(format_field("", state.answer or "(waiting for tokens)"))
+
+        if state.error:
+            lines.extend(format_field("Error", state.error))
+
+        if self._interactive:
+            sys.stdout.write("\033[2J\033[H")
+        else:
+            sys.stdout.write("\n")
+
+        sys.stdout.write("\n".join(lines) + "\n")
+        sys.stdout.flush()
+
+
+def apply_stream_event(
+    state: ScreenState,
+    event_type: str,
+    data: dict[str, Any],
+) -> None:
+    if event_type == "status":
+        message = str(data.get("message") or "Thinking")
+        state.phase = "Thinking"
+        state.status = message
+        return
+
+    if event_type == "stt":
+        transcript = str(data.get("text") or "")
+        state.phase = "Transcribing"
+        state.status = "Captured transcript"
+        state.transcript = transcript or state.transcript
+        return
+
+    if event_type == "tool":
+        name = str(data.get("name") or "tool")
+        detail = str(data.get("detail") or "").strip()
+        state.phase = "Tool"
+        state.status = "Running tool"
+        state.tool_banner = f"{name}: {detail}" if detail else name
+        return
+
+    if event_type == "token":
+        text = str(data.get("text") or "")
+        state.phase = "Answer"
+        state.status = "Streaming reply"
+        state.tool_banner = None
+        state.answer += text
+        return
+
+    if event_type == "done":
+        summary = str(data.get("summary") or "Run finished")
+        state.phase = "Idle"
+        state.status = summary
+        state.tool_banner = None
+        return
+
+    if event_type == "error":
+        message = str(data.get("message") or "Unknown error")
+        state.phase = "Error"
+        state.status = "Run failed"
+        state.tool_banner = None
+        state.error = message
+
+
+def build_prompt_state(prompt: str) -> ScreenState:
+    return ScreenState(
+        phase="Thinking",
+        status="Connecting to dumplbotd",
+        prompt=prompt,
+    )
+
+
+def stream_talk(
+    base_url: str,
+    prompt: str,
+    workspace: str,
+    skill: str,
+    renderer: ConsoleRenderer,
+) -> None:
+    state = build_prompt_state(prompt)
     payload = {
         "text": prompt,
         "workspace": workspace,
@@ -43,16 +166,22 @@ def stream_talk(base_url: str, prompt: str, workspace: str, skill: str) -> None:
         headers={"content-type": "application/json"},
         method="POST",
     )
+    renderer.render(state)
 
     try:
         with urllib.request.urlopen(request) as response:
             for event_type, data in iter_sse_events(response):
-                emit_raw_event(event_type, data)
+                apply_stream_event(state, event_type, data)
+                renderer.render(state)
     except urllib.error.URLError as error:
-        print(f"[error] {error}", file=sys.stderr)
+        state.phase = "Error"
+        state.status = "Network failure"
+        state.error = str(error)
+        renderer.render(state)
 
 
 def run_mock_loop(base_url: str, workspace: str, skill: str) -> None:
+    renderer = ConsoleRenderer()
     print("DumplBot mock UI. Type a prompt, or 'exit' to quit.")
 
     while True:
@@ -71,7 +200,7 @@ def run_mock_loop(base_url: str, workspace: str, skill: str) -> None:
         if prompt.lower() in {"exit", "quit"}:
             return
 
-        stream_talk(base_url, prompt, workspace, skill)
+        stream_talk(base_url, prompt, workspace, skill, renderer)
 
 
 def parse_args() -> argparse.Namespace:
