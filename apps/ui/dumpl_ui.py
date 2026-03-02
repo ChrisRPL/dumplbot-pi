@@ -527,6 +527,7 @@ def run_record_smoke(
     duration_seconds: float,
     renderer: ConsoleRenderer,
     config: UiRuntimeConfig,
+    cancel_at_end: bool = False,
 ) -> int:
     if duration_seconds <= 0:
         renderer.render_notice("Record duration must be greater than zero")
@@ -543,6 +544,17 @@ def run_record_smoke(
         recorder.start()
         renderer.render(state)
         time.sleep(duration_seconds)
+
+        if cancel_at_end:
+            recorder.cancel()
+            renderer.render(
+                ScreenState(
+                    phase="Idle",
+                    status="Audio capture cancelled",
+                )
+            )
+            return 0
+
         saved_path = recorder.stop()
     except FileNotFoundError as error:
         renderer.render(
@@ -584,6 +596,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help="Record audio for N seconds with arecord, then exit",
     )
+    parser.add_argument(
+        "--record-cancel",
+        action="store_true",
+        help="Cancel the smoke recording instead of saving it",
+    )
     parser.add_argument("--workspace", default="default", help="Workspace to use for mock talk requests")
     parser.add_argument("--skill", default="coding", help="Skill to use for mock talk requests")
     return parser.parse_args()
@@ -596,7 +613,12 @@ def main() -> int:
 
     try:
         if args.record_seconds is not None:
-            return run_record_smoke(args.record_seconds, renderer, ui_config)
+            return run_record_smoke(
+                args.record_seconds,
+                renderer,
+                ui_config,
+                cancel_at_end=args.record_cancel,
+            )
 
         if args.prompt is not None:
             return run_single_prompt(
