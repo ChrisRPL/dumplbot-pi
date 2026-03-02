@@ -790,8 +790,7 @@ def main() -> int:
             run_mock_loop(args.host_url, args.workspace, args.skill, renderer)
             return 0
 
-        renderer.render_notice("Button loop not implemented yet. Use --prompt or --mock.")
-        return 1
+        return run_button_capture_loop(renderer, ui_config)
     finally:
         renderer.close()
 
