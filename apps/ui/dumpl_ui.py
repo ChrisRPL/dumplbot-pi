@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import textwrap
+import time
 from typing import Any, Iterator, Optional
 import urllib.error
 import urllib.request
@@ -522,11 +523,67 @@ def run_single_prompt(
     return 0
 
 
+def run_record_smoke(
+    duration_seconds: float,
+    renderer: ConsoleRenderer,
+    config: UiRuntimeConfig,
+) -> int:
+    if duration_seconds <= 0:
+        renderer.render_notice("Record duration must be greater than zero")
+        return 1
+
+    recorder = ArecordRecorder(config)
+    state = ScreenState(
+        phase="Listening",
+        status="Recording audio",
+        transcript=str(recorder.output_path),
+    )
+
+    try:
+        recorder.start()
+        renderer.render(state)
+        time.sleep(duration_seconds)
+        saved_path = recorder.stop()
+    except FileNotFoundError as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Capture command missing",
+                error=str(error),
+            )
+        )
+        return 1
+    except (RuntimeError, subprocess.SubprocessError) as error:
+        recorder.cancel()
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Audio capture failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+    renderer.render(
+        ScreenState(
+            phase="Saved",
+            status="Audio capture saved",
+            transcript=str(saved_path),
+        )
+    )
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DumplBot device UI scaffold")
     parser.add_argument("--mock", action="store_true", help="Run the text-only mock client")
     parser.add_argument("--host-url", default="http://127.0.0.1:4123", help="Base URL for dumplbotd")
     parser.add_argument("--prompt", help="Run one prompt and exit")
+    parser.add_argument(
+        "--record-seconds",
+        type=float,
+        help="Record audio for N seconds with arecord, then exit",
+    )
     parser.add_argument("--workspace", default="default", help="Workspace to use for mock talk requests")
     parser.add_argument("--skill", default="coding", help="Skill to use for mock talk requests")
     return parser.parse_args()
@@ -535,8 +592,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     renderer: ConsoleRenderer = ConsoleRenderer() if args.mock else WhisplayRenderer()
+    ui_config = load_ui_runtime_config()
 
     try:
+        if args.record_seconds is not None:
+            return run_record_smoke(args.record_seconds, renderer, ui_config)
+
         if args.prompt is not None:
             return run_single_prompt(
                 args.host_url,
