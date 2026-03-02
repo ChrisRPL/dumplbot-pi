@@ -142,6 +142,9 @@ class ConsoleRenderer:
         self.surface_name = surface_name
         self._interactive = sys.stdout.isatty()
 
+    def close(self) -> None:
+        return
+
     def render_notice(self, message: str) -> None:
         self.render(ScreenState(status=message))
 
@@ -254,6 +257,17 @@ class WhisplayRenderer(ConsoleRenderer):
             self.surface_name = "Whisplay (console fallback)"
             super().render(state)
 
+    def close(self) -> None:
+        if self._board is None:
+            return
+
+        try:
+            self._board.cleanup()
+        except Exception:
+            pass
+
+        self._board = None
+
 
 def apply_stream_event(
     state: ScreenState,
@@ -345,8 +359,12 @@ def stream_talk(
         renderer.render(state)
 
 
-def run_mock_loop(base_url: str, workspace: str, skill: str) -> None:
-    renderer = ConsoleRenderer()
+def run_mock_loop(
+    base_url: str,
+    workspace: str,
+    skill: str,
+    renderer: ConsoleRenderer,
+) -> None:
     print("DumplBot mock UI. Type a prompt, or 'exit' to quit.")
 
     while True:
@@ -399,21 +417,24 @@ def main() -> int:
     args = parse_args()
     renderer: ConsoleRenderer = ConsoleRenderer() if args.mock else WhisplayRenderer()
 
-    if args.prompt is not None:
-        return run_single_prompt(
-            args.host_url,
-            args.workspace,
-            args.skill,
-            args.prompt,
-            renderer,
-        )
+    try:
+        if args.prompt is not None:
+            return run_single_prompt(
+                args.host_url,
+                args.workspace,
+                args.skill,
+                args.prompt,
+                renderer,
+            )
 
-    if args.mock:
-        run_mock_loop(args.host_url, args.workspace, args.skill)
-        return 0
+        if args.mock:
+            run_mock_loop(args.host_url, args.workspace, args.skill, renderer)
+            return 0
 
-    renderer.render_notice("Button loop not implemented yet. Use --prompt or --mock.")
-    return 1
+        renderer.render_notice("Button loop not implemented yet. Use --prompt or --mock.")
+        return 1
+    finally:
+        renderer.close()
 
 
 if __name__ == "__main__":
