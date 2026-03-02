@@ -779,6 +779,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Cancel the smoke recording instead of saving it",
     )
+    parser.add_argument(
+        "--button-debug",
+        action="store_true",
+        help="Print button transition diagnostics to stderr",
+    )
     parser.add_argument("--workspace", default="default", help="Workspace to use for mock talk requests")
     parser.add_argument("--skill", default="coding", help="Skill to use for mock talk requests")
     return parser.parse_args()
@@ -788,6 +793,9 @@ def main() -> int:
     args = parse_args()
     renderer: ConsoleRenderer = ConsoleRenderer() if args.mock else WhisplayRenderer()
     ui_config = load_ui_runtime_config()
+
+    if args.button_debug:
+        ui_config.button_debug = True
 
     try:
         if args.record_seconds is not None:
