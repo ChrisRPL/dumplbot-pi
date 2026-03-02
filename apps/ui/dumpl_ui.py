@@ -362,7 +362,10 @@ class ArecordRecorder:
             raise RuntimeError("recording is not active")
 
         self._process = None
-        process.send_signal(signal.SIGINT)
+        try:
+            process.send_signal(signal.SIGINT)
+        except ProcessLookupError:
+            pass
         _, stderr = process.communicate(timeout=5)
 
         if process.returncode not in (0, None):
@@ -378,7 +381,10 @@ class ArecordRecorder:
             return
 
         self._process = None
-        process.terminate()
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
 
         try:
             process.wait(timeout=2)
