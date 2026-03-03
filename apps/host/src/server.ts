@@ -5,12 +5,18 @@ import type { DumplDoneEvent, DumplErrorEvent, DumplEvent } from "../../../packa
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
 import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
+import type { RunnerInput } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
 
 type DumplTalkRequest = {
   text: string;
+  workspace?: string;
+  skill?: string;
+};
+
+type DumplAudioTalkRequest = {
   workspace?: string;
   skill?: string;
 };
@@ -86,28 +92,40 @@ const readJson = async <T>(request: IncomingMessage): Promise<T> => {
   return JSON.parse(rawBody) as T;
 };
 
+const readOptionalJson = async <T>(request: IncomingMessage): Promise<Partial<T>> => {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  const rawBody = Buffer.concat(chunks).toString("utf8").trim();
+
+  if (rawBody.length === 0) {
+    return {};
+  }
+
+  return JSON.parse(rawBody) as Partial<T>;
+};
+
 const handleHealth = (_request: IncomingMessage, response: ServerResponse): void => {
   sendJson(response, 200, { ok: true });
 };
 
-const handleTalk = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-  const body = await readJson<DumplTalkRequest>(request);
-  const prompt = body.text?.trim();
-
-  if (!prompt) {
-    sendJson(response, 400, { error: "text is required" });
-    return;
-  }
-
+const streamTalkResponse = async (
+  response: ServerResponse,
+  input: RunnerInput,
+  preludeEvents: DumplEvent[] = [],
+): Promise<void> => {
   sendSseHeaders(response);
+
+  for (const event of preludeEvents) {
+    writeSseEvent(response, event);
+  }
 
   let sawTerminalEvent = false;
 
-  for await (const event of streamRunnerEvents({
-    prompt,
-    workspace: body.workspace,
-    skill: body.skill,
-  })) {
+  for await (const event of streamRunnerEvents(input)) {
     if (event.type === "done" || event.type === "error") {
       sawTerminalEvent = true;
     }
@@ -124,6 +142,22 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   }
 
   response.end();
+};
+
+const handleTalk = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+  const body = await readJson<DumplTalkRequest>(request);
+  const prompt = body.text?.trim();
+
+  if (!prompt) {
+    sendJson(response, 400, { error: "text is required" });
+    return;
+  }
+
+  await streamTalkResponse(response, {
+    prompt,
+    workspace: body.workspace,
+    skill: body.skill,
+  });
 };
 
 const handleAudio = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
