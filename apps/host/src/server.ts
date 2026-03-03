@@ -13,8 +13,16 @@ type DumplTalkRequest = {
   skill?: string;
 };
 
+type AudioAction = "talk" | "transcribe";
+
+type AudioActionRoute = {
+  action: AudioAction;
+  audioId: string;
+};
+
 const DEFAULT_HOST = process.env.DUMPLBOT_HOST ?? "127.0.0.1";
 const DEFAULT_PORT = Number.parseInt(process.env.DUMPLBOT_PORT ?? "4123", 10);
+const AUDIO_ACTIONS = new Set<AudioAction>(["talk", "transcribe"]);
 
 const sendJson = (
   response: ServerResponse,
@@ -37,6 +45,32 @@ const writeSseEvent = (response: ServerResponse, event: DumplEvent): void => {
   const { type, ...payload } = event;
   response.write(`event: ${type}\n`);
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
+const getRequestPathname = (request: IncomingMessage): string =>
+  new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+
+const matchAudioActionRoute = (pathname: string): AudioActionRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "audio") {
+    return null;
+  }
+
+  const action = segments[3];
+
+  if (!AUDIO_ACTIONS.has(action as AudioAction)) {
+    return null;
+  }
+
+  return {
+    action: action as AudioAction,
+    audioId: segments[2],
+  };
 };
 
 const readJson = async <T>(request: IncomingMessage): Promise<T> => {
@@ -134,17 +168,22 @@ const handleInternalError = (
 export const createHostServer = (): Server =>
   createServer(async (request, response) => {
     try {
-      if (request.method === "GET" && request.url === "/health") {
+      const pathname = getRequestPathname(request);
+      const audioActionRoute = request.method === "POST"
+        ? matchAudioActionRoute(pathname)
+        : null;
+
+      if (request.method === "GET" && pathname === "/health") {
         handleHealth(request, response);
         return;
       }
 
-      if (request.method === "POST" && request.url === "/api/talk") {
+      if (request.method === "POST" && pathname === "/api/talk") {
         await handleTalk(request, response);
         return;
       }
 
-      if (request.method === "POST" && request.url === "/api/audio") {
+      if (request.method === "POST" && pathname === "/api/audio") {
         await handleAudio(request, response);
         return;
       }
