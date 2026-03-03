@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -17,6 +17,16 @@ const createAudioId = (): string => randomBytes(6).toString("hex");
 const createAudioPath = (audioId: string): string =>
   join(AUDIO_ROOT, `${audioId}.wav`);
 
+const validateAudioId = (audioId: string): string => {
+  const trimmedAudioId = audioId.trim().toLowerCase();
+
+  if (!/^[a-z0-9]+$/u.test(trimmedAudioId)) {
+    throw new Error("audio id is invalid");
+  }
+
+  return trimmedAudioId;
+};
+
 export const storeAudioBuffer = async (audioBuffer: Buffer): Promise<StoredAudio> => {
   const audioId = createAudioId();
   const audioPath = createAudioPath(audioId);
@@ -30,4 +40,17 @@ export const storeAudioBuffer = async (audioBuffer: Buffer): Promise<StoredAudio
     audioPath,
     lastAudioPath: LAST_AUDIO_PATH,
   };
+};
+
+export const getStoredAudioPath = async (audioId: string): Promise<string> => {
+  const safeAudioId = validateAudioId(audioId);
+  const audioPath = createAudioPath(safeAudioId);
+
+  try {
+    await access(audioPath);
+  } catch {
+    throw new Error("audio not found");
+  }
+
+  return audioPath;
 };
