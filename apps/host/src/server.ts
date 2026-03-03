@@ -1,7 +1,13 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
-import type { DumplDoneEvent, DumplErrorEvent, DumplEvent } from "../../../packages/core/src";
+import type {
+  DumplDoneEvent,
+  DumplErrorEvent,
+  DumplEvent,
+  DumplStatusEvent,
+  DumplSttEvent,
+} from "../../../packages/core/src";
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
 import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
@@ -116,8 +122,11 @@ const streamTalkResponse = async (
   response: ServerResponse,
   input: RunnerInput,
   preludeEvents: DumplEvent[] = [],
+  assumeHeadersSent = false,
 ): Promise<void> => {
-  sendSseHeaders(response);
+  if (!assumeHeadersSent) {
+    sendSseHeaders(response);
+  }
 
   for (const event of preludeEvents) {
     writeSseEvent(response, event);
@@ -199,6 +208,65 @@ const handleAudioTranscribe = async (
   });
 };
 
+const handleAudioTalk = async (
+  request: IncomingMessage,
+  audioId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  let audioPath: string;
+
+  try {
+    audioPath = await getStoredAudioPath(audioId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "audio lookup failed";
+    const statusCode = message === "audio not found" ? 404 : 400;
+    sendJson(response, statusCode, { error: message });
+    return;
+  }
+
+  let body: Partial<DumplAudioTalkRequest>;
+
+  try {
+    body = await readOptionalJson<DumplAudioTalkRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  sendSseHeaders(response);
+
+  const transcribingEvent: DumplStatusEvent = {
+    type: "status",
+    message: "Transcribing audio",
+  };
+  writeSseEvent(response, transcribingEvent);
+
+  const sttConfig = await loadSttRuntimeConfig();
+  const transcription = await transcribeAudioFile(audioId, audioPath, sttConfig);
+  const prompt = transcription.text.trim();
+
+  if (!prompt) {
+    throw new Error("transcription returned empty text");
+  }
+
+  const sttEvent: DumplSttEvent = {
+    type: "stt",
+    text: prompt,
+  };
+  writeSseEvent(response, sttEvent);
+
+  await streamTalkResponse(
+    response,
+    {
+      prompt,
+      workspace: body.workspace,
+      skill: body.skill,
+    },
+    [],
+    true,
+  );
+};
+
 const handleNotFound = (_request: IncomingMessage, response: ServerResponse): void => {
   sendJson(response, 404, { error: "not found" });
 };
@@ -249,6 +317,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && audioActionRoute?.action === "transcribe") {
         await handleAudioTranscribe(audioActionRoute.audioId, response);
+        return;
+      }
+
+      if (request.method === "POST" && audioActionRoute?.action === "talk") {
+        await handleAudioTalk(request, audioActionRoute.audioId, response);
         return;
       }
 
