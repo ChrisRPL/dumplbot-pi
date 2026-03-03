@@ -4,8 +4,10 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { DumplDoneEvent, DumplErrorEvent, DumplEvent } from "../../../packages/core/src";
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
-import { storeAudioBuffer } from "./audio-store";
+import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
 import { streamRunnerEvents } from "./runner";
+import { loadSttRuntimeConfig } from "./stt-config";
+import { transcribeAudioFile } from "./transcriber";
 
 type DumplTalkRequest = {
   text: string;
@@ -140,6 +142,29 @@ const handleAudio = async (request: IncomingMessage, response: ServerResponse): 
   sendJson(response, 200, { audio_id: stored.audioId });
 };
 
+const handleAudioTranscribe = async (
+  audioId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  let audioPath: string;
+
+  try {
+    audioPath = await getStoredAudioPath(audioId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "audio lookup failed";
+    const statusCode = message === "audio not found" ? 404 : 400;
+    sendJson(response, statusCode, { error: message });
+    return;
+  }
+
+  const sttConfig = await loadSttRuntimeConfig();
+  const transcription = await transcribeAudioFile(audioId, audioPath, sttConfig);
+  sendJson(response, 200, {
+    audio_id: audioId,
+    text: transcription.text,
+  });
+};
+
 const handleNotFound = (_request: IncomingMessage, response: ServerResponse): void => {
   sendJson(response, 404, { error: "not found" });
 };
@@ -185,6 +210,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/audio") {
         await handleAudio(request, response);
+        return;
+      }
+
+      if (request.method === "POST" && audioActionRoute?.action === "transcribe") {
+        await handleAudioTranscribe(audioActionRoute.audioId, response);
         return;
       }
 
