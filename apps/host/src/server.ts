@@ -3,6 +3,8 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import type { DumplDoneEvent, DumplErrorEvent, DumplEvent } from "../../../packages/core/src";
 
+import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
+import { storeAudioBuffer } from "./audio-store";
 import { streamRunnerEvents } from "./runner";
 
 type DumplTalkRequest = {
@@ -88,6 +90,22 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   response.end();
 };
 
+const handleAudio = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+  const requestBody = await readRequestBuffer(request);
+  let audioBuffer: Buffer;
+
+  try {
+    audioBuffer = parseSingleWavUpload(request.headers, requestBody);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid audio upload";
+    sendJson(response, 400, { error: message });
+    return;
+  }
+
+  const stored = await storeAudioBuffer(audioBuffer);
+  sendJson(response, 200, { audio_id: stored.audioId });
+};
+
 const handleNotFound = (_request: IncomingMessage, response: ServerResponse): void => {
   sendJson(response, 404, { error: "not found" });
 };
@@ -123,6 +141,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && request.url === "/api/talk") {
         await handleTalk(request, response);
+        return;
+      }
+
+      if (request.method === "POST" && request.url === "/api/audio") {
+        await handleAudio(request, response);
         return;
       }
 
