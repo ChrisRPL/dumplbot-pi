@@ -238,6 +238,103 @@ def iter_sse_events(response: Any) -> Iterator[tuple[str, dict[str, Any]]]:
             yield current_event, data
 
 
+def upload_audio_file(base_url: str, audio_path: str) -> str:
+    boundary = f"----dumplbot-{int(time.time() * 1000)}"
+    audio_bytes = Path(audio_path).read_bytes()
+    filename = Path(audio_path).name or "ptt.wav"
+    multipart_chunks = [
+        f"--{boundary}\r\n".encode("utf-8"),
+        (
+            "Content-Disposition: form-data; "
+            f'name="file"; filename="{filename}"\r\n'
+        ).encode("utf-8"),
+        b"Content-Type: audio/wav\r\n\r\n",
+        audio_bytes,
+        f"\r\n--{boundary}--\r\n".encode("utf-8"),
+    ]
+    request = urllib.request.Request(
+        f"{base_url}/api/audio",
+        data=b"".join(multipart_chunks),
+        headers={"content-type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    audio_id = payload.get("audio_id")
+
+    if not isinstance(audio_id, str) or not audio_id:
+        raise RuntimeError("audio upload response missing audio_id")
+
+    return audio_id
+
+
+def stream_audio_talk(
+    base_url: str,
+    audio_id: str,
+    workspace: str,
+    skill: str,
+    renderer: "ConsoleRenderer",
+) -> ScreenState:
+    state = ScreenState(
+        phase="Transcribing",
+        status="Uploading audio",
+        transcript=audio_id,
+    )
+    request = urllib.request.Request(
+        f"{base_url}/api/audio/{audio_id}/talk",
+        data=json.dumps(
+            {
+                "workspace": workspace,
+                "skill": skill,
+            }
+        ).encode("utf-8"),
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    renderer.render(state)
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            for event_type, data in iter_sse_events(response):
+                apply_stream_event(state, event_type, data)
+                renderer.render(state)
+    except urllib.error.URLError as error:
+        state.phase = "Error"
+        state.status = "Network failure"
+        state.error = str(error)
+        renderer.render(state)
+
+    return state
+
+
+def run_audio_talk_from_file(
+    base_url: str,
+    audio_path: str,
+    workspace: str,
+    skill: str,
+    renderer: "ConsoleRenderer",
+) -> ScreenState:
+    state = ScreenState(
+        phase="Saved",
+        status="Uploading audio",
+        transcript=audio_path,
+    )
+    renderer.render(state)
+
+    try:
+        audio_id = upload_audio_file(base_url, audio_path)
+    except (OSError, RuntimeError, urllib.error.URLError) as error:
+        state.phase = "Error"
+        state.status = "Audio upload failed"
+        state.error = str(error)
+        renderer.render(state)
+        return state
+
+    return stream_audio_talk(base_url, audio_id, workspace, skill, renderer)
+
+
 def format_field(label: str, value: str, width: int = SCREEN_WIDTH) -> list[str]:
     prefix = f"{label}: " if label else ""
     wrap_width = max(8, width - len(prefix))
