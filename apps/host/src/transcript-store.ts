@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { applyRetentionPolicy } from "./retention";
+
 export type StoredTranscript = {
   transcriptPath: string;
 };
@@ -27,6 +29,13 @@ export const storeTranscript = async (
   const transcriptPath = join(TRANSCRIPT_ROOT, `${safeTranscriptId}.txt`);
   await writeFile(transcriptPath, transcriptText, "utf8");
   await writeFile(LAST_TRANSCRIPT_PATH, transcriptText, "utf8");
+
+  try {
+    await applyRetentionPolicy(TRANSCRIPT_ROOT, ".txt");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`transcript retention warning: ${message}\n`);
+  }
 
   return {
     transcriptPath,
