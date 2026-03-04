@@ -1,4 +1,4 @@
-import { access, readdir, stat } from "node:fs/promises";
+import { access, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 export type WorkspaceSummary = {
@@ -6,9 +6,32 @@ export type WorkspaceSummary = {
   hasInstructions: boolean;
 };
 
+export type CreateWorkspaceInput = {
+  id: string;
+  instructions?: string;
+};
+
+export type CreatedWorkspace = {
+  id: string;
+  workspacePath: string;
+  instructionsPath: string;
+};
+
 const WORKSPACES_ROOT = process.env.DUMPLBOT_WORKSPACES_ROOT
   ?? resolve(process.cwd(), "workspaces");
 const WORKSPACE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
+const DEFAULT_WORKSPACE_INSTRUCTIONS = `# Workspace
+
+## Goal
+
+- General-purpose local coding and research.
+
+## Boundaries
+
+- Stay inside the active workspace unless the user explicitly broadens scope.
+- Prefer web tools over shell network commands.
+- Keep changes small, observable, and easy to revert.
+`;
 
 export const normalizeWorkspaceId = (workspaceId: string): string => {
   const normalized = workspaceId.trim().toLowerCase();
@@ -18,6 +41,16 @@ export const normalizeWorkspaceId = (workspaceId: string): string => {
   }
 
   return normalized;
+};
+
+const normalizeWorkspaceInstructions = (instructions: string | undefined): string => {
+  const normalized = (instructions ?? DEFAULT_WORKSPACE_INSTRUCTIONS).trim();
+
+  if (!normalized) {
+    throw new Error("workspace instructions are required");
+  }
+
+  return `${normalized}\n`;
 };
 
 export const getWorkspacePath = (workspaceId: string): string =>
@@ -39,6 +72,45 @@ export const getExistingWorkspacePath = async (workspaceId: string): Promise<str
   }
 
   return workspacePath;
+};
+
+export const createWorkspace = async (
+  input: CreateWorkspaceInput,
+): Promise<CreatedWorkspace> => {
+  const workspaceId = normalizeWorkspaceId(input.id);
+  const workspacePath = getWorkspacePath(workspaceId);
+  const instructionsPath = join(workspacePath, "CLAUDE.md");
+
+  try {
+    const existing = await stat(workspacePath);
+
+    if (existing.isDirectory()) {
+      throw new Error("workspace already exists");
+    }
+  } catch (error) {
+    const isMissingWorkspace =
+      error instanceof Error
+      && "code" in error
+      && error.code === "ENOENT";
+
+    if (!isMissingWorkspace) {
+      throw error;
+    }
+  }
+
+  await mkdir(WORKSPACES_ROOT, { recursive: true });
+  await mkdir(workspacePath);
+  await writeFile(
+    instructionsPath,
+    normalizeWorkspaceInstructions(input.instructions),
+    "utf8",
+  );
+
+  return {
+    id: workspaceId,
+    workspacePath,
+    instructionsPath,
+  };
 };
 
 const hasWorkspaceInstructions = async (workspacePath: string): Promise<boolean> => {
