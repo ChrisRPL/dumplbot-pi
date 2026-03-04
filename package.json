@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev:host": "npm run build && npm run start:host",
+    "smoke:audio-routes": "npm run build && node scripts/smoke-audio-routes.mjs",
     "start:agent-runner": "node dist/apps/agent-runner/src/main.js",
     "start:host": "node dist/apps/host/src/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
