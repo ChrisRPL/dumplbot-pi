@@ -15,6 +15,7 @@ import type { RunnerInput } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
+import { listWorkspaces } from "./workspace-store";
 
 type DumplTalkRequest = {
   text: string;
@@ -116,6 +117,16 @@ const readOptionalJson = async <T>(request: IncomingMessage): Promise<Partial<T>
 
 const handleHealth = (_request: IncomingMessage, response: ServerResponse): void => {
   sendJson(response, 200, { ok: true });
+};
+
+const handleWorkspaceList = async (response: ServerResponse): Promise<void> => {
+  const workspaces = await listWorkspaces();
+  sendJson(response, 200, {
+    workspaces: workspaces.map((workspace) => ({
+      id: workspace.id,
+      has_instructions: workspace.hasInstructions,
+    })),
+  });
 };
 
 const streamTalkResponse = async (
@@ -312,6 +323,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/audio") {
         await handleAudio(request, response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/workspaces") {
+        await handleWorkspaceList(response);
         return;
       }
 
