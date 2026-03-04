@@ -800,6 +800,9 @@ def run_record_smoke(
 def run_button_capture_loop(
     renderer: ConsoleRenderer,
     config: UiRuntimeConfig,
+    host_url: str,
+    workspace: str,
+    skill: str,
 ) -> int:
     recorder = ArecordRecorder(config)
     flow_state = CaptureFlowState()
@@ -853,6 +856,27 @@ def run_button_capture_loop(
                     recorder,
                 )
                 render_capture_flow(renderer, flow_state)
+
+                if flow_state.phase == "Saved" and flow_state.saved_path:
+                    emit_button_debug(
+                        config.button_debug,
+                        f"audio_talk:{flow_state.saved_path}",
+                    )
+                    talk_state = run_audio_talk_from_file(
+                        host_url,
+                        flow_state.saved_path,
+                        workspace,
+                        skill,
+                        renderer,
+                    )
+
+                    if talk_state.phase == "Error":
+                        flow_state = CaptureFlowState(
+                            phase="Error",
+                            error=talk_state.error,
+                        )
+                    else:
+                        flow_state = CaptureFlowState()
 
             pressed_started_at = None
             long_press_sent = False
@@ -916,7 +940,13 @@ def main() -> int:
             run_mock_loop(args.host_url, args.workspace, args.skill, renderer)
             return 0
 
-        return run_button_capture_loop(renderer, ui_config)
+        return run_button_capture_loop(
+            renderer,
+            ui_config,
+            args.host_url,
+            args.workspace,
+            args.skill,
+        )
     finally:
         renderer.close()
 
