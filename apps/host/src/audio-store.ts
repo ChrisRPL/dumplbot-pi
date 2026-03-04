@@ -2,6 +2,8 @@ import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 
+import { applyRetentionPolicy } from "./retention";
+
 export type StoredAudio = {
   audioId: string;
   audioPath: string;
@@ -34,6 +36,13 @@ export const storeAudioBuffer = async (audioBuffer: Buffer): Promise<StoredAudio
   await mkdir(AUDIO_ROOT, { recursive: true });
   await writeFile(audioPath, audioBuffer);
   await writeFile(LAST_AUDIO_PATH, audioBuffer);
+
+  try {
+    await applyRetentionPolicy(AUDIO_ROOT, ".wav");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`audio retention warning: ${message}\n`);
+  }
 
   return {
     audioId,
