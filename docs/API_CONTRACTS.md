@@ -85,6 +85,23 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `POST /api/workspaces`
 
 - Create a workspace from validated input.
+- Request body:
+
+```json
+{"id":"project-alpha","instructions":"# Workspace\n\n## Goal\n\n- Project-specific guidance.\n"}
+```
+
+- `instructions` optional; daemon writes `workspaces/<id>/CLAUDE.md`.
+- Success response:
+
+```json
+{"id":"project-alpha","has_instructions":true}
+```
+
+- Status codes:
+  - `201` when created.
+  - `409` when workspace already exists.
+  - `400` for invalid JSON or invalid workspace input.
 
 ### `GET /api/jobs`
 
