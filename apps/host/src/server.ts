@@ -15,7 +15,7 @@ import type { RunnerInput } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
-import { listWorkspaces } from "./workspace-store";
+import { createWorkspace, listWorkspaces } from "./workspace-store";
 
 type DumplTalkRequest = {
   text: string;
@@ -26,6 +26,11 @@ type DumplTalkRequest = {
 type DumplAudioTalkRequest = {
   workspace?: string;
   skill?: string;
+};
+
+type DumplCreateWorkspaceRequest = {
+  id: string;
+  instructions?: string;
 };
 
 type AudioAction = "talk" | "transcribe";
@@ -127,6 +132,34 @@ const handleWorkspaceList = async (response: ServerResponse): Promise<void> => {
       has_instructions: workspace.hasInstructions,
     })),
   });
+};
+
+const handleWorkspaceCreate = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplCreateWorkspaceRequest;
+
+  try {
+    body = await readJson<DumplCreateWorkspaceRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  try {
+    const workspace = await createWorkspace(body);
+    sendJson(response, 201, {
+      id: workspace.id,
+      has_instructions: true,
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace create failed";
+    const statusCode = message === "workspace already exists" ? 409 : 400;
+    sendJson(response, statusCode, { error: message });
+    return;
+  }
 };
 
 const streamTalkResponse = async (
@@ -328,6 +361,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/workspaces") {
         await handleWorkspaceList(response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/workspaces") {
+        await handleWorkspaceCreate(request, response);
         return;
       }
 
