@@ -66,6 +66,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `workspace` optional.
 - `skill` optional.
 - Response: SSE stream using the event types above.
+- Returns `404` with `{"error":"workspace not found"}` when the selected workspace does not exist.
 
 ### `POST /api/audio`
 
@@ -77,6 +78,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```
 
 - Follow-up: either hand the client to `/api/talk` or expose a dedicated audio-run stream path later.
+- `POST /api/audio/:audioId/talk` returns `404` with `{"error":"workspace not found"}` when workspace selection is invalid.
 
 ### `GET /api/workspaces`
 
