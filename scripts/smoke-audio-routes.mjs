@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,7 +84,7 @@ const startFakeSttServer = async () => {
   return fakeServer;
 };
 
-const startHostServer = async (tmpRoot) => {
+const startHostServer = async (tmpRoot, workspaceRoot) => {
   const childProcess = spawn(
     process.execPath,
     ["dist/apps/host/src/main.js"],
@@ -95,6 +95,7 @@ const startHostServer = async (tmpRoot) => {
         DUMPLBOT_HOST: HOST,
         DUMPLBOT_PORT: String(HOST_PORT),
         DUMPLBOT_TMP_ROOT: tmpRoot,
+        DUMPLBOT_WORKSPACES_ROOT: workspaceRoot,
         OPENAI_API_KEY: "test-key",
         OPENAI_BASE_URL: `http://${HOST}:${STT_PORT}`,
       },
@@ -129,10 +130,15 @@ const uploadAudio = async (baseUrl, fileName, contentType) => {
 
 const runSmoke = async () => {
   const tmpRoot = await mkdtemp(join(tmpdir(), "dumplbot-audio-smoke-"));
+  const workspaceRoot = join(tmpRoot, "workspaces");
   const wavePath = join(tmpRoot, "sample.wav");
+  const defaultWorkspaceRoot = join(workspaceRoot, "default");
+
+  await mkdir(defaultWorkspaceRoot, { recursive: true });
+  await writeFile(join(defaultWorkspaceRoot, "CLAUDE.md"), "# default\n", "utf8");
   await writeFile(wavePath, WAVE_BYTES);
   const fakeSttServer = await startFakeSttServer();
-  const hostServer = await startHostServer(tmpRoot);
+  const hostServer = await startHostServer(tmpRoot, workspaceRoot);
   const baseUrl = `http://${HOST}:${HOST_PORT}`;
 
   try {
@@ -176,6 +182,32 @@ const runSmoke = async () => {
     assert(events[1].eventType === "stt", "missing stt event");
     assert(events[1].data.text === "smoke route transcript", "unexpected stt text");
     assert(events.some((event) => event.eventType === "done"), "missing done event");
+
+    const missingTalkResponse = await fetch(
+      `${baseUrl}/api/talk`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "ping", workspace: "missing" }),
+      },
+    );
+    assert(
+      missingTalkResponse.status === 404,
+      `expected 404 for missing /api/talk workspace, got ${missingTalkResponse.status}`,
+    );
+
+    const missingAudioTalkResponse = await fetch(
+      `${baseUrl}/api/audio/${uploadJson.audio_id}/talk`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspace: "missing", skill: "coding" }),
+      },
+    );
+    assert(
+      missingAudioTalkResponse.status === 404,
+      `expected 404 for missing /api/audio/:id/talk workspace, got ${missingAudioTalkResponse.status}`,
+    );
 
     const transcriptPath = join(tmpRoot, "last-transcript.txt");
     const transcriptText = await readFile(transcriptPath, "utf8");
