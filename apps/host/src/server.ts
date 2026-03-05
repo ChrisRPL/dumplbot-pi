@@ -13,9 +13,15 @@ import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
 import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
 import type { RunnerInput } from "./runner";
 import { streamRunnerEvents } from "./runner";
+import { loadHostRuntimeConfig } from "./runtime-config";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
-import { createWorkspace, listWorkspaces } from "./workspace-store";
+import {
+  createWorkspace,
+  getExistingWorkspacePath,
+  listWorkspaces,
+  normalizeWorkspaceId,
+} from "./workspace-store";
 
 type DumplTalkRequest = {
   text: string;
@@ -124,6 +130,37 @@ const handleHealth = (_request: IncomingMessage, response: ServerResponse): void
   sendJson(response, 200, { ok: true });
 };
 
+const getWorkspaceErrorStatus = (message: string): number => {
+  if (message === "workspace not found") {
+    return 404;
+  }
+
+  if (message === "workspace id is invalid") {
+    return 400;
+  }
+
+  if (message === "default workspace is required") {
+    return 500;
+  }
+
+  return 500;
+};
+
+const resolveWorkspaceId = async (requestedWorkspace: string | undefined): Promise<string> => {
+  const runtimeConfig = await loadHostRuntimeConfig();
+  const workspaceCandidate = requestedWorkspace?.trim().length
+    ? requestedWorkspace
+    : runtimeConfig.defaultWorkspace;
+  const workspaceId = normalizeWorkspaceId(workspaceCandidate);
+
+  if (!workspaceId) {
+    throw new Error("default workspace is required");
+  }
+
+  await getExistingWorkspacePath(workspaceId);
+  return workspaceId;
+};
+
 const handleWorkspaceList = async (response: ServerResponse): Promise<void> => {
   const workspaces = await listWorkspaces();
   sendJson(response, 200, {
@@ -198,7 +235,15 @@ const streamTalkResponse = async (
 };
 
 const handleTalk = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-  const body = await readJson<DumplTalkRequest>(request);
+  let body: DumplTalkRequest;
+
+  try {
+    body = await readJson<DumplTalkRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
   const prompt = body.text?.trim();
 
   if (!prompt) {
@@ -206,9 +251,19 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     return;
   }
 
+  let workspaceId: string;
+
+  try {
+    workspaceId = await resolveWorkspaceId(body.workspace);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace resolution failed";
+    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
   await streamTalkResponse(response, {
     prompt,
-    workspace: body.workspace,
+    workspace: workspaceId,
     skill: body.skill,
   });
 };
@@ -277,6 +332,16 @@ const handleAudioTalk = async (
     return;
   }
 
+  let workspaceId: string;
+
+  try {
+    workspaceId = await resolveWorkspaceId(body.workspace);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace resolution failed";
+    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
   sendSseHeaders(response);
 
   const transcribingEvent: DumplStatusEvent = {
@@ -303,7 +368,7 @@ const handleAudioTalk = async (
     response,
     {
       prompt,
-      workspace: body.workspace,
+      workspace: workspaceId,
       skill: body.skill,
     },
     [],
