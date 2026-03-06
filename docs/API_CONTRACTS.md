@@ -72,10 +72,15 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Host emits skill prelude metadata before runner events:
   - `status`: `Using skill <skill-id>`
   - `tool`: `{"name":"skill-policy","detail":"<comma-separated allowlist>"}`
+- Policy denials are streamed as terminal SSE events (HTTP `200`) instead of JSON errors:
+  - `status`: `{"message":"Policy check failed","phase":"policy"}`
+  - `error`: `{"code":"<policy-code>","message":"<policy-message>"}`
+- Current policy denial codes:
+  - `policy_tools_denied`
+  - `policy_tools_invalid`
+  - `policy_mode_denied`
 - Returns `404` with `{"error":"workspace not found"}` when the selected workspace does not exist.
 - Returns `404` with `{"error":"skill not found"}` when the selected skill does not exist.
-- Returns `403` with `{"error":"requested tools are not allowed by skill"}` when `tools` conflicts with skill policy.
-- Returns `400` with `{"error":"tools must be an array of non-empty strings"}` for invalid `tools` values.
 
 ### `POST /api/audio`
 
@@ -89,7 +94,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Follow-up: either hand the client to `/api/talk` or expose a dedicated audio-run stream path later.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"workspace not found"}` when workspace selection is invalid.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"skill not found"}` when skill selection is invalid.
-- `POST /api/audio/:audioId/talk` returns `403` with `{"error":"requested tools are not allowed by skill"}` when `tools` conflicts with skill policy.
+- `POST /api/audio/:audioId/talk` uses the same policy-denial SSE mapping as `/api/talk`.
 
 ### `GET /api/skills`
 
@@ -204,6 +209,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```
 
 - Current runner guardrails:
+  - host pre-run strict-mode clamp removes `bash` from requested allowlists and denies if no tools remain.
   - `permissionMode: "strict"` rejects `bash` in `toolAllowlist`.
   - non-internal tool events are blocked if not listed in `policy.toolAllowlist`.
 - Runner rejects mismatches between top-level allowlist and policy allowlist.
