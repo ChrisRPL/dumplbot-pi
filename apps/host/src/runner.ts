@@ -9,7 +9,7 @@ export type RunnerInput = {
   prompt: string;
   workspace?: string;
   skill?: string;
-  toolAllowlist?: string[];
+  toolAllowlist: string[];
 };
 
 const KNOWN_EVENT_TYPES = new Set([

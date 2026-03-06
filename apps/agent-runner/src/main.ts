@@ -11,6 +11,7 @@ type RunnerInput = {
   prompt: string;
   workspace?: string;
   skill?: string;
+  toolAllowlist: string[];
 };
 
 const readStdIn = async (): Promise<string> => {
@@ -57,6 +58,37 @@ const buildScaffoldEvents = (input: RunnerInput): Array<DumplStatusEvent | Dumpl
   },
 ];
 
+const parseToolAllowlist = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    fail("runner input must include tool_allowlist");
+  }
+
+  const rawAllowlist = value as unknown[];
+  const normalizedAllowlist: string[] = [];
+
+  for (const entry of rawAllowlist) {
+    if (typeof entry !== "string") {
+      fail("runner tool_allowlist entries must be non-empty strings");
+    }
+
+    const toolName = (entry as string).trim();
+
+    if (toolName.length === 0) {
+      fail("runner tool_allowlist entries must be non-empty strings");
+    }
+
+    normalizedAllowlist.push(toolName);
+  }
+
+  const dedupedAllowlist = Array.from(new Set(normalizedAllowlist));
+
+  if (dedupedAllowlist.length === 0) {
+    fail("runner tool_allowlist must include at least one tool");
+  }
+
+  return dedupedAllowlist;
+};
+
 const parseInput = (raw: string): RunnerInput => {
   if (raw.length === 0) {
     fail("runner input is required");
@@ -80,7 +112,10 @@ const parseInput = (raw: string): RunnerInput => {
     fail("prompt must be non-empty");
   }
 
-  return input;
+  return {
+    ...input,
+    toolAllowlist: parseToolAllowlist((parsed as { toolAllowlist?: unknown }).toolAllowlist),
+  };
 };
 
 const main = async (): Promise<void> => {
