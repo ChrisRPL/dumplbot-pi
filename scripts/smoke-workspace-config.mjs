@@ -72,6 +72,7 @@ const startHostServer = async (tmpRoot, workspaceRoot, configPath) => {
         DUMPLBOT_TMP_ROOT: tmpRoot,
         DUMPLBOT_WORKSPACES_ROOT: workspaceRoot,
         DUMPLBOT_CONFIG_PATH: configPath,
+        DUMPLBOT_SANDBOX_ENABLED: "false",
       },
     },
   );

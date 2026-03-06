@@ -96,6 +96,7 @@ const startHostServer = async (tmpRoot, workspaceRoot) => {
         DUMPLBOT_PORT: String(HOST_PORT),
         DUMPLBOT_TMP_ROOT: tmpRoot,
         DUMPLBOT_WORKSPACES_ROOT: workspaceRoot,
+        DUMPLBOT_SANDBOX_ENABLED: "false",
         OPENAI_API_KEY: "test-key",
         OPENAI_BASE_URL: `http://${HOST}:${STT_PORT}`,
       },
