@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 const HOST = "127.0.0.1";
 const HOST_PORT = 4135;
 const SSE_DELIMITER = "\n\n";
+const WAVE_BYTES = Buffer.from("RIFFtestWAVEfmt ");
 
 const assert = (condition, message) => {
   if (!condition) {
@@ -105,7 +106,7 @@ const runSmoke = async () => {
   await writeFile(join(alphaWorkspacePath, "CLAUDE.md"), "# alpha\n", "utf8");
   await writeFile(
     configPath,
-    "runtime:\n  default_workspace: default\n",
+    "runtime:\n  default_workspace: default\n  default_skill: coding\n",
     "utf8",
   );
 
@@ -119,6 +120,10 @@ const runSmoke = async () => {
     assert(
       getConfigPayload.runtime.default_workspace === "default",
       "unexpected default workspace from /api/config",
+    );
+    assert(
+      getConfigPayload.runtime.default_skill === "coding",
+      "unexpected default skill from /api/config",
     );
     assert(
       getConfigPayload.runtime.active_workspace === null,
@@ -161,15 +166,20 @@ const runSmoke = async () => {
     assert(talkWithActiveResponse.status === 200, "expected /api/talk to return 200");
     const talkWithActiveEvents = parseSsePayload(await talkWithActiveResponse.text());
     const activeStatusEvent = talkWithActiveEvents.find((event) => event.eventType === "status");
+    const activeToolEvent = talkWithActiveEvents.find((event) => event.eventType === "tool");
     assert(
       activeStatusEvent?.data?.message === "Runner started for alpha",
       "talk did not use active workspace",
+    );
+    assert(
+      activeToolEvent?.data?.detail === "coding",
+      "talk did not use default skill",
     );
 
     const talkWithOverrideResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "ping", workspace: "default" }),
+      body: JSON.stringify({ text: "ping", workspace: "default", skill: "research" }),
     });
     assert(
       talkWithOverrideResponse.status === 200,
@@ -179,9 +189,26 @@ const runSmoke = async () => {
     const overrideStatusEvent = talkWithOverrideEvents.find(
       (event) => event.eventType === "status",
     );
+    const overrideToolEvent = talkWithOverrideEvents.find(
+      (event) => event.eventType === "tool",
+    );
     assert(
       overrideStatusEvent?.data?.message === "Runner started for default",
       "talk override did not use requested workspace",
+    );
+    assert(
+      overrideToolEvent?.data?.detail === "research",
+      "talk override did not use requested skill",
+    );
+
+    const talkWithMissingSkillResponse = await fetch(`${baseUrl}/api/talk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "ping", skill: "missing-skill" }),
+    });
+    assert(
+      talkWithMissingSkillResponse.status === 404,
+      "expected /api/talk missing skill to return 404",
     );
 
     const setMissingWorkspaceResponse = await fetch(`${baseUrl}/api/config`, {
@@ -233,6 +260,28 @@ const runSmoke = async () => {
     assert(
       clearedStatusEvent?.data?.message === "Runner started for default",
       "talk did not fall back to default workspace after clear",
+    );
+
+    const uploadForm = new FormData();
+    uploadForm.append("file", new File([WAVE_BYTES], "sample.wav", { type: "audio/wav" }));
+    const uploadResponse = await fetch(`${baseUrl}/api/audio`, {
+      method: "POST",
+      body: uploadForm,
+    });
+    assert(uploadResponse.status === 200, "expected /api/audio upload to return 200");
+    const uploadPayload = await uploadResponse.json();
+
+    const audioTalkMissingSkillResponse = await fetch(
+      `${baseUrl}/api/audio/${uploadPayload.audio_id}/talk`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ skill: "missing-skill" }),
+      },
+    );
+    assert(
+      audioTalkMissingSkillResponse.status === 404,
+      "expected /api/audio/:id/talk missing skill to return 404",
     );
 
     console.log("workspace config smoke ok");
