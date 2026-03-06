@@ -141,6 +141,7 @@ const runSmoke = async () => {
     const researchSkill = skillListPayload.skills.find((skill) => skill.id === "research");
     assert(codingSkill, "expected coding skill in /api/skills");
     assert(researchSkill, "expected research skill in /api/skills");
+    assert(codingSkill.is_active, "expected coding to be active before active_skill update");
 
     const initialListResponse = await fetch(`${baseUrl}/api/workspaces`);
     assert(initialListResponse.status === 200, "expected GET /api/workspaces to return 200");
@@ -177,14 +178,32 @@ const runSmoke = async () => {
     });
     assert(talkWithActiveResponse.status === 200, "expected /api/talk to return 200");
     const talkWithActiveEvents = parseSsePayload(await talkWithActiveResponse.text());
-    const activeStatusEvent = talkWithActiveEvents.find((event) => event.eventType === "status");
-    const activeToolEvent = talkWithActiveEvents.find((event) => event.eventType === "tool");
+    const activeSkillStatusEvent = talkWithActiveEvents.find(
+      (event) => event.eventType === "status" && event.data?.message === "Using skill coding",
+    );
+    const activePolicyToolEvent = talkWithActiveEvents.find(
+      (event) => event.eventType === "tool" && event.data?.name === "skill-policy",
+    );
+    const activeRunnerStatusEvent = talkWithActiveEvents.find(
+      (event) => event.eventType === "status" && event.data?.message === "Runner started for alpha",
+    );
+    const activePlannerToolEvent = talkWithActiveEvents.find(
+      (event) => event.eventType === "tool" && event.data?.name === "planner",
+    );
     assert(
-      activeStatusEvent?.data?.message === "Runner started for alpha",
+      activeSkillStatusEvent,
+      "talk did not emit selected skill status prelude",
+    );
+    assert(
+      activePolicyToolEvent,
+      "talk did not emit skill-policy tool prelude",
+    );
+    assert(
+      activeRunnerStatusEvent?.data?.message === "Runner started for alpha",
       "talk did not use active workspace",
     );
     assert(
-      activeToolEvent?.data?.detail === "coding",
+      activePlannerToolEvent?.data?.detail === "coding",
       "talk did not use default skill",
     );
 
@@ -198,18 +217,18 @@ const runSmoke = async () => {
       "expected /api/talk override to return 200",
     );
     const talkWithOverrideEvents = parseSsePayload(await talkWithOverrideResponse.text());
-    const overrideStatusEvent = talkWithOverrideEvents.find(
-      (event) => event.eventType === "status",
+    const overrideRunnerStatusEvent = talkWithOverrideEvents.find(
+      (event) => event.eventType === "status" && event.data?.message === "Runner started for default",
     );
-    const overrideToolEvent = talkWithOverrideEvents.find(
-      (event) => event.eventType === "tool",
+    const overridePlannerToolEvent = talkWithOverrideEvents.find(
+      (event) => event.eventType === "tool" && event.data?.name === "planner",
     );
     assert(
-      overrideStatusEvent?.data?.message === "Runner started for default",
+      overrideRunnerStatusEvent?.data?.message === "Runner started for default",
       "talk override did not use requested workspace",
     );
     assert(
-      overrideToolEvent?.data?.detail === "research",
+      overridePlannerToolEvent?.data?.detail === "research",
       "talk override did not use requested skill",
     );
 
@@ -238,6 +257,14 @@ const runSmoke = async () => {
       "active skill was not stored",
     );
 
+    const activeSkillListResponse = await fetch(`${baseUrl}/api/skills`);
+    assert(activeSkillListResponse.status === 200, "expected /api/skills after active update");
+    const activeSkillListPayload = await activeSkillListResponse.json();
+    const activeResearchSkill = activeSkillListPayload.skills.find(
+      (skill) => skill.id === "research",
+    );
+    assert(activeResearchSkill?.is_active, "expected research to be active after active_skill update");
+
     const talkWithActiveSkillResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -249,7 +276,7 @@ const runSmoke = async () => {
     );
     const talkWithActiveSkillEvents = parseSsePayload(await talkWithActiveSkillResponse.text());
     const activeSkillToolEvent = talkWithActiveSkillEvents.find(
-      (event) => event.eventType === "tool",
+      (event) => event.eventType === "tool" && event.data?.name === "planner",
     );
     assert(
       activeSkillToolEvent?.data?.detail === "research",
@@ -346,7 +373,9 @@ const runSmoke = async () => {
       "expected /api/talk after clear to return 200",
     );
     const talkAfterClearEvents = parseSsePayload(await talkAfterClearResponse.text());
-    const clearedStatusEvent = talkAfterClearEvents.find((event) => event.eventType === "status");
+    const clearedStatusEvent = talkAfterClearEvents.find(
+      (event) => event.eventType === "status" && event.data?.message === "Runner started for default",
+    );
     assert(
       clearedStatusEvent?.data?.message === "Runner started for default",
       "talk did not fall back to default workspace after clear",
