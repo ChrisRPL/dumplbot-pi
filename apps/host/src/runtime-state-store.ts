@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 
 export type HostRuntimeState = {
   activeWorkspace?: string;
+  activeSkill?: string;
 };
 
 const TMP_ROOT = process.env.DUMPLBOT_TMP_ROOT ?? "/tmp/dumplbot";
@@ -25,12 +26,18 @@ const parseRuntimeState = (raw: string): HostRuntimeState => {
   }
 
   const activeWorkspace = (parsed as { active_workspace?: unknown }).active_workspace;
+  const activeSkill = (parsed as { active_skill?: unknown }).active_skill;
+  const state: HostRuntimeState = {};
 
   if (typeof activeWorkspace === "string") {
-    return { activeWorkspace };
+    state.activeWorkspace = activeWorkspace;
   }
 
-  return {};
+  if (typeof activeSkill === "string") {
+    state.activeSkill = activeSkill;
+  }
+
+  return state;
 };
 
 export const loadHostRuntimeState = async (): Promise<HostRuntimeState> => {
@@ -59,17 +66,29 @@ export const writeHostRuntimeState = async (
   const statePath = getStatePath();
   const directoryPath = dirname(statePath);
   const normalizedActiveWorkspace = state.activeWorkspace?.trim();
-  const payload =
-    normalizedActiveWorkspace && normalizedActiveWorkspace.length > 0
-      ? { active_workspace: normalizedActiveWorkspace }
-      : {};
+  const normalizedActiveSkill = state.activeSkill?.trim();
+  const payload: { active_workspace?: string; active_skill?: string } = {};
+
+  if (normalizedActiveWorkspace && normalizedActiveWorkspace.length > 0) {
+    payload.active_workspace = normalizedActiveWorkspace;
+  }
+
+  if (normalizedActiveSkill && normalizedActiveSkill.length > 0) {
+    payload.active_skill = normalizedActiveSkill;
+  }
 
   await mkdir(directoryPath, { recursive: true });
   await writeFile(statePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 
+  const writtenState: HostRuntimeState = {};
+
   if (typeof payload.active_workspace === "string") {
-    return { activeWorkspace: payload.active_workspace };
+    writtenState.activeWorkspace = payload.active_workspace;
   }
 
-  return {};
+  if (typeof payload.active_skill === "string") {
+    writtenState.activeSkill = payload.active_skill;
+  }
+
+  return writtenState;
 };
