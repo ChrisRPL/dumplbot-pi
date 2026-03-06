@@ -44,6 +44,7 @@ type DumplCreateWorkspaceRequest = {
 type DumplUpdateConfigRequest = {
   runtime?: {
     active_workspace?: string | null;
+    active_skill?: string | null;
   };
 };
 
@@ -222,11 +223,26 @@ type ResolvedSkill = {
   toolAllowlist: string[];
 };
 
-const resolveSkill = async (requestedSkill: string | undefined): Promise<ResolvedSkill> => {
+type SkillSelection = {
+  defaultSkill: string;
+  activeSkill: string | null;
+};
+
+const loadSkillSelection = async (): Promise<SkillSelection> => {
   const runtimeConfig = await loadHostRuntimeConfig();
+  const runtimeState = await loadHostRuntimeState();
+
+  return {
+    defaultSkill: runtimeConfig.defaultSkill,
+    activeSkill: runtimeState.activeSkill ?? null,
+  };
+};
+
+const resolveSkill = async (requestedSkill: string | undefined): Promise<ResolvedSkill> => {
+  const selection = await loadSkillSelection();
   const skillCandidate = requestedSkill?.trim().length
     ? requestedSkill
-    : runtimeConfig.defaultSkill;
+    : selection.activeSkill ?? selection.defaultSkill;
 
   if (!skillCandidate.trim().length) {
     throw new Error("default skill is required");
@@ -249,6 +265,7 @@ const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
       default_workspace: runtimeConfig.defaultWorkspace,
       default_skill: runtimeConfig.defaultSkill,
       active_workspace: runtimeState.activeWorkspace ?? null,
+      active_skill: runtimeState.activeSkill ?? null,
     },
   };
 };
@@ -331,31 +348,80 @@ const handleConfigUpdate = async (
   }
 
   if (!body.runtime || !("active_workspace" in body.runtime)) {
-    sendJson(response, 400, { error: "runtime.active_workspace is required" });
-    return;
-  }
+    const hasActiveSkill = "active_skill" in (body.runtime ?? {});
 
-  const activeWorkspace = body.runtime.active_workspace;
-
-  if (typeof activeWorkspace === "undefined") {
-    sendJson(response, 400, { error: "runtime.active_workspace is required" });
-    return;
-  }
-
-  try {
-    if (activeWorkspace === null) {
-      await writeHostRuntimeState({});
-    } else {
-      const workspaceId = normalizeWorkspaceId(activeWorkspace);
-      await getExistingWorkspacePath(workspaceId);
-      await writeHostRuntimeState({ activeWorkspace: workspaceId });
+    if (!hasActiveSkill) {
+      sendJson(response, 400, { error: "runtime.active_workspace or runtime.active_skill is required" });
+      return;
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "workspace update failed";
-    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+  }
+
+  if (!body.runtime) {
+    sendJson(response, 400, { error: "runtime.active_workspace or runtime.active_skill is required" });
     return;
   }
 
+  const hasActiveWorkspace = "active_workspace" in body.runtime;
+  const hasActiveSkill = "active_skill" in body.runtime;
+
+  if (!hasActiveWorkspace && !hasActiveSkill) {
+    sendJson(response, 400, { error: "runtime.active_workspace or runtime.active_skill is required" });
+    return;
+  }
+
+  const currentRuntimeState = await loadHostRuntimeState();
+  const nextRuntimeState = {
+    activeWorkspace: currentRuntimeState.activeWorkspace,
+    activeSkill: currentRuntimeState.activeSkill,
+  };
+
+  if (hasActiveWorkspace) {
+    const activeWorkspace = body.runtime.active_workspace;
+
+    if (typeof activeWorkspace === "undefined") {
+      sendJson(response, 400, { error: "runtime.active_workspace must be string or null" });
+      return;
+    }
+
+    try {
+      if (activeWorkspace === null) {
+        nextRuntimeState.activeWorkspace = undefined;
+      } else {
+        const workspaceId = normalizeWorkspaceId(activeWorkspace);
+        await getExistingWorkspacePath(workspaceId);
+        nextRuntimeState.activeWorkspace = workspaceId;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "workspace update failed";
+      sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+      return;
+    }
+  }
+
+  if (hasActiveSkill) {
+    const activeSkill = body.runtime.active_skill;
+
+    if (typeof activeSkill === "undefined") {
+      sendJson(response, 400, { error: "runtime.active_skill must be string or null" });
+      return;
+    }
+
+    try {
+      if (activeSkill === null) {
+        nextRuntimeState.activeSkill = undefined;
+      } else {
+        const skillId = normalizeSkillId(activeSkill);
+        await loadSkill(skillId);
+        nextRuntimeState.activeSkill = skillId;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "skill update failed";
+      sendJson(response, getSkillErrorStatus(message), { error: message });
+      return;
+    }
+  }
+
+  await writeHostRuntimeState(nextRuntimeState);
   sendJson(response, 200, await getConfigResponsePayload());
 };
 
