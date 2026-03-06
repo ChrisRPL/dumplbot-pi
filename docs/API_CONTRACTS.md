@@ -60,16 +60,19 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Request body:
 
 ```json
-{"text":"run tests","workspace":"default","skill":"coding"}
+{"text":"run tests","workspace":"default","skill":"coding","tools":["read_file","bash"]}
 ```
 
 - `workspace` optional.
 - `skill` optional.
+- `tools` optional; when present, it must be a non-empty string array and each value must be allowed by the selected skill.
 - Response: SSE stream using the event types above.
 - Workspace selection order when `workspace` is omitted: `active_workspace` from `/api/config`, then `runtime.default_workspace`.
 - Skill selection order when `skill` is omitted: `runtime.default_skill`.
 - Returns `404` with `{"error":"workspace not found"}` when the selected workspace does not exist.
 - Returns `404` with `{"error":"skill not found"}` when the selected skill does not exist.
+- Returns `403` with `{"error":"requested tools are not allowed by skill"}` when `tools` conflicts with skill policy.
+- Returns `400` with `{"error":"tools must be an array of non-empty strings"}` for invalid `tools` values.
 
 ### `POST /api/audio`
 
@@ -83,6 +86,20 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Follow-up: either hand the client to `/api/talk` or expose a dedicated audio-run stream path later.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"workspace not found"}` when workspace selection is invalid.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"skill not found"}` when skill selection is invalid.
+- `POST /api/audio/:audioId/talk` returns `403` with `{"error":"requested tools are not allowed by skill"}` when `tools` conflicts with skill policy.
+
+### `GET /api/skills`
+
+- Return installed skills plus policy metadata.
+- Current response shape:
+
+```json
+{
+  "skills": [
+    {"id":"coding","permission_mode":"balanced","tool_allowlist":["read_file","edit_file","bash","web_search"]}
+  ]
+}
+```
 
 ### `GET /api/workspaces`
 
@@ -136,12 +153,14 @@ The daemon streams events back to the UI over Server-Sent Events.
   "runtime": {
     "default_workspace": "default",
     "default_skill": "coding",
-    "active_workspace": "default"
+    "active_workspace": "default",
+    "active_skill": "coding"
   }
 }
 ```
 
 - `active_workspace` may be `null`.
+- `active_skill` may be `null`.
 
 ### `POST /api/config`
 
@@ -152,16 +171,19 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```json
 {
   "runtime": {
-    "active_workspace": "default"
+    "active_workspace": "default",
+    "active_skill": "coding"
   }
 }
 ```
 
 - Set `"active_workspace": null` to clear and fall back to `default_workspace`.
+- Set `"active_skill": null` to clear and fall back to `default_skill`.
 - Status codes:
   - `200` update applied.
   - `404` workspace does not exist.
-  - `400` invalid JSON or missing `runtime.active_workspace`.
+  - `404` skill does not exist.
+  - `400` invalid JSON or missing both runtime selection fields.
 
 ## Agent Runner Stream
 
