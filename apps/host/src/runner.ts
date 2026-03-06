@@ -102,9 +102,16 @@ const parseRunnerEvent = (line: string): DumplEvent => {
 
 export async function* streamRunnerEvents(
   input: RunnerInput,
+  launchOptions?: RunnerLaunchOptions,
 ): AsyncGenerator<DumplEvent> {
-  const child = spawn(process.execPath, [runnerEntryPoint()], {
+  const resolvedLaunchOptions = launchOptions ?? {
+    sandbox: { enabled: false, backend: "bwrap" as const },
+    workspacePath: process.cwd(),
+  };
+  const [runnerCommand, ...runnerArgs] = buildRunnerLaunchCommand(resolvedLaunchOptions);
+  const child = spawn(runnerCommand, runnerArgs, {
     stdio: ["pipe", "pipe", "pipe"],
+    cwd: resolvedLaunchOptions.workspacePath,
   });
   const stdout = createInterface({
     input: child.stdout,
