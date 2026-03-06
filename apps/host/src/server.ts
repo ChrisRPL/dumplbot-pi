@@ -153,11 +153,43 @@ const getWorkspaceErrorStatus = (message: string): number => {
   return 500;
 };
 
-const resolveWorkspaceId = async (requestedWorkspace: string | undefined): Promise<string> => {
+type WorkspaceSelection = {
+  defaultWorkspace: string;
+  activeWorkspace: string | null;
+};
+
+const loadWorkspaceSelection = async (): Promise<WorkspaceSelection> => {
   const runtimeConfig = await loadHostRuntimeConfig();
-  const workspaceCandidate = requestedWorkspace?.trim().length
-    ? requestedWorkspace
-    : runtimeConfig.defaultWorkspace;
+  const runtimeState = await loadHostRuntimeState();
+
+  return {
+    defaultWorkspace: runtimeConfig.defaultWorkspace,
+    activeWorkspace: runtimeState.activeWorkspace ?? null,
+  };
+};
+
+const pickWorkspaceCandidate = (
+  requestedWorkspace: string | undefined,
+  selection: WorkspaceSelection,
+): string => {
+  if (requestedWorkspace?.trim().length) {
+    return requestedWorkspace;
+  }
+
+  if (selection.activeWorkspace) {
+    return selection.activeWorkspace;
+  }
+
+  if (selection.defaultWorkspace.trim().length > 0) {
+    return selection.defaultWorkspace;
+  }
+
+  throw new Error("default workspace is required");
+};
+
+const resolveWorkspaceId = async (requestedWorkspace: string | undefined): Promise<string> => {
+  const selection = await loadWorkspaceSelection();
+  const workspaceCandidate = pickWorkspaceCandidate(requestedWorkspace, selection);
   const workspaceId = normalizeWorkspaceId(workspaceCandidate);
 
   if (!workspaceId) {
@@ -182,10 +214,21 @@ const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
 
 const handleWorkspaceList = async (response: ServerResponse): Promise<void> => {
   const workspaces = await listWorkspaces();
+  const selection = await loadWorkspaceSelection();
+  let activeWorkspaceId: string | null = null;
+
+  try {
+    const candidate = pickWorkspaceCandidate(undefined, selection);
+    activeWorkspaceId = normalizeWorkspaceId(candidate);
+  } catch {
+    activeWorkspaceId = null;
+  }
+
   sendJson(response, 200, {
     workspaces: workspaces.map((workspace) => ({
       id: workspace.id,
       has_instructions: workspace.hasInstructions,
+      is_active: workspace.id === activeWorkspaceId,
     })),
   });
 };
