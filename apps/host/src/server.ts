@@ -15,6 +15,7 @@ import type { RunnerInput } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadHostRuntimeConfig } from "./runtime-config";
 import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
+import { loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
 import {
@@ -153,6 +154,22 @@ const getWorkspaceErrorStatus = (message: string): number => {
   return 500;
 };
 
+const getSkillErrorStatus = (message: string): number => {
+  if (message === "skill not found") {
+    return 404;
+  }
+
+  if (message === "skill id is invalid") {
+    return 400;
+  }
+
+  if (message === "default skill is required") {
+    return 500;
+  }
+
+  return 500;
+};
+
 type WorkspaceSelection = {
   defaultWorkspace: string;
   activeWorkspace: string | null;
@@ -200,6 +217,29 @@ const resolveWorkspaceId = async (requestedWorkspace: string | undefined): Promi
   return workspaceId;
 };
 
+type ResolvedSkill = {
+  id: string;
+  toolAllowlist: string[];
+};
+
+const resolveSkill = async (requestedSkill: string | undefined): Promise<ResolvedSkill> => {
+  const runtimeConfig = await loadHostRuntimeConfig();
+  const skillCandidate = requestedSkill?.trim().length
+    ? requestedSkill
+    : runtimeConfig.defaultSkill;
+
+  if (!skillCandidate.trim().length) {
+    throw new Error("default skill is required");
+  }
+
+  const skillId = normalizeSkillId(skillCandidate);
+  const skill = await loadSkill(skillId);
+  return {
+    id: skill.id,
+    toolAllowlist: [...skill.toolAllowlist],
+  };
+};
+
 const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
   const runtimeConfig = await loadHostRuntimeConfig();
   const runtimeState = await loadHostRuntimeState();
@@ -207,6 +247,7 @@ const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
   return {
     runtime: {
       default_workspace: runtimeConfig.defaultWorkspace,
+      default_skill: runtimeConfig.defaultSkill,
       active_workspace: runtimeState.activeWorkspace ?? null,
     },
   };
@@ -360,6 +401,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   }
 
   let workspaceId: string;
+  let resolvedSkill: ResolvedSkill;
 
   try {
     workspaceId = await resolveWorkspaceId(body.workspace);
@@ -369,10 +411,19 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     return;
   }
 
+  try {
+    resolvedSkill = await resolveSkill(body.skill);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "skill resolution failed";
+    sendJson(response, getSkillErrorStatus(message), { error: message });
+    return;
+  }
+
   await streamTalkResponse(response, {
     prompt,
     workspace: workspaceId,
-    skill: body.skill,
+    skill: resolvedSkill.id,
+    toolAllowlist: resolvedSkill.toolAllowlist,
   });
 };
 
@@ -441,12 +492,21 @@ const handleAudioTalk = async (
   }
 
   let workspaceId: string;
+  let resolvedSkill: ResolvedSkill;
 
   try {
     workspaceId = await resolveWorkspaceId(body.workspace);
   } catch (error) {
     const message = error instanceof Error ? error.message : "workspace resolution failed";
     sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    resolvedSkill = await resolveSkill(body.skill);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "skill resolution failed";
+    sendJson(response, getSkillErrorStatus(message), { error: message });
     return;
   }
 
@@ -477,7 +537,8 @@ const handleAudioTalk = async (
     {
       prompt,
       workspace: workspaceId,
-      skill: body.skill,
+      skill: resolvedSkill.id,
+      toolAllowlist: resolvedSkill.toolAllowlist,
     },
     [],
     true,
