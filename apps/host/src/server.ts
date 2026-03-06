@@ -12,9 +12,9 @@ import type {
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
 import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
-import type { RunnerInput } from "./runner";
+import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
-import { loadHostRuntimeConfig } from "./runtime-config";
+import { loadHostRuntimeConfig, loadHostSandboxConfig } from "./runtime-config";
 import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
@@ -195,6 +195,11 @@ type WorkspaceSelection = {
   activeWorkspace: string | null;
 };
 
+type ResolvedWorkspace = {
+  id: string;
+  path: string;
+};
+
 const loadWorkspaceSelection = async (): Promise<WorkspaceSelection> => {
   const runtimeConfig = await loadHostRuntimeConfig();
   const runtimeState = await loadHostRuntimeState();
@@ -224,7 +229,9 @@ const pickWorkspaceCandidate = (
   throw new Error("default workspace is required");
 };
 
-const resolveWorkspaceId = async (requestedWorkspace: string | undefined): Promise<string> => {
+const resolveWorkspace = async (
+  requestedWorkspace: string | undefined,
+): Promise<ResolvedWorkspace> => {
   const selection = await loadWorkspaceSelection();
   const workspaceCandidate = pickWorkspaceCandidate(requestedWorkspace, selection);
   const workspaceId = normalizeWorkspaceId(workspaceCandidate);
@@ -233,8 +240,11 @@ const resolveWorkspaceId = async (requestedWorkspace: string | undefined): Promi
     throw new Error("default workspace is required");
   }
 
-  await getExistingWorkspacePath(workspaceId);
-  return workspaceId;
+  const workspacePath = await getExistingWorkspacePath(workspaceId);
+  return {
+    id: workspaceId,
+    path: workspacePath,
+  };
 };
 
 type ResolvedSkill = {
@@ -595,6 +605,7 @@ const handleConfigUpdate = async (
 const streamTalkResponse = async (
   response: ServerResponse,
   input: RunnerInput,
+  launchOptions: RunnerLaunchOptions,
   preludeEvents: DumplEvent[] = [],
   assumeHeadersSent = false,
 ): Promise<void> => {
@@ -608,7 +619,7 @@ const streamTalkResponse = async (
 
   let sawTerminalEvent = false;
 
-  for await (const event of streamRunnerEvents(input)) {
+  for await (const event of streamRunnerEvents(input, launchOptions)) {
     if (event.type === "done" || event.type === "error") {
       sawTerminalEvent = true;
     }
@@ -644,12 +655,12 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     return;
   }
 
-  let workspaceId: string;
+  let resolvedWorkspace: ResolvedWorkspace;
   let resolvedSkill: ResolvedSkill;
   let toolAllowlist: string[];
 
   try {
-    workspaceId = await resolveWorkspaceId(body.workspace);
+    resolvedWorkspace = await resolveWorkspace(body.workspace);
   } catch (error) {
     const message = error instanceof Error ? error.message : "workspace resolution failed";
     sendJson(response, getWorkspaceErrorStatus(message), { error: message });
@@ -673,17 +684,22 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     return;
   }
 
+  const sandboxConfig = await loadHostSandboxConfig();
+
   await streamTalkResponse(response, {
     prompt,
-    workspace: workspaceId,
+    workspace: resolvedWorkspace.id,
     skill: resolvedSkill.id,
     toolAllowlist,
     policy: {
-      workspace: workspaceId,
+      workspace: resolvedWorkspace.id,
       skill: resolvedSkill.id,
       toolAllowlist,
       permissionMode: resolvedSkill.permissionMode,
     },
+  }, {
+    sandbox: sandboxConfig,
+    workspacePath: resolvedWorkspace.path,
   }, buildSkillPreludeEvents({
     id: resolvedSkill.id,
     toolAllowlist,
@@ -754,12 +770,12 @@ const handleAudioTalk = async (
     return;
   }
 
-  let workspaceId: string;
+  let resolvedWorkspace: ResolvedWorkspace;
   let resolvedSkill: ResolvedSkill;
   let toolAllowlist: string[];
 
   try {
-    workspaceId = await resolveWorkspaceId(body.workspace);
+    resolvedWorkspace = await resolveWorkspace(body.workspace);
   } catch (error) {
     const message = error instanceof Error ? error.message : "workspace resolution failed";
     sendJson(response, getWorkspaceErrorStatus(message), { error: message });
@@ -782,6 +798,8 @@ const handleAudioTalk = async (
     streamPolicyDeniedResponse(response, message);
     return;
   }
+
+  const sandboxConfig = await loadHostSandboxConfig();
 
   sendSseHeaders(response);
 
@@ -809,15 +827,19 @@ const handleAudioTalk = async (
     response,
     {
       prompt,
-      workspace: workspaceId,
+      workspace: resolvedWorkspace.id,
       skill: resolvedSkill.id,
       toolAllowlist,
       policy: {
-        workspace: workspaceId,
+        workspace: resolvedWorkspace.id,
         skill: resolvedSkill.id,
         toolAllowlist,
         permissionMode: resolvedSkill.permissionMode,
       },
+    },
+    {
+      sandbox: sandboxConfig,
+      workspacePath: resolvedWorkspace.path,
     },
     buildSkillPreludeEvents({
       id: resolvedSkill.id,
