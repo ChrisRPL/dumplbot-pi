@@ -9,6 +9,7 @@
     "smoke:audio-routes": "npm run build && node scripts/smoke-audio-routes.mjs",
     "smoke:audio-strict-policy": "npm run build && node scripts/smoke-audio-strict-policy.mjs",
     "smoke:runner-policy-mismatch": "npm run build && node scripts/smoke-runner-policy-mismatch.mjs",
+    "smoke:runner-sandbox-launch": "npm run build && node scripts/smoke-runner-sandbox-launch.mjs",
     "smoke:runner-launch-builder": "npm run build && node scripts/smoke-runner-launch-builder.mjs",
     "smoke:workspace-config": "npm run build && node scripts/smoke-workspace-config.mjs",
     "start:agent-runner": "node dist/apps/agent-runner/src/main.js",
