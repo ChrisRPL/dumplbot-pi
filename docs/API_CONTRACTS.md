@@ -67,7 +67,9 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `skill` optional.
 - Response: SSE stream using the event types above.
 - Workspace selection order when `workspace` is omitted: `active_workspace` from `/api/config`, then `runtime.default_workspace`.
+- Skill selection order when `skill` is omitted: `runtime.default_skill`.
 - Returns `404` with `{"error":"workspace not found"}` when the selected workspace does not exist.
+- Returns `404` with `{"error":"skill not found"}` when the selected skill does not exist.
 
 ### `POST /api/audio`
 
@@ -80,6 +82,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 
 - Follow-up: either hand the client to `/api/talk` or expose a dedicated audio-run stream path later.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"workspace not found"}` when workspace selection is invalid.
+- `POST /api/audio/:audioId/talk` returns `404` with `{"error":"skill not found"}` when skill selection is invalid.
 
 ### `GET /api/workspaces`
 
@@ -132,6 +135,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 {
   "runtime": {
     "default_workspace": "default",
+    "default_skill": "coding",
     "active_workspace": "default"
   }
 }
@@ -162,6 +166,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ## Agent Runner Stream
 
 - Input: JSON on stdin from `dumplbotd`.
+- Current required input fields: `prompt`, `toolAllowlist`; optional: `workspace`, `skill`.
 - Output: JSONL over stdout.
 - Event vocabulary should match the SSE event shapes closely enough for simple translation.
 
