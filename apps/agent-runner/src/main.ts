@@ -24,6 +24,7 @@ type RunnerInput = {
 };
 
 const PERMISSION_MODES = new Set<PermissionMode>(["strict", "balanced", "permissive"]);
+const INTERNAL_TOOL_NAMES = new Set(["planner"]);
 
 const readStdIn = async (): Promise<string> => {
   const chunks: Buffer[] = [];
@@ -135,6 +136,22 @@ const parsePolicy = (value: unknown): RunnerPolicy => {
   };
 };
 
+const enforcePermissionMode = (policy: RunnerPolicy): void => {
+  if (policy.permissionMode === "strict" && policy.toolAllowlist.includes("bash")) {
+    fail("runner strict mode forbids bash tool");
+  }
+};
+
+const assertToolAllowedByPolicy = (policy: RunnerPolicy, toolName: string): void => {
+  if (INTERNAL_TOOL_NAMES.has(toolName)) {
+    return;
+  }
+
+  if (!policy.toolAllowlist.includes(toolName)) {
+    fail(`runner policy blocked tool: ${toolName}`);
+  }
+};
+
 const parseInput = (raw: string): RunnerInput => {
   if (raw.length === 0) {
     fail("runner input is required");
@@ -177,6 +194,8 @@ const parseInput = (raw: string): RunnerInput => {
     fail("runner policy skill mismatch");
   }
 
+  enforcePermissionMode(parsedPolicy);
+
   return {
     ...input,
     workspace: parsedPolicy.workspace,
@@ -191,6 +210,10 @@ const main = async (): Promise<void> => {
   const input = parseInput(raw);
 
   for (const event of buildScaffoldEvents(input)) {
+    if (event.type === "tool") {
+      assertToolAllowedByPolicy(input.policy, event.name);
+    }
+
     writeEvent(event);
   }
 };
