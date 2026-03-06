@@ -14,6 +14,7 @@ import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
 import type { RunnerInput } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadHostRuntimeConfig } from "./runtime-config";
+import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
 import {
@@ -37,6 +38,12 @@ type DumplAudioTalkRequest = {
 type DumplCreateWorkspaceRequest = {
   id: string;
   instructions?: string;
+};
+
+type DumplUpdateConfigRequest = {
+  runtime?: {
+    active_workspace?: string | null;
+  };
 };
 
 type AudioAction = "talk" | "transcribe";
@@ -161,6 +168,18 @@ const resolveWorkspaceId = async (requestedWorkspace: string | undefined): Promi
   return workspaceId;
 };
 
+const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
+  const runtimeConfig = await loadHostRuntimeConfig();
+  const runtimeState = await loadHostRuntimeState();
+
+  return {
+    runtime: {
+      default_workspace: runtimeConfig.defaultWorkspace,
+      active_workspace: runtimeState.activeWorkspace ?? null,
+    },
+  };
+};
+
 const handleWorkspaceList = async (response: ServerResponse): Promise<void> => {
   const workspaces = await listWorkspaces();
   sendJson(response, 200, {
@@ -197,6 +216,52 @@ const handleWorkspaceCreate = async (
     sendJson(response, statusCode, { error: message });
     return;
   }
+};
+
+const handleConfigGet = async (response: ServerResponse): Promise<void> => {
+  sendJson(response, 200, await getConfigResponsePayload());
+};
+
+const handleConfigUpdate = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplUpdateConfigRequest;
+
+  try {
+    body = await readJson<DumplUpdateConfigRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  if (!body.runtime || !("active_workspace" in body.runtime)) {
+    sendJson(response, 400, { error: "runtime.active_workspace is required" });
+    return;
+  }
+
+  const activeWorkspace = body.runtime.active_workspace;
+
+  if (typeof activeWorkspace === "undefined") {
+    sendJson(response, 400, { error: "runtime.active_workspace is required" });
+    return;
+  }
+
+  try {
+    if (activeWorkspace === null) {
+      await writeHostRuntimeState({});
+    } else {
+      const workspaceId = normalizeWorkspaceId(activeWorkspace);
+      await getExistingWorkspacePath(workspaceId);
+      await writeHostRuntimeState({ activeWorkspace: workspaceId });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace update failed";
+    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
+  sendJson(response, 200, await getConfigResponsePayload());
 };
 
 const streamTalkResponse = async (
@@ -431,6 +496,16 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/workspaces") {
         await handleWorkspaceCreate(request, response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/config") {
+        await handleConfigGet(response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/config") {
+        await handleConfigUpdate(request, response);
         return;
       }
 
