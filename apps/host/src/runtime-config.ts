@@ -2,10 +2,12 @@ import { readFile } from "node:fs/promises";
 
 export type HostRuntimeConfig = {
   defaultWorkspace: string;
+  defaultSkill: string;
 };
 
 const DEFAULT_CONFIG_PATH = "/etc/dumplbot/config.yaml";
 const DEFAULT_WORKSPACE = "default";
+const DEFAULT_SKILL = "coding";
 
 const applyRuntimeConfigLine = (
   config: HostRuntimeConfig,
@@ -14,6 +16,11 @@ const applyRuntimeConfigLine = (
 ): void => {
   if (key === "default_workspace" && value) {
     config.defaultWorkspace = value;
+    return;
+  }
+
+  if (key === "default_skill" && value) {
+    config.defaultSkill = value;
   }
 };
 
@@ -22,6 +29,7 @@ export const loadHostRuntimeConfig = async (
 ): Promise<HostRuntimeConfig> => {
   const config: HostRuntimeConfig = {
     defaultWorkspace: process.env.DUMPLBOT_DEFAULT_WORKSPACE ?? DEFAULT_WORKSPACE,
+    defaultSkill: process.env.DUMPLBOT_DEFAULT_SKILL ?? DEFAULT_SKILL,
   };
 
   try {
