@@ -7,6 +7,7 @@ import type {
   DumplEvent,
   DumplStatusEvent,
   DumplSttEvent,
+  DumplToolEvent,
 } from "../../../packages/core/src";
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
@@ -342,6 +343,20 @@ const resolveToolAllowlist = (
   return parsedRequestedTools;
 };
 
+const buildSkillPreludeEvents = (skill: ResolvedSkill): DumplEvent[] => {
+  const statusEvent: DumplStatusEvent = {
+    type: "status",
+    message: `Using skill ${skill.id}`,
+  };
+  const toolEvent: DumplToolEvent = {
+    type: "tool",
+    name: "skill-policy",
+    detail: skill.toolAllowlist.join(","),
+  };
+
+  return [statusEvent, toolEvent];
+};
+
 const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
   const runtimeConfig = await loadHostRuntimeConfig();
   const runtimeState = await loadHostRuntimeState();
@@ -607,7 +622,10 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     workspace: workspaceId,
     skill: resolvedSkill.id,
     toolAllowlist,
-  });
+  }, buildSkillPreludeEvents({
+    id: resolvedSkill.id,
+    toolAllowlist,
+  }));
 };
 
 const handleAudio = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -732,7 +750,10 @@ const handleAudioTalk = async (
       skill: resolvedSkill.id,
       toolAllowlist,
     },
-    [],
+    buildSkillPreludeEvents({
+      id: resolvedSkill.id,
+      toolAllowlist,
+    }),
     true,
   );
 };
