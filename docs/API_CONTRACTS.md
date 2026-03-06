@@ -66,6 +66,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `workspace` optional.
 - `skill` optional.
 - Response: SSE stream using the event types above.
+- Workspace selection order when `workspace` is omitted: `active_workspace` from `/api/config`, then `runtime.default_workspace`.
 - Returns `404` with `{"error":"workspace not found"}` when the selected workspace does not exist.
 
 ### `POST /api/audio`
@@ -83,6 +84,15 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `GET /api/workspaces`
 
 - Return workspace list and basic metadata.
+- Current response shape:
+
+```json
+{
+  "workspaces": [
+    {"id":"default","has_instructions":true,"is_active":true}
+  ]
+}
+```
 
 ### `POST /api/workspaces`
 
@@ -116,11 +126,38 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `GET /api/config`
 
 - Return non-secret config needed for UI.
+- Current response shape:
+
+```json
+{
+  "runtime": {
+    "default_workspace": "default",
+    "active_workspace": "default"
+  }
+}
+```
+
+- `active_workspace` may be `null`.
 
 ### `POST /api/config`
 
 - Update allowed mutable config values.
 - Keep LAN-only once remote config exists.
+- Current mutable field:
+
+```json
+{
+  "runtime": {
+    "active_workspace": "default"
+  }
+}
+```
+
+- Set `"active_workspace": null` to clear and fall back to `default_workspace`.
+- Status codes:
+  - `200` update applied.
+  - `404` workspace does not exist.
+  - `400` invalid JSON or missing `runtime.active_workspace`.
 
 ## Agent Runner Stream
 
