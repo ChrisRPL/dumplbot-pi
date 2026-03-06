@@ -29,11 +29,13 @@ type DumplTalkRequest = {
   text: string;
   workspace?: string;
   skill?: string;
+  tools?: string[];
 };
 
 type DumplAudioTalkRequest = {
   workspace?: string;
   skill?: string;
+  tools?: string[];
 };
 
 type DumplCreateWorkspaceRequest = {
@@ -171,6 +173,18 @@ const getSkillErrorStatus = (message: string): number => {
   return 500;
 };
 
+const getPolicyErrorStatus = (message: string): number => {
+  if (message === "requested tools are not allowed by skill") {
+    return 403;
+  }
+
+  if (message === "tools must be an array of non-empty strings") {
+    return 400;
+  }
+
+  return 500;
+};
+
 type WorkspaceSelection = {
   defaultWorkspace: string;
   activeWorkspace: string | null;
@@ -254,6 +268,61 @@ const resolveSkill = async (requestedSkill: string | undefined): Promise<Resolve
     id: skill.id,
     toolAllowlist: [...skill.toolAllowlist],
   };
+};
+
+const parseRequestedTools = (requestedTools: string[] | undefined): string[] | null => {
+  if (typeof requestedTools === "undefined") {
+    return null;
+  }
+
+  if (!Array.isArray(requestedTools)) {
+    throw new Error("tools must be an array of non-empty strings");
+  }
+
+  const normalizedTools: string[] = [];
+
+  for (const requestedTool of requestedTools) {
+    if (typeof requestedTool !== "string") {
+      throw new Error("tools must be an array of non-empty strings");
+    }
+
+    const normalizedTool = requestedTool.trim();
+
+    if (normalizedTool.length === 0) {
+      throw new Error("tools must be an array of non-empty strings");
+    }
+
+    normalizedTools.push(normalizedTool);
+  }
+
+  const uniqueTools = Array.from(new Set(normalizedTools));
+
+  if (uniqueTools.length === 0) {
+    throw new Error("tools must be an array of non-empty strings");
+  }
+
+  return uniqueTools;
+};
+
+const resolveToolAllowlist = (
+  skillToolAllowlist: string[],
+  requestedTools: string[] | undefined,
+): string[] => {
+  const parsedRequestedTools = parseRequestedTools(requestedTools);
+
+  if (!parsedRequestedTools) {
+    return [...skillToolAllowlist];
+  }
+
+  const deniedTools = parsedRequestedTools.filter(
+    (requestedTool) => !skillToolAllowlist.includes(requestedTool),
+  );
+
+  if (deniedTools.length > 0) {
+    throw new Error("requested tools are not allowed by skill");
+  }
+
+  return parsedRequestedTools;
 };
 
 const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
@@ -479,6 +548,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
 
   let workspaceId: string;
   let resolvedSkill: ResolvedSkill;
+  let toolAllowlist: string[];
 
   try {
     workspaceId = await resolveWorkspaceId(body.workspace);
@@ -496,11 +566,19 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     return;
   }
 
+  try {
+    toolAllowlist = resolveToolAllowlist(resolvedSkill.toolAllowlist, body.tools);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "policy validation failed";
+    sendJson(response, getPolicyErrorStatus(message), { error: message });
+    return;
+  }
+
   await streamTalkResponse(response, {
     prompt,
     workspace: workspaceId,
     skill: resolvedSkill.id,
-    toolAllowlist: resolvedSkill.toolAllowlist,
+    toolAllowlist,
   });
 };
 
@@ -570,6 +648,7 @@ const handleAudioTalk = async (
 
   let workspaceId: string;
   let resolvedSkill: ResolvedSkill;
+  let toolAllowlist: string[];
 
   try {
     workspaceId = await resolveWorkspaceId(body.workspace);
@@ -584,6 +663,14 @@ const handleAudioTalk = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : "skill resolution failed";
     sendJson(response, getSkillErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    toolAllowlist = resolveToolAllowlist(resolvedSkill.toolAllowlist, body.tools);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "policy validation failed";
+    sendJson(response, getPolicyErrorStatus(message), { error: message });
     return;
   }
 
@@ -615,7 +702,7 @@ const handleAudioTalk = async (
       prompt,
       workspace: workspaceId,
       skill: resolvedSkill.id,
-      toolAllowlist: resolvedSkill.toolAllowlist,
+      toolAllowlist,
     },
     [],
     true,
