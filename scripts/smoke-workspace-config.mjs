@@ -129,6 +129,18 @@ const runSmoke = async () => {
       getConfigPayload.runtime.active_workspace === null,
       "unexpected initial active workspace from /api/config",
     );
+    assert(
+      getConfigPayload.runtime.active_skill === null,
+      "unexpected initial active skill from /api/config",
+    );
+
+    const skillListResponse = await fetch(`${baseUrl}/api/skills`);
+    assert(skillListResponse.status === 200, "expected GET /api/skills to return 200");
+    const skillListPayload = await skillListResponse.json();
+    const codingSkill = skillListPayload.skills.find((skill) => skill.id === "coding");
+    const researchSkill = skillListPayload.skills.find((skill) => skill.id === "research");
+    assert(codingSkill, "expected coding skill in /api/skills");
+    assert(researchSkill, "expected research skill in /api/skills");
 
     const initialListResponse = await fetch(`${baseUrl}/api/workspaces`);
     assert(initialListResponse.status === 200, "expected GET /api/workspaces to return 200");
@@ -211,6 +223,80 @@ const runSmoke = async () => {
       "expected /api/talk missing skill to return 404",
     );
 
+    const setActiveSkillResponse = await fetch(`${baseUrl}/api/config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runtime: { active_skill: "research" } }),
+    });
+    assert(
+      setActiveSkillResponse.status === 200,
+      "expected active skill update to return 200",
+    );
+    const setActiveSkillPayload = await setActiveSkillResponse.json();
+    assert(
+      setActiveSkillPayload.runtime.active_skill === "research",
+      "active skill was not stored",
+    );
+
+    const talkWithActiveSkillResponse = await fetch(`${baseUrl}/api/talk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "ping" }),
+    });
+    assert(
+      talkWithActiveSkillResponse.status === 200,
+      "expected /api/talk with active skill to return 200",
+    );
+    const talkWithActiveSkillEvents = parseSsePayload(await talkWithActiveSkillResponse.text());
+    const activeSkillToolEvent = talkWithActiveSkillEvents.find(
+      (event) => event.eventType === "tool",
+    );
+    assert(
+      activeSkillToolEvent?.data?.detail === "research",
+      "talk did not use active skill fallback",
+    );
+
+    const deniedToolTalkResponse = await fetch(`${baseUrl}/api/talk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: "ping",
+        skill: "coding",
+        tools: ["web_fetch"],
+      }),
+    });
+    assert(
+      deniedToolTalkResponse.status === 403,
+      "expected talk with denied tools to return 403",
+    );
+
+    const invalidToolTalkResponse = await fetch(`${baseUrl}/api/talk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: "ping",
+        tools: [],
+      }),
+    });
+    assert(
+      invalidToolTalkResponse.status === 400,
+      "expected talk with invalid tools to return 400",
+    );
+
+    const allowedToolTalkResponse = await fetch(`${baseUrl}/api/talk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: "ping",
+        skill: "coding",
+        tools: ["read_file"],
+      }),
+    });
+    assert(
+      allowedToolTalkResponse.status === 200,
+      "expected talk with allowed tools to return 200",
+    );
+
     const setMissingWorkspaceResponse = await fetch(`${baseUrl}/api/config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -234,13 +320,17 @@ const runSmoke = async () => {
     const clearActiveResponse = await fetch(`${baseUrl}/api/config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runtime: { active_workspace: null } }),
+      body: JSON.stringify({ runtime: { active_workspace: null, active_skill: null } }),
     });
     assert(clearActiveResponse.status === 200, "expected active workspace clear to return 200");
     const clearActivePayload = await clearActiveResponse.json();
     assert(
       clearActivePayload.runtime.active_workspace === null,
       "active workspace clear did not persist",
+    );
+    assert(
+      clearActivePayload.runtime.active_skill === null,
+      "active skill clear did not persist",
     );
 
     const stateFileContents = await readFile(runtimeStatePath, "utf8");
@@ -282,6 +372,19 @@ const runSmoke = async () => {
     assert(
       audioTalkMissingSkillResponse.status === 404,
       "expected /api/audio/:id/talk missing skill to return 404",
+    );
+
+    const audioTalkDeniedToolsResponse = await fetch(
+      `${baseUrl}/api/audio/${uploadPayload.audio_id}/talk`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ skill: "coding", tools: ["web_fetch"] }),
+      },
+    );
+    assert(
+      audioTalkDeniedToolsResponse.status === 403,
+      "expected /api/audio/:id/talk denied tools to return 403",
     );
 
     console.log("workspace config smoke ok");
