@@ -68,7 +68,10 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `tools` optional; when present, it must be a non-empty string array and each value must be allowed by the selected skill.
 - Response: SSE stream using the event types above.
 - Workspace selection order when `workspace` is omitted: `active_workspace` from `/api/config`, then `runtime.default_workspace`.
-- Skill selection order when `skill` is omitted: `runtime.default_skill`.
+- Skill selection order when `skill` is omitted: `active_skill` from `/api/config`, then `runtime.default_skill`.
+- Host emits skill prelude metadata before runner events:
+  - `status`: `Using skill <skill-id>`
+  - `tool`: `{"name":"skill-policy","detail":"<comma-separated allowlist>"}`
 - Returns `404` with `{"error":"workspace not found"}` when the selected workspace does not exist.
 - Returns `404` with `{"error":"skill not found"}` when the selected skill does not exist.
 - Returns `403` with `{"error":"requested tools are not allowed by skill"}` when `tools` conflicts with skill policy.
@@ -96,7 +99,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```json
 {
   "skills": [
-    {"id":"coding","permission_mode":"balanced","tool_allowlist":["read_file","edit_file","bash","web_search"]}
+    {"id":"coding","permission_mode":"balanced","tool_allowlist":["read_file","edit_file","bash","web_search"],"is_active":true}
   ]
 }
 ```
@@ -188,7 +191,19 @@ The daemon streams events back to the UI over Server-Sent Events.
 ## Agent Runner Stream
 
 - Input: JSON on stdin from `dumplbotd`.
-- Current required input fields: `prompt`, `toolAllowlist`; optional: `workspace`, `skill`.
+- Current required top-level input fields: `prompt`, `toolAllowlist`, `policy`; optional: `workspace`, `skill`.
+- `policy` object shape:
+
+```json
+{
+  "workspace":"default",
+  "skill":"coding",
+  "toolAllowlist":["read_file","bash"],
+  "permissionMode":"balanced"
+}
+```
+
+- Runner rejects mismatches between top-level allowlist and policy allowlist.
 - Output: JSONL over stdout.
 - Event vocabulary should match the SSE event shapes closely enough for simple translation.
 
