@@ -252,11 +252,28 @@ const loadSkillSelection = async (): Promise<SkillSelection> => {
   };
 };
 
+const pickSkillCandidate = (
+  requestedSkill: string | undefined,
+  selection: SkillSelection,
+): string => {
+  if (requestedSkill?.trim().length) {
+    return requestedSkill;
+  }
+
+  if (selection.activeSkill) {
+    return selection.activeSkill;
+  }
+
+  if (selection.defaultSkill.trim().length > 0) {
+    return selection.defaultSkill;
+  }
+
+  throw new Error("default skill is required");
+};
+
 const resolveSkill = async (requestedSkill: string | undefined): Promise<ResolvedSkill> => {
   const selection = await loadSkillSelection();
-  const skillCandidate = requestedSkill?.trim().length
-    ? requestedSkill
-    : selection.activeSkill ?? selection.defaultSkill;
+  const skillCandidate = pickSkillCandidate(requestedSkill, selection);
 
   if (!skillCandidate.trim().length) {
     throw new Error("default skill is required");
@@ -390,11 +407,22 @@ const handleWorkspaceCreate = async (
 
 const handleSkillList = async (response: ServerResponse): Promise<void> => {
   const skills = await listSkills();
+  const selection = await loadSkillSelection();
+  let activeSkillId: string | null = null;
+
+  try {
+    const candidate = pickSkillCandidate(undefined, selection);
+    activeSkillId = normalizeSkillId(candidate);
+  } catch {
+    activeSkillId = null;
+  }
+
   sendJson(response, 200, {
     skills: skills.map((skill) => ({
       id: skill.id,
       permission_mode: skill.permissionMode,
       tool_allowlist: skill.toolAllowlist,
+      is_active: skill.id === activeSkillId,
     })),
   });
 };
