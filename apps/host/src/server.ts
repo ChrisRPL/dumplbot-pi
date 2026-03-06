@@ -15,7 +15,7 @@ import type { RunnerInput } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadHostRuntimeConfig } from "./runtime-config";
 import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
-import { loadSkill, normalizeSkillId } from "./skill-store";
+import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
 import {
@@ -300,6 +300,17 @@ const handleWorkspaceCreate = async (
     sendJson(response, statusCode, { error: message });
     return;
   }
+};
+
+const handleSkillList = async (response: ServerResponse): Promise<void> => {
+  const skills = await listSkills();
+  sendJson(response, 200, {
+    skills: skills.map((skill) => ({
+      id: skill.id,
+      permission_mode: skill.permissionMode,
+      tool_allowlist: skill.toolAllowlist,
+    })),
+  });
 };
 
 const handleConfigGet = async (response: ServerResponse): Promise<void> => {
@@ -600,6 +611,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/workspaces") {
         await handleWorkspaceCreate(request, response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/skills") {
+        await handleSkillList(response);
         return;
       }
 
