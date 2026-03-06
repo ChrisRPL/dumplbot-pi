@@ -203,6 +203,9 @@ The daemon streams events back to the UI over Server-Sent Events.
 }
 ```
 
+- Current runner guardrails:
+  - `permissionMode: "strict"` rejects `bash` in `toolAllowlist`.
+  - non-internal tool events are blocked if not listed in `policy.toolAllowlist`.
 - Runner rejects mismatches between top-level allowlist and policy allowlist.
 - Output: JSONL over stdout.
 - Event vocabulary should match the SSE event shapes closely enough for simple translation.
