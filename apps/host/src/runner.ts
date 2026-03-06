@@ -79,6 +79,7 @@ export async function* streamRunnerEvents(
   });
   let childErrorMessage: string | null = null;
   const stderrLines: string[] = [];
+  let sawRunnerErrorEvent = false;
 
   child.on("error", (error) => {
     childErrorMessage = error.message;
@@ -103,7 +104,13 @@ export async function* streamRunnerEvents(
       }
 
       try {
-        yield parseRunnerEvent(trimmed);
+        const event = parseRunnerEvent(trimmed);
+
+        if (event.type === "error") {
+          sawRunnerErrorEvent = true;
+        }
+
+        yield event;
       } catch (error) {
         child.kill();
         const message = error instanceof Error ? error.message : "runner stream failed";
@@ -132,6 +139,10 @@ export async function* streamRunnerEvents(
   }
 
   if (exitCode && exitCode !== 0) {
+    if (sawRunnerErrorEvent) {
+      return;
+    }
+
     const detail =
       stderrLines.length > 0 ? `: ${stderrLines.join(" | ")}` : "";
     yield toErrorEvent(`runner exited with code ${exitCode}${detail}`);
