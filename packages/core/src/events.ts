@@ -9,6 +9,7 @@ export type DumplEventType =
 export type DumplStatusEvent = {
   type: "status";
   message: string;
+  phase?: string;
 };
 
 export type DumplSttEvent = {
@@ -36,6 +37,7 @@ export type DumplDoneEvent = {
 export type DumplErrorEvent = {
   type: "error";
   message: string;
+  code?: string;
 };
 
 export type DumplEvent =

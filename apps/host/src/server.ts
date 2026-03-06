@@ -174,20 +174,20 @@ const getSkillErrorStatus = (message: string): number => {
   return 500;
 };
 
-const getPolicyErrorStatus = (message: string): number => {
+const getPolicyErrorCode = (message: string): string => {
   if (message === "requested tools are not allowed by skill") {
-    return 403;
+    return "policy_tools_denied";
   }
 
   if (message === "strict mode does not allow requested tools") {
-    return 403;
+    return "policy_mode_denied";
   }
 
   if (message === "tools must be an array of non-empty strings") {
-    return 400;
+    return "policy_tools_invalid";
   }
 
-  return 500;
+  return "policy_denied";
 };
 
 type WorkspaceSelection = {
@@ -387,6 +387,29 @@ const buildSkillPreludeEvents = (skill: SkillPreludeInput): DumplEvent[] => {
   };
 
   return [statusEvent, toolEvent];
+};
+
+const streamPolicyDeniedResponse = (
+  response: ServerResponse,
+  message: string,
+): void => {
+  sendSseHeaders(response);
+
+  const statusEvent: DumplStatusEvent = {
+    type: "status",
+    message: "Policy check failed",
+    phase: "policy",
+  };
+  writeSseEvent(response, statusEvent);
+
+  const errorEvent: DumplErrorEvent = {
+    type: "error",
+    message,
+    code: getPolicyErrorCode(message),
+  };
+  writeSseEvent(response, errorEvent);
+
+  response.end();
 };
 
 const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
@@ -646,7 +669,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     toolAllowlist = applyPermissionModeToolClamp(resolvedSkill.permissionMode, toolAllowlist);
   } catch (error) {
     const message = error instanceof Error ? error.message : "policy validation failed";
-    sendJson(response, getPolicyErrorStatus(message), { error: message });
+    streamPolicyDeniedResponse(response, message);
     return;
   }
 
@@ -756,7 +779,7 @@ const handleAudioTalk = async (
     toolAllowlist = applyPermissionModeToolClamp(resolvedSkill.permissionMode, toolAllowlist);
   } catch (error) {
     const message = error instanceof Error ? error.message : "policy validation failed";
-    sendJson(response, getPolicyErrorStatus(message), { error: message });
+    streamPolicyDeniedResponse(response, message);
     return;
   }
 
