@@ -8,6 +8,7 @@ import type {
   DumplEvent,
   PermissionMode,
 } from "../../../packages/core/src";
+import type { HostSandboxConfig } from "./runtime-config";
 
 export type RunnerPolicy = {
   workspace: string;
@@ -24,6 +25,11 @@ export type RunnerInput = {
   policy: RunnerPolicy;
 };
 
+export type RunnerLaunchOptions = {
+  sandbox: HostSandboxConfig;
+  workspacePath: string;
+};
+
 const KNOWN_EVENT_TYPES = new Set([
   "status",
   "stt",
@@ -35,6 +41,37 @@ const KNOWN_EVENT_TYPES = new Set([
 
 const runnerEntryPoint = (): string =>
   resolve(__dirname, "../../agent-runner/src/main.js");
+
+const buildDirectRunnerCommand = (): string[] => [
+  process.execPath,
+  runnerEntryPoint(),
+];
+
+const buildBwrapRunnerCommand = (workspacePath: string): string[] => [
+  "bwrap",
+  "--ro-bind",
+  "/",
+  "/",
+  "--bind",
+  workspacePath,
+  workspacePath,
+  process.execPath,
+  runnerEntryPoint(),
+];
+
+export const buildRunnerLaunchCommand = (
+  options: RunnerLaunchOptions,
+): string[] => {
+  if (!options.sandbox.enabled) {
+    return buildDirectRunnerCommand();
+  }
+
+  if (options.sandbox.backend !== "bwrap") {
+    throw new Error("sandbox backend is unsupported");
+  }
+
+  return buildBwrapRunnerCommand(options.workspacePath);
+};
 
 const toErrorEvent = (message: string): DumplErrorEvent => ({
   type: "error",
