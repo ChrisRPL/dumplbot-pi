@@ -179,6 +179,10 @@ const getPolicyErrorStatus = (message: string): number => {
     return 403;
   }
 
+  if (message === "strict mode does not allow requested tools") {
+    return 403;
+  }
+
   if (message === "tools must be an array of non-empty strings") {
     return 400;
   }
@@ -343,6 +347,27 @@ const resolveToolAllowlist = (
   }
 
   return parsedRequestedTools;
+};
+
+const STRICT_MODE_BLOCKED_TOOLS = new Set(["bash"]);
+
+const applyPermissionModeToolClamp = (
+  permissionMode: ResolvedSkill["permissionMode"],
+  toolAllowlist: string[],
+): string[] => {
+  if (permissionMode !== "strict") {
+    return [...toolAllowlist];
+  }
+
+  const clampedToolAllowlist = toolAllowlist.filter(
+    (toolName) => !STRICT_MODE_BLOCKED_TOOLS.has(toolName),
+  );
+
+  if (clampedToolAllowlist.length === 0) {
+    throw new Error("strict mode does not allow requested tools");
+  }
+
+  return clampedToolAllowlist;
 };
 
 type SkillPreludeInput = {
@@ -618,6 +643,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
 
   try {
     toolAllowlist = resolveToolAllowlist(resolvedSkill.toolAllowlist, body.tools);
+    toolAllowlist = applyPermissionModeToolClamp(resolvedSkill.permissionMode, toolAllowlist);
   } catch (error) {
     const message = error instanceof Error ? error.message : "policy validation failed";
     sendJson(response, getPolicyErrorStatus(message), { error: message });
@@ -727,6 +753,7 @@ const handleAudioTalk = async (
 
   try {
     toolAllowlist = resolveToolAllowlist(resolvedSkill.toolAllowlist, body.tools);
+    toolAllowlist = applyPermissionModeToolClamp(resolvedSkill.permissionMode, toolAllowlist);
   } catch (error) {
     const message = error instanceof Error ? error.message : "policy validation failed";
     sendJson(response, getPolicyErrorStatus(message), { error: message });
