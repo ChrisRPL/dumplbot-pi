@@ -2,17 +2,28 @@ import type {
   DumplDoneEvent,
   DumplErrorEvent,
   DumplEvent,
+  PermissionMode,
   DumplStatusEvent,
   DumplTokenEvent,
   DumplToolEvent,
 } from "../../../packages/core/src";
+
+type RunnerPolicy = {
+  workspace: string;
+  skill: string;
+  toolAllowlist: string[];
+  permissionMode: PermissionMode;
+};
 
 type RunnerInput = {
   prompt: string;
   workspace?: string;
   skill?: string;
   toolAllowlist: string[];
+  policy: RunnerPolicy;
 };
+
+const PERMISSION_MODES = new Set<PermissionMode>(["strict", "balanced", "permissive"]);
 
 const readStdIn = async (): Promise<string> => {
   const chunks: Buffer[] = [];
@@ -89,6 +100,41 @@ const parseToolAllowlist = (value: unknown): string[] => {
   return dedupedAllowlist;
 };
 
+const parsePolicy = (value: unknown): RunnerPolicy => {
+  if (!value || typeof value !== "object") {
+    fail("runner input must include policy");
+  }
+
+  const policyObject = value as {
+    workspace?: unknown;
+    skill?: unknown;
+    toolAllowlist?: unknown;
+    permissionMode?: unknown;
+  };
+
+  if (typeof policyObject.workspace !== "string" || policyObject.workspace.trim().length === 0) {
+    fail("runner policy.workspace must be non-empty string");
+  }
+
+  if (typeof policyObject.skill !== "string" || policyObject.skill.trim().length === 0) {
+    fail("runner policy.skill must be non-empty string");
+  }
+
+  if (
+    typeof policyObject.permissionMode !== "string"
+    || !PERMISSION_MODES.has(policyObject.permissionMode as PermissionMode)
+  ) {
+    fail("runner policy.permissionMode is invalid");
+  }
+
+  return {
+    workspace: (policyObject.workspace as string).trim(),
+    skill: (policyObject.skill as string).trim(),
+    toolAllowlist: parseToolAllowlist(policyObject.toolAllowlist),
+    permissionMode: policyObject.permissionMode as PermissionMode,
+  };
+};
+
 const parseInput = (raw: string): RunnerInput => {
   if (raw.length === 0) {
     fail("runner input is required");
@@ -112,9 +158,31 @@ const parseInput = (raw: string): RunnerInput => {
     fail("prompt must be non-empty");
   }
 
+  const parsedToolAllowlist = parseToolAllowlist(
+    (parsed as { toolAllowlist?: unknown }).toolAllowlist,
+  );
+  const parsedPolicy = parsePolicy((parsed as { policy?: unknown }).policy);
+  const topLevelAllowlist = parsedToolAllowlist.join("\u0000");
+  const policyAllowlist = parsedPolicy.toolAllowlist.join("\u0000");
+
+  if (topLevelAllowlist !== policyAllowlist) {
+    fail("runner policy tool_allowlist mismatch");
+  }
+
+  if (input.workspace && input.workspace.trim() !== parsedPolicy.workspace) {
+    fail("runner policy workspace mismatch");
+  }
+
+  if (input.skill && input.skill.trim() !== parsedPolicy.skill) {
+    fail("runner policy skill mismatch");
+  }
+
   return {
     ...input,
-    toolAllowlist: parseToolAllowlist((parsed as { toolAllowlist?: unknown }).toolAllowlist),
+    workspace: parsedPolicy.workspace,
+    skill: parsedPolicy.skill,
+    toolAllowlist: parsedToolAllowlist,
+    policy: parsedPolicy,
   };
 };
 
