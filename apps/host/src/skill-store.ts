@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type { DumplSkill, PermissionMode } from "../../../packages/core/src";
@@ -175,6 +175,12 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
 const getSkillPath = (skillId: string): string =>
   join(SKILLS_ROOT, normalizeSkillId(skillId), "skill.yaml");
 
+export type SkillSummary = {
+  id: string;
+  permissionMode: PermissionMode;
+  toolAllowlist: string[];
+};
+
 export const loadSkill = async (skillId: string): Promise<DumplSkill> => {
   const normalizedSkillId = normalizeSkillId(skillId);
   const skillPath = getSkillPath(normalizedSkillId);
@@ -202,4 +208,48 @@ export const loadSkill = async (skillId: string): Promise<DumplSkill> => {
   }
 
   return parsedSkill;
+};
+
+export const listSkills = async (): Promise<SkillSummary[]> => {
+  let rootEntries;
+
+  try {
+    rootEntries = await readdir(SKILLS_ROOT, { withFileTypes: true });
+  } catch (error) {
+    const isMissingDirectory =
+      error instanceof Error
+      && "code" in error
+      && error.code === "ENOENT";
+
+    if (isMissingDirectory) {
+      return [];
+    }
+
+    throw error;
+  }
+
+  const skillSummaries: SkillSummary[] = [];
+
+  for (const rootEntry of rootEntries) {
+    if (!rootEntry.isDirectory()) {
+      continue;
+    }
+
+    let normalizedSkillId: string;
+
+    try {
+      normalizedSkillId = normalizeSkillId(rootEntry.name);
+    } catch {
+      continue;
+    }
+
+    const skill = await loadSkill(normalizedSkillId);
+    skillSummaries.push({
+      id: skill.id,
+      permissionMode: skill.permissionMode,
+      toolAllowlist: [...skill.toolAllowlist],
+    });
+  }
+
+  return skillSummaries.sort((left, right) => left.id.localeCompare(right.id));
 };
