@@ -137,18 +137,28 @@ const runSmoke = async () => {
     const talkResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "ping" }),
+      body: JSON.stringify({ text: "ping", tools: ["bash"] }),
     });
     assert(talkResponse.status === 200, "expected /api/talk to return 200");
 
     const events = parseSsePayload(await talkResponse.text());
+    const statusEvents = events.filter((event) => event.eventType === "status");
     const errorEvents = events.filter((event) => event.eventType === "error");
     const doneEvents = events.filter((event) => event.eventType === "done");
 
+    assert(statusEvents.length === 1, "expected exactly one policy status event");
+    assert(
+      statusEvents[0].data?.phase === "policy",
+      "expected policy phase for strict mode denial",
+    );
     assert(errorEvents.length === 1, "expected exactly one SSE error event");
     assert(doneEvents.length === 0, "unexpected done event for runner policy mismatch");
     assert(
-      errorEvents[0].data?.message === "runner strict mode forbids bash tool",
+      errorEvents[0].data?.code === "policy_mode_denied",
+      "expected policy_mode_denied error code",
+    );
+    assert(
+      errorEvents[0].data?.message === "strict mode does not allow requested tools",
       "unexpected runner policy mismatch message",
     );
 

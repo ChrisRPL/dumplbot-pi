@@ -293,8 +293,14 @@ const runSmoke = async () => {
       }),
     });
     assert(
-      deniedToolTalkResponse.status === 403,
-      "expected talk with denied tools to return 403",
+      deniedToolTalkResponse.status === 200,
+      "expected talk with denied tools to return 200 SSE",
+    );
+    const deniedToolTalkEvents = parseSsePayload(await deniedToolTalkResponse.text());
+    const deniedToolError = deniedToolTalkEvents.find((event) => event.eventType === "error");
+    assert(
+      deniedToolError?.data?.code === "policy_tools_denied",
+      "expected policy_tools_denied code for denied tools talk",
     );
 
     const invalidToolTalkResponse = await fetch(`${baseUrl}/api/talk`, {
@@ -306,8 +312,14 @@ const runSmoke = async () => {
       }),
     });
     assert(
-      invalidToolTalkResponse.status === 400,
-      "expected talk with invalid tools to return 400",
+      invalidToolTalkResponse.status === 200,
+      "expected talk with invalid tools to return 200 SSE",
+    );
+    const invalidToolTalkEvents = parseSsePayload(await invalidToolTalkResponse.text());
+    const invalidToolError = invalidToolTalkEvents.find((event) => event.eventType === "error");
+    assert(
+      invalidToolError?.data?.code === "policy_tools_invalid",
+      "expected policy_tools_invalid code for invalid tools talk",
     );
 
     const allowedToolTalkResponse = await fetch(`${baseUrl}/api/talk`, {
@@ -412,8 +424,16 @@ const runSmoke = async () => {
       },
     );
     assert(
-      audioTalkDeniedToolsResponse.status === 403,
-      "expected /api/audio/:id/talk denied tools to return 403",
+      audioTalkDeniedToolsResponse.status === 200,
+      "expected /api/audio/:id/talk denied tools to return 200 SSE",
+    );
+    const audioTalkDeniedToolsEvents = parseSsePayload(await audioTalkDeniedToolsResponse.text());
+    const audioTalkDeniedToolsError = audioTalkDeniedToolsEvents.find(
+      (event) => event.eventType === "error",
+    );
+    assert(
+      audioTalkDeniedToolsError?.data?.code === "policy_tools_denied",
+      "expected policy_tools_denied code for denied tools audio talk",
     );
 
     console.log("workspace config smoke ok");
