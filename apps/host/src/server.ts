@@ -236,6 +236,7 @@ const resolveWorkspaceId = async (requestedWorkspace: string | undefined): Promi
 type ResolvedSkill = {
   id: string;
   toolAllowlist: string[];
+  permissionMode: "strict" | "balanced" | "permissive";
 };
 
 type SkillSelection = {
@@ -285,6 +286,7 @@ const resolveSkill = async (requestedSkill: string | undefined): Promise<Resolve
   return {
     id: skill.id,
     toolAllowlist: [...skill.toolAllowlist],
+    permissionMode: skill.permissionMode,
   };
 };
 
@@ -343,7 +345,12 @@ const resolveToolAllowlist = (
   return parsedRequestedTools;
 };
 
-const buildSkillPreludeEvents = (skill: ResolvedSkill): DumplEvent[] => {
+type SkillPreludeInput = {
+  id: string;
+  toolAllowlist: string[];
+};
+
+const buildSkillPreludeEvents = (skill: SkillPreludeInput): DumplEvent[] => {
   const statusEvent: DumplStatusEvent = {
     type: "status",
     message: `Using skill ${skill.id}`,
@@ -622,6 +629,12 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     workspace: workspaceId,
     skill: resolvedSkill.id,
     toolAllowlist,
+    policy: {
+      workspace: workspaceId,
+      skill: resolvedSkill.id,
+      toolAllowlist,
+      permissionMode: resolvedSkill.permissionMode,
+    },
   }, buildSkillPreludeEvents({
     id: resolvedSkill.id,
     toolAllowlist,
@@ -749,6 +762,12 @@ const handleAudioTalk = async (
       workspace: workspaceId,
       skill: resolvedSkill.id,
       toolAllowlist,
+      policy: {
+        workspace: workspaceId,
+        skill: resolvedSkill.id,
+        toolAllowlist,
+        permissionMode: resolvedSkill.permissionMode,
+      },
     },
     buildSkillPreludeEvents({
       id: resolvedSkill.id,

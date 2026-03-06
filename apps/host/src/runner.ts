@@ -3,13 +3,25 @@ import { once } from "node:events";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 
-import type { DumplErrorEvent, DumplEvent } from "../../../packages/core/src";
+import type {
+  DumplErrorEvent,
+  DumplEvent,
+  PermissionMode,
+} from "../../../packages/core/src";
+
+export type RunnerPolicy = {
+  workspace: string;
+  skill: string;
+  toolAllowlist: string[];
+  permissionMode: PermissionMode;
+};
 
 export type RunnerInput = {
   prompt: string;
   workspace?: string;
   skill?: string;
   toolAllowlist: string[];
+  policy: RunnerPolicy;
 };
 
 const KNOWN_EVENT_TYPES = new Set([
