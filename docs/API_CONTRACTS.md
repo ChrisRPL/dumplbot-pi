@@ -75,6 +75,8 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Policy denials are streamed as terminal SSE events (HTTP `200`) instead of JSON errors:
   - `status`: `{"message":"Policy check failed","phase":"policy"}`
   - `error`: `{"code":"<policy-code>","message":"<policy-message>"}`
+- Host enforces `runtime.max_run_seconds` per run.
+  - Timeout is streamed as terminal SSE `error`: `{"message":"runner timed out after <N>s"}`
 - Current policy denial codes:
   - `policy_tools_denied`
   - `policy_tools_invalid`
@@ -95,6 +97,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"workspace not found"}` when workspace selection is invalid.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"skill not found"}` when skill selection is invalid.
 - `POST /api/audio/:audioId/talk` uses the same policy-denial SSE mapping as `/api/talk`.
+- `POST /api/audio/:audioId/talk` uses the same timeout SSE mapping as `/api/talk`.
 
 ### `GET /api/skills`
 
