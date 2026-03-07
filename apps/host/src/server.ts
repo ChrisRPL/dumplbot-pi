@@ -606,6 +606,7 @@ const streamTalkResponse = async (
   response: ServerResponse,
   input: RunnerInput,
   launchOptions: RunnerLaunchOptions,
+  maxRunSeconds: number,
   preludeEvents: DumplEvent[] = [],
   assumeHeadersSent = false,
 ): Promise<void> => {
@@ -619,7 +620,7 @@ const streamTalkResponse = async (
 
   let sawTerminalEvent = false;
 
-  for await (const event of streamRunnerEvents(input, launchOptions)) {
+  for await (const event of streamRunnerEvents(input, launchOptions, maxRunSeconds)) {
     if (event.type === "done" || event.type === "error") {
       sawTerminalEvent = true;
     }
@@ -684,7 +685,10 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     return;
   }
 
-  const sandboxConfig = await loadHostSandboxConfig();
+  const [runtimeConfig, sandboxConfig] = await Promise.all([
+    loadHostRuntimeConfig(),
+    loadHostSandboxConfig(),
+  ]);
 
   await streamTalkResponse(response, {
     prompt,
@@ -700,7 +704,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   }, {
     sandbox: sandboxConfig,
     workspacePath: resolvedWorkspace.path,
-  }, buildSkillPreludeEvents({
+  }, runtimeConfig.maxRunSeconds, buildSkillPreludeEvents({
     id: resolvedSkill.id,
     toolAllowlist,
   }));
@@ -799,7 +803,10 @@ const handleAudioTalk = async (
     return;
   }
 
-  const sandboxConfig = await loadHostSandboxConfig();
+  const [runtimeConfig, sandboxConfig] = await Promise.all([
+    loadHostRuntimeConfig(),
+    loadHostSandboxConfig(),
+  ]);
 
   sendSseHeaders(response);
 
@@ -841,6 +848,7 @@ const handleAudioTalk = async (
       sandbox: sandboxConfig,
       workspacePath: resolvedWorkspace.path,
     },
+    runtimeConfig.maxRunSeconds,
     buildSkillPreludeEvents({
       id: resolvedSkill.id,
       toolAllowlist,
