@@ -30,6 +30,8 @@ export type RunnerLaunchOptions = {
   workspacePath: string;
 };
 
+const DEFAULT_MAX_RUN_SECONDS = 180;
+
 const KNOWN_EVENT_TYPES = new Set([
   "status",
   "stt",
@@ -110,11 +112,15 @@ const parseRunnerEvent = (line: string): DumplEvent => {
 export async function* streamRunnerEvents(
   input: RunnerInput,
   launchOptions?: RunnerLaunchOptions,
+  maxRunSeconds = DEFAULT_MAX_RUN_SECONDS,
 ): AsyncGenerator<DumplEvent> {
   const resolvedLaunchOptions = launchOptions ?? {
     sandbox: { enabled: false, backend: "bwrap" as const },
     workspacePath: process.cwd(),
   };
+  const resolvedMaxRunSeconds = Number.isFinite(maxRunSeconds) && maxRunSeconds > 0
+    ? Math.floor(maxRunSeconds)
+    : DEFAULT_MAX_RUN_SECONDS;
   const [runnerCommand, ...runnerArgs] = buildRunnerLaunchCommand(resolvedLaunchOptions);
   const child = spawn(runnerCommand, runnerArgs, {
     stdio: ["pipe", "pipe", "pipe"],
@@ -131,6 +137,20 @@ export async function* streamRunnerEvents(
   let childErrorMessage: string | null = null;
   const stderrLines: string[] = [];
   let sawRunnerErrorEvent = false;
+  let timedOut = false;
+  let forceKillTimer: NodeJS.Timeout | null = null;
+  const runTimeout = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGTERM");
+
+    forceKillTimer = setTimeout(() => {
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+      }
+    }, 1000);
+    forceKillTimer.unref();
+  }, resolvedMaxRunSeconds * 1000);
+  runTimeout.unref();
 
   child.on("error", (error) => {
     childErrorMessage = error.message;
@@ -164,6 +184,12 @@ export async function* streamRunnerEvents(
         yield event;
       } catch (error) {
         child.kill();
+        clearTimeout(runTimeout);
+
+        if (forceKillTimer) {
+          clearTimeout(forceKillTimer);
+        }
+
         const message = error instanceof Error ? error.message : "runner stream failed";
         yield toErrorEvent(message);
         return;
@@ -178,9 +204,19 @@ export async function* streamRunnerEvents(
     number | null,
     NodeJS.Signals | null,
   ];
+  clearTimeout(runTimeout);
+
+  if (forceKillTimer) {
+    clearTimeout(forceKillTimer);
+  }
 
   if (childErrorMessage) {
     yield toErrorEvent(childErrorMessage);
+    return;
+  }
+
+  if (timedOut) {
+    yield toErrorEvent(`runner timed out after ${resolvedMaxRunSeconds}s`);
     return;
   }
 
