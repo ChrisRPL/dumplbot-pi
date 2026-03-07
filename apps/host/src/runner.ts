@@ -39,8 +39,15 @@ const KNOWN_EVENT_TYPES = new Set([
   "error",
 ]);
 
-const runnerEntryPoint = (): string =>
-  resolve(__dirname, "../../agent-runner/src/main.js");
+const runnerEntryPoint = (): string => {
+  const overriddenEntryPoint = process.env.DUMPLBOT_RUNNER_ENTRYPOINT?.trim();
+
+  if (overriddenEntryPoint) {
+    return resolve(overriddenEntryPoint);
+  }
+
+  return resolve(__dirname, "../../agent-runner/src/main.js");
+};
 
 const buildDirectRunnerCommand = (): string[] => [
   process.execPath,
