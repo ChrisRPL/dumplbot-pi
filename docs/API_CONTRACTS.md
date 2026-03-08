@@ -81,6 +81,7 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `policy_tools_denied`
   - `policy_tools_invalid`
   - `policy_mode_denied`
+  - `policy_bash_prefix_required`
 - Returns `404` with `{"error":"workspace not found"}` when the selected workspace does not exist.
 - Returns `404` with `{"error":"skill not found"}` when the selected skill does not exist.
 
@@ -107,7 +108,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```json
 {
   "skills": [
-    {"id":"coding","permission_mode":"balanced","tool_allowlist":["read_file","edit_file","bash","web_search"],"is_active":true}
+    {"id":"coding","permission_mode":"balanced","tool_allowlist":["read_file","edit_file","bash","web_search"],"bash_prefix_allowlist":["git status","git diff","npm test","npm run","ls","cat"],"is_active":true}
   ]
 }
 ```
@@ -207,13 +208,17 @@ The daemon streams events back to the UI over Server-Sent Events.
   "workspace":"default",
   "skill":"coding",
   "toolAllowlist":["read_file","bash"],
+  "bashCommandPrefixAllowlist":["git status","git diff","npm test","npm run","ls","cat"],
   "permissionMode":"balanced"
 }
 ```
 
 - Current runner guardrails:
   - host pre-run strict-mode clamp removes `bash` from requested allowlists and denies if no tools remain.
+  - host denies `bash` usage when selected skill has no `bash_prefix_allowlist`.
   - `permissionMode: "strict"` rejects `bash` in `toolAllowlist`.
+  - `bash` policies require non-empty `bashCommandPrefixAllowlist`.
+  - `bash` tool events must match an allowed command prefix.
   - non-internal tool events are blocked if not listed in `policy.toolAllowlist`.
 - Runner rejects mismatches between top-level allowlist and policy allowlist.
 - Output: JSONL over stdout.
