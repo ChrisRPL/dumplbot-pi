@@ -270,6 +270,125 @@ def upload_audio_file(base_url: str, audio_path: str) -> str:
     return audio_id
 
 
+def request_json(
+    base_url: str,
+    path: str,
+    method: str = "GET",
+    payload: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    request = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+        headers={"content-type": "application/json"} if payload is not None else {},
+        method=method,
+    )
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace").strip()
+        raise RuntimeError(detail or f"{method} {path} failed with HTTP {error.code}") from error
+
+
+def list_workspace_entries(base_url: str) -> list[dict[str, Any]]:
+    payload = request_json(base_url, "/api/workspaces")
+    workspaces = payload.get("workspaces")
+
+    if not isinstance(workspaces, list):
+        raise RuntimeError("workspace list response is invalid")
+
+    return [workspace for workspace in workspaces if isinstance(workspace, dict)]
+
+
+def update_active_workspace(
+    base_url: str,
+    workspace: Optional[str],
+) -> Optional[str]:
+    payload = request_json(
+        base_url,
+        "/api/config",
+        method="POST",
+        payload={"runtime": {"active_workspace": workspace}},
+    )
+    runtime = payload.get("runtime")
+
+    if not isinstance(runtime, dict):
+        raise RuntimeError("config response is invalid")
+
+    active_workspace = runtime.get("active_workspace")
+
+    if active_workspace is None:
+        return None
+
+    if not isinstance(active_workspace, str) or not active_workspace:
+        raise RuntimeError("config response active_workspace is invalid")
+
+    return active_workspace
+
+
+def cycle_workspace(base_url: str) -> str:
+    workspaces = list_workspace_entries(base_url)
+
+    if not workspaces:
+        raise RuntimeError("no workspaces available")
+
+    active_index = next(
+        (index for index, workspace in enumerate(workspaces) if workspace.get("is_active")),
+        -1,
+    )
+    next_index = 0 if active_index < 0 else (active_index + 1) % len(workspaces)
+    next_workspace = workspaces[next_index].get("id")
+
+    if not isinstance(next_workspace, str) or not next_workspace:
+        raise RuntimeError("workspace list entry is invalid")
+
+    updated_workspace = update_active_workspace(base_url, next_workspace)
+
+    if not updated_workspace:
+        raise RuntimeError("workspace switch did not persist")
+
+    return updated_workspace
+
+
+def handle_workspace_command(
+    base_url: str,
+    command: str,
+    renderer: "ConsoleRenderer",
+) -> Optional[str]:
+    _, _, argument = command.partition(" ")
+    selection = argument.strip()
+
+    if not selection:
+        workspaces = list_workspace_entries(base_url)
+        print("Workspaces:")
+
+        for workspace in workspaces:
+            workspace_id = workspace.get("id")
+
+            if not isinstance(workspace_id, str):
+                continue
+
+            marker = "*" if workspace.get("is_active") else " "
+            print(f"{marker} {workspace_id}")
+
+        return None
+
+    if selection == "next":
+        next_workspace = cycle_workspace(base_url)
+        renderer.render_notice(f"Workspace: {next_workspace}")
+        return next_workspace
+
+    if selection == "clear":
+        update_active_workspace(base_url, None)
+        renderer.render_notice("Workspace: host default")
+        return None
+
+    next_workspace = update_active_workspace(base_url, selection)
+    renderer.render_notice(f"Workspace: {next_workspace or 'host default'}")
+    return next_workspace
+
+
 def stream_audio_talk(
     base_url: str,
     audio_id: str,
@@ -739,7 +858,8 @@ def run_mock_loop(
     skill: Optional[str],
     renderer: ConsoleRenderer,
 ) -> None:
-    print("DumplBot mock UI. Type a prompt, or 'exit' to quit.")
+    print("DumplBot mock UI. Type a prompt, ':workspace' to list, or 'exit' to quit.")
+    selected_workspace = workspace
 
     while True:
         try:
@@ -757,7 +877,23 @@ def run_mock_loop(
         if prompt.lower() in {"exit", "quit"}:
             return
 
-        stream_talk(base_url, prompt, workspace, skill, renderer)
+        if prompt.startswith(":workspace") or prompt.startswith("/workspace"):
+            try:
+                next_workspace = handle_workspace_command(base_url, prompt.replace("/", ":", 1), renderer)
+            except (RuntimeError, urllib.error.URLError) as error:
+                renderer.render(
+                    ScreenState(
+                        phase="Error",
+                        status="Workspace switch failed",
+                        error=str(error),
+                    )
+                )
+            else:
+                selected_workspace = next_workspace
+
+            continue
+
+        stream_talk(base_url, prompt, selected_workspace, skill, renderer)
 
 
 def run_single_prompt(
