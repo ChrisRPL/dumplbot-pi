@@ -45,9 +45,16 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
   let parsedId: string | null = null;
   let permissionMode: PermissionMode = "balanced";
   let modelReasoning: "low" | "medium" | "high" = "medium";
-  let state: "none" | "prompt_prelude" | "tool_allowlist" | "model" = "none";
+  let state:
+    | "none"
+    | "prompt_prelude"
+    | "tool_allowlist"
+    | "bash_prefix_allowlist"
+    | "model"
+    = "none";
   const promptPreludeLines: string[] = [];
   const toolAllowlist: string[] = [];
+  const bashCommandPrefixAllowlist: string[] = [];
 
   for (const rawLine of rawSkill.split(/\r?\n/u)) {
     const trimmedLine = rawLine.trim();
@@ -70,6 +77,25 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
         }
 
         toolAllowlist.push(toolName);
+        continue;
+      }
+
+      if (trimmedLine.length === 0 || trimmedLine.startsWith("#")) {
+        continue;
+      }
+
+      state = "none";
+    }
+
+    if (state === "bash_prefix_allowlist") {
+      if (rawLine.startsWith("  - ")) {
+        const commandPrefix = normalizeScalar(rawLine.slice(4));
+
+        if (!commandPrefix) {
+          throw new Error("skill bash_prefix_allowlist includes an empty entry");
+        }
+
+        bashCommandPrefixAllowlist.push(commandPrefix);
         continue;
       }
 
@@ -141,6 +167,11 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
       continue;
     }
 
+    if (key === "bash_prefix_allowlist") {
+      state = "bash_prefix_allowlist";
+      continue;
+    }
+
     if (key === "permission_mode") {
       permissionMode = parsePermissionMode(value);
       continue;
@@ -156,6 +187,7 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
   }
 
   const uniqueAllowlist = Array.from(new Set(toolAllowlist));
+  const uniqueBashPrefixAllowlist = Array.from(new Set(bashCommandPrefixAllowlist));
 
   if (uniqueAllowlist.length === 0) {
     throw new Error("skill tool_allowlist is required");
@@ -165,6 +197,7 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
     id: parsedId,
     promptPrelude: promptPreludeLines.join("\n").trimEnd(),
     toolAllowlist: uniqueAllowlist,
+    bashCommandPrefixAllowlist: uniqueBashPrefixAllowlist,
     permissionMode,
     model: {
       reasoning: modelReasoning,
@@ -179,6 +212,7 @@ export type SkillSummary = {
   id: string;
   permissionMode: PermissionMode;
   toolAllowlist: string[];
+  bashCommandPrefixAllowlist: string[];
 };
 
 export const loadSkill = async (skillId: string): Promise<DumplSkill> => {
@@ -248,6 +282,7 @@ export const listSkills = async (): Promise<SkillSummary[]> => {
       id: skill.id,
       permissionMode: skill.permissionMode,
       toolAllowlist: [...skill.toolAllowlist],
+      bashCommandPrefixAllowlist: [...skill.bashCommandPrefixAllowlist],
     });
   }
 

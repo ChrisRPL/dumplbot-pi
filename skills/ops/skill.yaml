@@ -5,6 +5,11 @@ tool_allowlist:
   - read_file
   - edit_file
   - bash
+bash_prefix_allowlist:
+  - systemctl status
+  - journalctl -u
+  - ls
+  - cat
 permission_mode: balanced
 model:
   reasoning: medium

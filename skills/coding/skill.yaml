@@ -6,6 +6,13 @@ tool_allowlist:
   - edit_file
   - bash
   - web_search
+bash_prefix_allowlist:
+  - git status
+  - git diff
+  - npm test
+  - npm run
+  - ls
+  - cat
 permission_mode: balanced
 model:
   reasoning: high
