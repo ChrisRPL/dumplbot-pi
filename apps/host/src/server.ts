@@ -22,9 +22,11 @@ import { transcribeAudioFile } from "./transcriber";
 import {
   createWorkspace,
   getExistingWorkspacePath,
+  getWorkspacePath,
   listWorkspaces,
   normalizeWorkspaceId,
 } from "./workspace-store";
+import { loadWorkspaceConfig } from "./workspace-config-store";
 
 type DumplTalkRequest = {
   text: string;
@@ -469,12 +471,24 @@ const handleWorkspaceList = async (response: ServerResponse): Promise<void> => {
     activeWorkspaceId = null;
   }
 
-  sendJson(response, 200, {
-    workspaces: workspaces.map((workspace) => ({
+  const workspacePayload = await Promise.all(workspaces.map(async (workspace) => {
+    const workspaceConfig = await loadWorkspaceConfig(getWorkspacePath(workspace.id));
+
+    return {
       id: workspace.id,
       has_instructions: workspace.hasInstructions,
       is_active: workspace.id === activeWorkspaceId,
-    })),
+      default_skill: workspaceConfig.defaultSkill,
+      attached_repos: workspaceConfig.attachedRepos.map((attachment) => ({
+        id: attachment.id,
+        path: attachment.path,
+        mount_path: `repos/${attachment.id}`,
+      })),
+    };
+  }));
+
+  sendJson(response, 200, {
+    workspaces: workspacePayload,
   });
 };
 
