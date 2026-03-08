@@ -487,6 +487,37 @@ def handle_skill_command(
     return next_skill
 
 
+def list_job_entries(base_url: str) -> list[dict[str, Any]]:
+    payload = request_json(base_url, "/api/jobs")
+    jobs = payload.get("jobs")
+
+    if not isinstance(jobs, list):
+        raise RuntimeError("job list response is invalid")
+
+    return [job for job in jobs if isinstance(job, dict)]
+
+
+def handle_jobs_command(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> None:
+    jobs = list_job_entries(base_url)
+    print("Jobs:")
+
+    for job in jobs:
+        job_id = job.get("id")
+        schedule = job.get("schedule")
+        enabled = job.get("enabled")
+
+        if not isinstance(job_id, str) or not isinstance(schedule, str):
+            continue
+
+        status = "on" if enabled else "off"
+        print(f"- {job_id} [{status}] {schedule}")
+
+    renderer.render_notice(f"Jobs listed: {len(jobs)}")
+
+
 def stream_audio_talk(
     base_url: str,
     audio_id: str,
@@ -956,7 +987,7 @@ def run_mock_loop(
     skill: Optional[str],
     renderer: ConsoleRenderer,
 ) -> None:
-    print("DumplBot mock UI. Type a prompt, ':workspace' or ':skill' to list, or 'exit' to quit.")
+    print("DumplBot mock UI. Type a prompt, ':workspace', ':skill', or ':jobs', or 'exit' to quit.")
     selected_workspace = workspace
     selected_skill = skill
 
@@ -1005,6 +1036,20 @@ def run_mock_loop(
                 )
             else:
                 selected_skill = next_skill
+
+            continue
+
+        if prompt.startswith(":jobs") or prompt.startswith("/jobs"):
+            try:
+                handle_jobs_command(base_url, renderer)
+            except (RuntimeError, urllib.error.URLError) as error:
+                renderer.render(
+                    ScreenState(
+                        phase="Error",
+                        status="Job list failed",
+                        error=str(error),
+                    )
+                )
 
             continue
 

@@ -84,7 +84,7 @@ python apps/ui/dumpl_ui.py --mock
 ```
 
 Type into `Dumpl>` and watch streamed output.
-Use `:workspace`, `:workspace <id>`, `:skill`, and `:skill <id>` inside mock mode to inspect and switch active selections.
+Use `:workspace`, `:workspace <id>`, `:skill`, `:skill <id>`, and `:jobs` inside mock mode to inspect active selections and scheduler jobs.
 
 ---
 
@@ -147,7 +147,7 @@ Status as of March 8, 2026:
 * `done` `bwrap` sandbox + policy gates. Linux/Pi runtime validation still pending.
 * `partial` workspaces + repo attach. Workspace APIs/state, repo attach, and mock UI switching landed; hardware-first switcher polish still pending.
 * `partial` skill packs + optional integrations. Skill schema/loading/policy landed; richer integrations still pending.
-* `todo` scheduler + job UI.
+* `partial` scheduler + job UI. File-backed jobs API and mock UI list landed; scheduler loop and on-device job views still pending.
 * `todo` local setup page (LAN only).
 
 ---
