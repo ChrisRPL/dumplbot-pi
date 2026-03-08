@@ -160,6 +160,7 @@ const runSmoke = async () => {
       (workspace) => workspace.id === "default",
     );
     assert(initialDefaultWorkspace?.is_active, "default should be active before update");
+    assert(initialDefaultWorkspace?.default_skill === null, "workspace default skill should start empty");
 
     const setActiveResponse = await fetch(`${baseUrl}/api/config`, {
       method: "POST",
@@ -180,6 +181,35 @@ const runSmoke = async () => {
       (workspace) => workspace.id === "alpha",
     );
     assert(updatedAlphaWorkspace?.is_active, "alpha should be active after update");
+
+    const setWorkspaceDefaultSkillResponse = await fetch(`${baseUrl}/api/workspaces/alpha/config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ default_skill: "research" }),
+    });
+    assert(
+      setWorkspaceDefaultSkillResponse.status === 200,
+      "expected workspace default skill update to return 200",
+    );
+    const setWorkspaceDefaultSkillPayload = await setWorkspaceDefaultSkillResponse.json();
+    assert(
+      setWorkspaceDefaultSkillPayload.default_skill === "research",
+      "workspace default skill was not stored",
+    );
+
+    const workspaceListWithDefaultSkillResponse = await fetch(`${baseUrl}/api/workspaces`);
+    assert(
+      workspaceListWithDefaultSkillResponse.status === 200,
+      "expected workspace list after default skill update",
+    );
+    const workspaceListWithDefaultSkillPayload = await workspaceListWithDefaultSkillResponse.json();
+    const alphaWorkspaceWithDefaultSkill = workspaceListWithDefaultSkillPayload.workspaces.find(
+      (workspace) => workspace.id === "alpha",
+    );
+    assert(
+      alphaWorkspaceWithDefaultSkill?.default_skill === "research",
+      "workspace list did not expose default skill",
+    );
 
     const attachRepoResponse = await fetch(`${baseUrl}/api/workspaces/default/repos`, {
       method: "POST",
@@ -226,7 +256,7 @@ const runSmoke = async () => {
     assert(talkWithActiveResponse.status === 200, "expected /api/talk to return 200");
     const talkWithActiveEvents = parseSsePayload(await talkWithActiveResponse.text());
     const activeSkillStatusEvent = talkWithActiveEvents.find(
-      (event) => event.eventType === "status" && event.data?.message === "Using skill coding",
+      (event) => event.eventType === "status" && event.data?.message === "Using skill research",
     );
     const activePolicyToolEvent = talkWithActiveEvents.find(
       (event) => event.eventType === "tool" && event.data?.name === "skill-policy",
@@ -250,8 +280,8 @@ const runSmoke = async () => {
       "talk did not use active workspace",
     );
     assert(
-      activePlannerToolEvent?.data?.detail === "coding",
-      "talk did not use default skill",
+      activePlannerToolEvent?.data?.detail === "research",
+      "talk did not use workspace default skill",
     );
 
     const talkWithOverrideResponse = await fetch(`${baseUrl}/api/talk`, {
