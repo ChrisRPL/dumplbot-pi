@@ -121,7 +121,15 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```json
 {
   "workspaces": [
-    {"id":"default","has_instructions":true,"is_active":true}
+    {
+      "id":"default",
+      "has_instructions":true,
+      "is_active":true,
+      "default_skill":null,
+      "attached_repos":[
+        {"id":"dumplbot-pi","path":"/Users/krzysztof/Projects/oss/dumplbot-pi","mount_path":"repos/dumplbot-pi"}
+      ]
+    }
   ]
 }
 ```
@@ -146,6 +154,28 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `201` when created.
   - `409` when workspace already exists.
   - `400` for invalid JSON or invalid workspace input.
+
+### `POST /api/workspaces/:workspaceId/repos`
+
+- Attach one local repo directory to an existing workspace.
+- Request body:
+
+```json
+{"id":"dumplbot-pi","path":"/Users/krzysztof/Projects/oss/dumplbot-pi"}
+```
+
+- Success response:
+
+```json
+{"id":"dumplbot-pi","path":"/Users/krzysztof/Projects/oss/dumplbot-pi","mount_path":"repos/dumplbot-pi"}
+```
+
+- Host persists attachment metadata in the workspace-local metadata file and creates a stable `repos/<id>` symlink inside the workspace root.
+- Status codes:
+  - `201` when attached.
+  - `404` when workspace does not exist.
+  - `409` when repo id is already attached.
+  - `400` for invalid JSON or invalid repo input.
 
 ### `GET /api/jobs`
 
