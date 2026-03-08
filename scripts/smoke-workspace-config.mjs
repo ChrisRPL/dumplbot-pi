@@ -143,6 +143,10 @@ const runSmoke = async () => {
     assert(codingSkill, "expected coding skill in /api/skills");
     assert(researchSkill, "expected research skill in /api/skills");
     assert(codingSkill.is_active, "expected coding to be active before active_skill update");
+    assert(
+      Array.isArray(codingSkill.bash_prefix_allowlist) && codingSkill.bash_prefix_allowlist.length > 0,
+      "expected coding skill bash_prefix_allowlist metadata",
+    );
 
     const initialListResponse = await fetch(`${baseUrl}/api/workspaces`);
     assert(initialListResponse.status === 200, "expected GET /api/workspaces to return 200");
