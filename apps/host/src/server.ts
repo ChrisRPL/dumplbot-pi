@@ -752,6 +752,7 @@ const toJobPayload = (job: Awaited<ReturnType<typeof upsertScheduledJob>>) => ({
   skill: job.skill,
   enabled: job.enabled,
   last_run_at: job.lastRunAt,
+  last_status: job.lastStatus,
   last_result: job.lastResult,
 });
 

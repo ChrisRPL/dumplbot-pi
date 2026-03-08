@@ -1,6 +1,7 @@
 import { loadHostSchedulerConfig } from "./runtime-config";
 import { startSchedulerLoop } from "./scheduler-loop";
 import { runScheduledJob } from "./scheduler-runner";
+import { recordScheduledJobRun } from "./scheduler-store";
 import { startHostServer } from "./server";
 
 const main = async (): Promise<void> => {
@@ -11,6 +12,7 @@ const main = async (): Promise<void> => {
     pollIntervalMs: schedulerConfig.pollIntervalSeconds * 1000,
     onJobDue: async (job) => {
       const outcome = await runScheduledJob(job);
+      await recordScheduledJobRun(job.id, outcome);
       process.stdout.write(
         `scheduler job ${job.id} finished with ${outcome.status}: ${outcome.result}\n`,
       );

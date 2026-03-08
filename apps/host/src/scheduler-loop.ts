@@ -31,10 +31,23 @@ export const startSchedulerLoop = (
   const pollIntervalMs = Number.isFinite(options.pollIntervalMs) && options.pollIntervalMs
     ? Math.max(250, Math.floor(options.pollIntervalMs))
     : DEFAULT_POLL_INTERVAL_MS;
-  const dueBuckets = new Map<string, string>();
   const inFlightJobs = new Set<string>();
   let closed = false;
   let tickActive = false;
+
+  const jobRanThisMinute = (job: ScheduledJobRecord, minuteBucket: string): boolean => {
+    if (!job.lastRunAt) {
+      return false;
+    }
+
+    const lastRunDate = new Date(job.lastRunAt);
+
+    if (Number.isNaN(lastRunDate.valueOf())) {
+      return false;
+    }
+
+    return getMinuteBucket(lastRunDate) === minuteBucket;
+  };
 
   const tick = async (): Promise<void> => {
     if (closed || tickActive) {
@@ -57,11 +70,9 @@ export const startSchedulerLoop = (
           continue;
         }
 
-        if (dueBuckets.get(job.id) === minuteBucket) {
+        if (jobRanThisMinute(job, minuteBucket)) {
           continue;
         }
-
-        dueBuckets.set(job.id, minuteBucket);
         inFlightJobs.add(job.id);
 
         void options.onJobDue(job).catch((error) => {
