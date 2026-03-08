@@ -115,6 +115,7 @@ const runSmoke = async () => {
     assert(createJobPayload.workspace === "default", "unexpected created job workspace");
     assert(createJobPayload.skill === "coding", "unexpected created job skill");
     assert(createJobPayload.last_run_at === null, "expected empty last_run_at");
+    assert(createJobPayload.last_status === null, "expected empty last_status");
     assert(createJobPayload.last_result === null, "expected empty last_result");
 
     const jobsFilePayload = JSON.parse(await readFile(jobsPath, "utf8"));
@@ -140,6 +141,7 @@ const runSmoke = async () => {
     assert(updateJobPayload.workspace === null, "expected cleared workspace");
     assert(updateJobPayload.skill === "research", "expected updated skill");
     assert(updateJobPayload.enabled === false, "expected updated enabled flag");
+    assert(updateJobPayload.last_status === null, "expected last_status to remain empty after update");
 
     const listedJobsResponse = await fetch(`${baseUrl}/api/jobs`);
     assert(listedJobsResponse.status === 200, "expected GET /api/jobs after upsert");
