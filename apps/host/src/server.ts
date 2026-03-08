@@ -187,6 +187,10 @@ const getPolicyErrorCode = (message: string): string => {
     return "policy_tools_invalid";
   }
 
+  if (message === "bash tool requires command prefix allowlist") {
+    return "policy_bash_prefix_required";
+  }
+
   return "policy_denied";
 };
 
@@ -250,6 +254,7 @@ const resolveWorkspace = async (
 type ResolvedSkill = {
   id: string;
   toolAllowlist: string[];
+  bashCommandPrefixAllowlist: string[];
   permissionMode: "strict" | "balanced" | "permissive";
 };
 
@@ -300,6 +305,7 @@ const resolveSkill = async (requestedSkill: string | undefined): Promise<Resolve
   return {
     id: skill.id,
     toolAllowlist: [...skill.toolAllowlist],
+    bashCommandPrefixAllowlist: [...skill.bashCommandPrefixAllowlist],
     permissionMode: skill.permissionMode,
   };
 };
@@ -378,6 +384,21 @@ const applyPermissionModeToolClamp = (
   }
 
   return clampedToolAllowlist;
+};
+
+const resolveBashCommandPrefixAllowlist = (
+  toolAllowlist: string[],
+  skillBashCommandPrefixAllowlist: string[],
+): string[] => {
+  if (!toolAllowlist.includes("bash")) {
+    return [];
+  }
+
+  if (skillBashCommandPrefixAllowlist.length === 0) {
+    throw new Error("bash tool requires command prefix allowlist");
+  }
+
+  return [...skillBashCommandPrefixAllowlist];
 };
 
 type SkillPreludeInput = {
@@ -502,6 +523,7 @@ const handleSkillList = async (response: ServerResponse): Promise<void> => {
       id: skill.id,
       permission_mode: skill.permissionMode,
       tool_allowlist: skill.toolAllowlist,
+      bash_prefix_allowlist: skill.bashCommandPrefixAllowlist,
       is_active: skill.id === activeSkillId,
     })),
   });
@@ -659,6 +681,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   let resolvedWorkspace: ResolvedWorkspace;
   let resolvedSkill: ResolvedSkill;
   let toolAllowlist: string[];
+  let bashCommandPrefixAllowlist: string[];
 
   try {
     resolvedWorkspace = await resolveWorkspace(body.workspace);
@@ -679,6 +702,10 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   try {
     toolAllowlist = resolveToolAllowlist(resolvedSkill.toolAllowlist, body.tools);
     toolAllowlist = applyPermissionModeToolClamp(resolvedSkill.permissionMode, toolAllowlist);
+    bashCommandPrefixAllowlist = resolveBashCommandPrefixAllowlist(
+      toolAllowlist,
+      resolvedSkill.bashCommandPrefixAllowlist,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "policy validation failed";
     streamPolicyDeniedResponse(response, message);
@@ -699,6 +726,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
       workspace: resolvedWorkspace.id,
       skill: resolvedSkill.id,
       toolAllowlist,
+      bashCommandPrefixAllowlist,
       permissionMode: resolvedSkill.permissionMode,
     },
   }, {
@@ -777,6 +805,7 @@ const handleAudioTalk = async (
   let resolvedWorkspace: ResolvedWorkspace;
   let resolvedSkill: ResolvedSkill;
   let toolAllowlist: string[];
+  let bashCommandPrefixAllowlist: string[];
 
   try {
     resolvedWorkspace = await resolveWorkspace(body.workspace);
@@ -797,6 +826,10 @@ const handleAudioTalk = async (
   try {
     toolAllowlist = resolveToolAllowlist(resolvedSkill.toolAllowlist, body.tools);
     toolAllowlist = applyPermissionModeToolClamp(resolvedSkill.permissionMode, toolAllowlist);
+    bashCommandPrefixAllowlist = resolveBashCommandPrefixAllowlist(
+      toolAllowlist,
+      resolvedSkill.bashCommandPrefixAllowlist,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "policy validation failed";
     streamPolicyDeniedResponse(response, message);
@@ -841,6 +874,7 @@ const handleAudioTalk = async (
         workspace: resolvedWorkspace.id,
         skill: resolvedSkill.id,
         toolAllowlist,
+        bashCommandPrefixAllowlist,
         permissionMode: resolvedSkill.permissionMode,
       },
     },

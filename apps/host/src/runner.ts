@@ -14,6 +14,7 @@ export type RunnerPolicy = {
   workspace: string;
   skill: string;
   toolAllowlist: string[];
+  bashCommandPrefixAllowlist: string[];
   permissionMode: PermissionMode;
 };
 
