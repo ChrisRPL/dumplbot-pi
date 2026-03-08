@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -57,17 +58,58 @@ const buildDirectRunnerCommand = (): string[] => [
   runnerEntryPoint(),
 ];
 
-const buildBwrapRunnerCommand = (workspacePath: string): string[] => [
-  "bwrap",
-  "--ro-bind",
-  "/",
-  "/",
-  "--bind",
-  workspacePath,
-  workspacePath,
-  process.execPath,
-  runnerEntryPoint(),
-];
+const OPTIONAL_BWRAP_READONLY_PATHS = ["/usr", "/bin", "/sbin", "/lib", "/lib64"];
+const OPTIONAL_BWRAP_READONLY_FILES = ["/etc/ld.so.cache"];
+
+const pathHasPrefix = (candidatePath: string, prefixPath: string): boolean =>
+  candidatePath === prefixPath || candidatePath.startsWith(`${prefixPath}/`);
+
+const appendReadonlyBind = (
+  args: string[],
+  hostPath: string,
+  optional = false,
+): void => {
+  args.push(optional ? "--ro-bind-try" : "--ro-bind", hostPath, hostPath);
+};
+
+const buildBwrapRunnerCommand = (workspacePath: string): string[] => {
+  const resolvedNodeBinaryPath = realpathSync(process.execPath);
+  const resolvedRunnerEntryPoint = realpathSync(runnerEntryPoint());
+  const args = [
+    "bwrap",
+    "--die-with-parent",
+    "--proc",
+    "/proc",
+    "--dev",
+    "/dev",
+    "--tmpfs",
+    "/tmp",
+  ];
+
+  for (const readonlyPath of OPTIONAL_BWRAP_READONLY_PATHS) {
+    appendReadonlyBind(args, readonlyPath, true);
+  }
+
+  for (const readonlyFile of OPTIONAL_BWRAP_READONLY_FILES) {
+    appendReadonlyBind(args, readonlyFile, true);
+  }
+
+  if (!OPTIONAL_BWRAP_READONLY_PATHS.some((readonlyPath) =>
+    pathHasPrefix(resolvedNodeBinaryPath, readonlyPath))) {
+    appendReadonlyBind(args, resolvedNodeBinaryPath);
+  }
+
+  appendReadonlyBind(args, resolvedRunnerEntryPoint);
+  args.push(
+    "--bind",
+    workspacePath,
+    workspacePath,
+    resolvedNodeBinaryPath,
+    resolvedRunnerEntryPoint,
+  );
+
+  return args;
+};
 
 export const buildRunnerLaunchCommand = (
   options: RunnerLaunchOptions,
