@@ -34,6 +34,14 @@ rsync -a \
   --exclude .venv \
   "${REPO_ROOT}/" "${INSTALL_ROOT}/"
 
+echo "installing node dependencies"
+pushd "${INSTALL_ROOT}" >/dev/null
+npm ci
+
+echo "building runtime artifacts"
+npm run build
+popd >/dev/null
+
 if [[ ! -f "${CONFIG_ROOT}/config.yaml" ]]; then
   install -m 0644 "${INSTALL_ROOT}/config/dumplbot.example.yaml" "${CONFIG_ROOT}/config.yaml"
   echo "installed ${CONFIG_ROOT}/config.yaml"
