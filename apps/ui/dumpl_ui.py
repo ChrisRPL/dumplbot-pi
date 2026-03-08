@@ -389,6 +389,104 @@ def handle_workspace_command(
     return next_workspace
 
 
+def list_skill_entries(base_url: str) -> list[dict[str, Any]]:
+    payload = request_json(base_url, "/api/skills")
+    skills = payload.get("skills")
+
+    if not isinstance(skills, list):
+        raise RuntimeError("skill list response is invalid")
+
+    return [skill for skill in skills if isinstance(skill, dict)]
+
+
+def update_active_skill(
+    base_url: str,
+    skill: Optional[str],
+) -> Optional[str]:
+    payload = request_json(
+        base_url,
+        "/api/config",
+        method="POST",
+        payload={"runtime": {"active_skill": skill}},
+    )
+    runtime = payload.get("runtime")
+
+    if not isinstance(runtime, dict):
+        raise RuntimeError("config response is invalid")
+
+    active_skill = runtime.get("active_skill")
+
+    if active_skill is None:
+        return None
+
+    if not isinstance(active_skill, str) or not active_skill:
+        raise RuntimeError("config response active_skill is invalid")
+
+    return active_skill
+
+
+def cycle_skill(base_url: str) -> str:
+    skills = list_skill_entries(base_url)
+
+    if not skills:
+        raise RuntimeError("no skills available")
+
+    active_index = next(
+        (index for index, skill in enumerate(skills) if skill.get("is_active")),
+        -1,
+    )
+    next_index = 0 if active_index < 0 else (active_index + 1) % len(skills)
+    next_skill = skills[next_index].get("id")
+
+    if not isinstance(next_skill, str) or not next_skill:
+        raise RuntimeError("skill list entry is invalid")
+
+    updated_skill = update_active_skill(base_url, next_skill)
+
+    if not updated_skill:
+        raise RuntimeError("skill switch did not persist")
+
+    return updated_skill
+
+
+def handle_skill_command(
+    base_url: str,
+    command: str,
+    renderer: "ConsoleRenderer",
+) -> Optional[str]:
+    _, _, argument = command.partition(" ")
+    selection = argument.strip()
+
+    if not selection:
+        skills = list_skill_entries(base_url)
+        print("Skills:")
+
+        for skill in skills:
+            skill_id = skill.get("id")
+
+            if not isinstance(skill_id, str):
+                continue
+
+            marker = "*" if skill.get("is_active") else " "
+            print(f"{marker} {skill_id}")
+
+        return None
+
+    if selection == "next":
+        next_skill = cycle_skill(base_url)
+        renderer.render_notice(f"Skill: {next_skill}")
+        return next_skill
+
+    if selection == "clear":
+        update_active_skill(base_url, None)
+        renderer.render_notice("Skill: workspace/default")
+        return None
+
+    next_skill = update_active_skill(base_url, selection)
+    renderer.render_notice(f"Skill: {next_skill or 'workspace/default'}")
+    return next_skill
+
+
 def stream_audio_talk(
     base_url: str,
     audio_id: str,
@@ -858,8 +956,9 @@ def run_mock_loop(
     skill: Optional[str],
     renderer: ConsoleRenderer,
 ) -> None:
-    print("DumplBot mock UI. Type a prompt, ':workspace' to list, or 'exit' to quit.")
+    print("DumplBot mock UI. Type a prompt, ':workspace' or ':skill' to list, or 'exit' to quit.")
     selected_workspace = workspace
+    selected_skill = skill
 
     while True:
         try:
@@ -893,7 +992,23 @@ def run_mock_loop(
 
             continue
 
-        stream_talk(base_url, prompt, selected_workspace, skill, renderer)
+        if prompt.startswith(":skill") or prompt.startswith("/skill"):
+            try:
+                next_skill = handle_skill_command(base_url, prompt.replace("/", ":", 1), renderer)
+            except (RuntimeError, urllib.error.URLError) as error:
+                renderer.render(
+                    ScreenState(
+                        phase="Error",
+                        status="Skill switch failed",
+                        error=str(error),
+                    )
+                )
+            else:
+                selected_skill = next_skill
+
+            continue
+
+        stream_talk(base_url, prompt, selected_workspace, selected_skill, renderer)
 
 
 def run_single_prompt(

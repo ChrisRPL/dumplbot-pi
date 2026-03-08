@@ -84,6 +84,7 @@ python apps/ui/dumpl_ui.py --mock
 ```
 
 Type into `Dumpl>` and watch streamed output.
+Use `:workspace`, `:workspace <id>`, `:skill`, and `:skill <id>` inside mock mode to inspect and switch active selections.
 
 ---
 
@@ -144,7 +145,7 @@ Status as of March 8, 2026:
 * `done` Push-to-talk WAV capture. Software path landed; Pi hardware validation still pending.
 * `done` Whisper API STT integration.
 * `done` `bwrap` sandbox + policy gates. Linux/Pi runtime validation still pending.
-* `partial` workspaces + repo attach. Workspace APIs/state landed; repo attach and UI switcher still pending.
+* `partial` workspaces + repo attach. Workspace APIs/state, repo attach, and mock UI switching landed; hardware-first switcher polish still pending.
 * `partial` skill packs + optional integrations. Skill schema/loading/policy landed; richer integrations still pending.
 * `todo` scheduler + job UI.
 * `todo` local setup page (LAN only).
