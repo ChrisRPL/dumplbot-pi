@@ -29,6 +29,7 @@ Use this as the appliance bring-up checklist for a new Raspberry Pi Zero 2 WH.
 - `GET /health` returns `200 OK`.
 - UI can render an idle screen.
 - `arecord` can capture a short WAV.
+- `npm run smoke:runner-sandbox-fs` passes on the Pi after `bwrap` is installed.
 - A reboot returns to a working idle state.
 
 ## Failure Rules
