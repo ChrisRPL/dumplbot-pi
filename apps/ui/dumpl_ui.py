@@ -602,13 +602,18 @@ def run_audio_talk_from_file(
 
 def format_field(label: str, value: str, width: int = SCREEN_WIDTH) -> list[str]:
     prefix = f"{label}: " if label else ""
-    wrap_width = max(8, width - len(prefix))
-    wrapped = textwrap.wrap(value, width=wrap_width) or [""]
-    lines = [f"{prefix}{wrapped[0]}"]
     indent = " " * len(prefix)
+    lines: list[str] = []
+    logical_lines = value.splitlines() or [""]
 
-    for line in wrapped[1:]:
-        lines.append(f"{indent}{line}")
+    for index, logical_line in enumerate(logical_lines):
+        line_prefix = prefix if index == 0 else indent
+        wrap_width = max(8, width - len(line_prefix))
+        wrapped = textwrap.wrap(logical_line, width=wrap_width) or [""]
+        lines.append(f"{line_prefix}{wrapped[0]}")
+
+        for wrapped_line in wrapped[1:]:
+            lines.append(f"{indent}{wrapped_line}")
 
     return lines
 
