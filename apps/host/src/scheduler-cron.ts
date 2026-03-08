@@ -1,0 +1,119 @@
+type CronFieldSpec = {
+  max: number;
+  min: number;
+  normalizeValue?: (value: number) => number;
+};
+
+const MINUTE_SPEC: CronFieldSpec = { min: 0, max: 59 };
+const HOUR_SPEC: CronFieldSpec = { min: 0, max: 23 };
+const DAY_OF_MONTH_SPEC: CronFieldSpec = { min: 1, max: 31 };
+const MONTH_SPEC: CronFieldSpec = { min: 1, max: 12 };
+const DAY_OF_WEEK_SPEC: CronFieldSpec = {
+  min: 0,
+  max: 7,
+  normalizeValue: (value) => (value === 7 ? 0 : value),
+};
+
+const normalizeCronValue = (value: number, spec: CronFieldSpec): number => {
+  const normalizedValue = spec.normalizeValue ? spec.normalizeValue(value) : value;
+
+  if (normalizedValue < spec.min || normalizedValue > spec.max) {
+    throw new Error("job schedule is invalid");
+  }
+
+  return normalizedValue;
+};
+
+const parseCronFieldToken = (token: string, spec: CronFieldSpec): Set<number> | null => {
+  const trimmedToken = token.trim();
+
+  if (trimmedToken === "*") {
+    return null;
+  }
+
+  const values = new Set<number>();
+  const rangeSeparatorIndex = trimmedToken.indexOf("-");
+
+  if (rangeSeparatorIndex >= 0) {
+    const startToken = trimmedToken.slice(0, rangeSeparatorIndex).trim();
+    const endToken = trimmedToken.slice(rangeSeparatorIndex + 1).trim();
+    const start = Number.parseInt(startToken, 10);
+    const end = Number.parseInt(endToken, 10);
+
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) {
+      throw new Error("job schedule is invalid");
+    }
+
+    for (let value = start; value <= end; value += 1) {
+      values.add(normalizeCronValue(value, spec));
+    }
+
+    return values;
+  }
+
+  const parsedValue = Number.parseInt(trimmedToken, 10);
+
+  if (!Number.isInteger(parsedValue)) {
+    throw new Error("job schedule is invalid");
+  }
+
+  values.add(normalizeCronValue(parsedValue, spec));
+  return values;
+};
+
+const parseCronField = (field: string, spec: CronFieldSpec): Set<number> | null => {
+  const trimmedField = field.trim();
+
+  if (!trimmedField) {
+    throw new Error("job schedule is invalid");
+  }
+
+  const fieldTokens = trimmedField.split(",");
+  let allowsAnyValue = false;
+  const allowedValues = new Set<number>();
+
+  for (const token of fieldTokens) {
+    const parsedToken = parseCronFieldToken(token, spec);
+
+    if (parsedToken === null) {
+      allowsAnyValue = true;
+      continue;
+    }
+
+    for (const value of parsedToken) {
+      allowedValues.add(value);
+    }
+  }
+
+  return allowsAnyValue ? null : allowedValues;
+};
+
+const valueMatchesField = (
+  field: Set<number> | null,
+  value: number,
+): boolean => field === null || field.has(value);
+
+export const matchesCronSchedule = (schedule: string, at: Date): boolean => {
+  const parts = schedule.trim().split(/\s+/u);
+
+  if (parts.length !== 5) {
+    throw new Error("job schedule is invalid");
+  }
+
+  const minuteField = parseCronField(parts[0] as string, MINUTE_SPEC);
+  const hourField = parseCronField(parts[1] as string, HOUR_SPEC);
+  const dayOfMonthField = parseCronField(parts[2] as string, DAY_OF_MONTH_SPEC);
+  const monthField = parseCronField(parts[3] as string, MONTH_SPEC);
+  const dayOfWeekField = parseCronField(parts[4] as string, DAY_OF_WEEK_SPEC);
+
+  return valueMatchesField(minuteField, at.getMinutes())
+    && valueMatchesField(hourField, at.getHours())
+    && valueMatchesField(dayOfMonthField, at.getDate())
+    && valueMatchesField(monthField, at.getMonth() + 1)
+    && valueMatchesField(dayOfWeekField, at.getDay());
+};
+
+export const getMinuteBucket = (at: Date): string => (
+  `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`
+  + `T${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`
+);
