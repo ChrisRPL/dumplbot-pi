@@ -12,6 +12,7 @@ type RunnerPolicy = {
   workspace: string;
   skill: string;
   toolAllowlist: string[];
+  bashCommandPrefixAllowlist: string[];
   permissionMode: PermissionMode;
 };
 
@@ -101,6 +102,34 @@ const parseToolAllowlist = (value: unknown): string[] => {
   return dedupedAllowlist;
 };
 
+const parseBashCommandPrefixAllowlist = (value: unknown): string[] => {
+  if (typeof value === "undefined") {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    fail("runner policy.bashCommandPrefixAllowlist must be string array");
+  }
+
+  const normalizedAllowlist: string[] = [];
+
+  for (const entry of value as unknown[]) {
+    if (typeof entry !== "string") {
+      fail("runner policy.bashCommandPrefixAllowlist entries must be non-empty strings");
+    }
+
+    const commandPrefix = (entry as string).trim();
+
+    if (commandPrefix.length === 0) {
+      fail("runner policy.bashCommandPrefixAllowlist entries must be non-empty strings");
+    }
+
+    normalizedAllowlist.push(commandPrefix);
+  }
+
+  return Array.from(new Set(normalizedAllowlist));
+};
+
 const parsePolicy = (value: unknown): RunnerPolicy => {
   if (!value || typeof value !== "object") {
     fail("runner input must include policy");
@@ -110,6 +139,7 @@ const parsePolicy = (value: unknown): RunnerPolicy => {
     workspace?: unknown;
     skill?: unknown;
     toolAllowlist?: unknown;
+    bashCommandPrefixAllowlist?: unknown;
     permissionMode?: unknown;
   };
 
@@ -128,10 +158,20 @@ const parsePolicy = (value: unknown): RunnerPolicy => {
     fail("runner policy.permissionMode is invalid");
   }
 
+  const parsedToolAllowlist = parseToolAllowlist(policyObject.toolAllowlist);
+  const parsedBashCommandPrefixAllowlist = parseBashCommandPrefixAllowlist(
+    policyObject.bashCommandPrefixAllowlist,
+  );
+
+  if (parsedToolAllowlist.includes("bash") && parsedBashCommandPrefixAllowlist.length === 0) {
+    fail("runner bash tool requires command prefix allowlist");
+  }
+
   return {
     workspace: (policyObject.workspace as string).trim(),
     skill: (policyObject.skill as string).trim(),
-    toolAllowlist: parseToolAllowlist(policyObject.toolAllowlist),
+    toolAllowlist: parsedToolAllowlist,
+    bashCommandPrefixAllowlist: parsedBashCommandPrefixAllowlist,
     permissionMode: policyObject.permissionMode as PermissionMode,
   };
 };
@@ -149,6 +189,36 @@ const assertToolAllowedByPolicy = (policy: RunnerPolicy, toolName: string): void
 
   if (!policy.toolAllowlist.includes(toolName)) {
     fail(`runner policy blocked tool: ${toolName}`);
+  }
+};
+
+const commandMatchesPrefix = (command: string, prefix: string): boolean =>
+  command === prefix
+  || (
+    command.startsWith(prefix)
+    && /\s/u.test(command[prefix.length] ?? "")
+  );
+
+const assertBashCommandAllowedByPolicy = (
+  policy: RunnerPolicy,
+  commandDetail: string | undefined,
+): void => {
+  if (!policy.toolAllowlist.includes("bash")) {
+    fail("runner policy blocked tool: bash");
+  }
+
+  const command = commandDetail?.trim() ?? "";
+
+  if (command.length === 0) {
+    fail("runner bash tool event requires command detail");
+  }
+
+  const commandAllowed = policy.bashCommandPrefixAllowlist.some((allowedPrefix) =>
+    commandMatchesPrefix(command, allowedPrefix),
+  );
+
+  if (!commandAllowed) {
+    fail("runner policy blocked bash command prefix");
   }
 };
 
@@ -212,6 +282,10 @@ const main = async (): Promise<void> => {
   for (const event of buildScaffoldEvents(input)) {
     if (event.type === "tool") {
       assertToolAllowedByPolicy(input.policy, event.name);
+
+      if (event.name === "bash") {
+        assertBashCommandAllowedByPolicy(input.policy, event.detail);
+      }
     }
 
     writeEvent(event);
