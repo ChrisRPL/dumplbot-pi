@@ -273,8 +273,8 @@ def upload_audio_file(base_url: str, audio_path: str) -> str:
 def stream_audio_talk(
     base_url: str,
     audio_id: str,
-    workspace: str,
-    skill: str,
+    workspace: Optional[str],
+    skill: Optional[str],
     renderer: "ConsoleRenderer",
 ) -> ScreenState:
     state = ScreenState(
@@ -282,14 +282,17 @@ def stream_audio_talk(
         status="Uploading audio",
         transcript=audio_id,
     )
+    payload: dict[str, str] = {}
+
+    if workspace:
+        payload["workspace"] = workspace
+
+    if skill:
+        payload["skill"] = skill
+
     request = urllib.request.Request(
         f"{base_url}/api/audio/{audio_id}/talk",
-        data=json.dumps(
-            {
-                "workspace": workspace,
-                "skill": skill,
-            }
-        ).encode("utf-8"),
+        data=json.dumps(payload).encode("utf-8"),
         headers={"content-type": "application/json"},
         method="POST",
     )
@@ -312,8 +315,8 @@ def stream_audio_talk(
 def run_audio_talk_from_file(
     base_url: str,
     audio_path: str,
-    workspace: str,
-    skill: str,
+    workspace: Optional[str],
+    skill: Optional[str],
     renderer: "ConsoleRenderer",
 ) -> ScreenState:
     state = ScreenState(
@@ -695,16 +698,21 @@ def build_prompt_state(prompt: str) -> ScreenState:
 def stream_talk(
     base_url: str,
     prompt: str,
-    workspace: str,
-    skill: str,
+    workspace: Optional[str],
+    skill: Optional[str],
     renderer: ConsoleRenderer,
 ) -> None:
     state = build_prompt_state(prompt)
-    payload = {
+    payload: dict[str, str] = {
         "text": prompt,
-        "workspace": workspace,
-        "skill": skill,
     }
+
+    if workspace:
+        payload["workspace"] = workspace
+
+    if skill:
+        payload["skill"] = skill
+
     request = urllib.request.Request(
         f"{base_url}/api/talk",
         data=json.dumps(payload).encode("utf-8"),
@@ -727,8 +735,8 @@ def stream_talk(
 
 def run_mock_loop(
     base_url: str,
-    workspace: str,
-    skill: str,
+    workspace: Optional[str],
+    skill: Optional[str],
     renderer: ConsoleRenderer,
 ) -> None:
     print("DumplBot mock UI. Type a prompt, or 'exit' to quit.")
@@ -754,8 +762,8 @@ def run_mock_loop(
 
 def run_single_prompt(
     base_url: str,
-    workspace: str,
-    skill: str,
+    workspace: Optional[str],
+    skill: Optional[str],
     prompt: str,
     renderer: ConsoleRenderer,
 ) -> int:
@@ -801,8 +809,8 @@ def run_button_capture_loop(
     renderer: ConsoleRenderer,
     config: UiRuntimeConfig,
     host_url: str,
-    workspace: str,
-    skill: str,
+    workspace: Optional[str],
+    skill: Optional[str],
 ) -> int:
     recorder = ArecordRecorder(config)
     flow_state = CaptureFlowState()
@@ -905,8 +913,8 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print button transition diagnostics to stderr",
     )
-    parser.add_argument("--workspace", default="default", help="Workspace to use for mock talk requests")
-    parser.add_argument("--skill", default="coding", help="Skill to use for mock talk requests")
+    parser.add_argument("--workspace", help="Workspace override for talk requests")
+    parser.add_argument("--skill", help="Skill override for talk requests")
     return parser.parse_args()
 
 
