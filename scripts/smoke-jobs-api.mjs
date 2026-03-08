@@ -122,6 +122,45 @@ const runSmoke = async () => {
     assert(Array.isArray(jobsFilePayload.jobs), "expected jobs file to contain jobs array");
     assert(jobsFilePayload.jobs.length === 1, "expected one persisted job");
 
+    const hourlyJobResponse = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "hourly-status",
+        prompt: "hourly ping",
+        schedule: "hourly",
+      }),
+    });
+    assert(hourlyJobResponse.status === 200, "expected hourly preset to return 200");
+    const hourlyJobPayload = await hourlyJobResponse.json();
+    assert(hourlyJobPayload.schedule === "0 * * * *", "expected hourly preset normalization");
+
+    const dailyJobResponse = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "daily-status",
+        prompt: "daily ping",
+        schedule: "daily 09:15",
+      }),
+    });
+    assert(dailyJobResponse.status === 200, "expected daily preset to return 200");
+    const dailyJobPayload = await dailyJobResponse.json();
+    assert(dailyJobPayload.schedule === "15 9 * * *", "expected daily preset normalization");
+
+    const weeklyJobResponse = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "weekly-status",
+        prompt: "weekly ping",
+        schedule: "weekly mon 08:30",
+      }),
+    });
+    assert(weeklyJobResponse.status === 200, "expected weekly preset to return 200");
+    const weeklyJobPayload = await weeklyJobResponse.json();
+    assert(weeklyJobPayload.schedule === "30 8 * * 1", "expected weekly preset normalization");
+
     const updateJobResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -146,8 +185,9 @@ const runSmoke = async () => {
     const listedJobsResponse = await fetch(`${baseUrl}/api/jobs`);
     assert(listedJobsResponse.status === 200, "expected GET /api/jobs after upsert");
     const listedJobsPayload = await listedJobsResponse.json();
-    assert(listedJobsPayload.jobs.length === 1, "expected single job after update");
-    assert(listedJobsPayload.jobs[0]?.schedule === "30 * * * *", "expected updated job in list");
+    assert(listedJobsPayload.jobs.length === 3, "expected three jobs after preset coverage");
+    const updatedJob = listedJobsPayload.jobs.find((job) => job.id === "daily-status");
+    assert(updatedJob?.schedule === "30 * * * *", "expected updated job in list");
 
     const missingWorkspaceResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",
@@ -172,6 +212,17 @@ const runSmoke = async () => {
       }),
     });
     assert(missingSkillResponse.status === 404, "expected missing skill to return 404");
+
+    const invalidScheduleResponse = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "broken-schedule",
+        prompt: "ping",
+        schedule: "daily 25:99",
+      }),
+    });
+    assert(invalidScheduleResponse.status === 400, "expected invalid schedule to return 400");
 
     console.log("jobs api smoke ok");
   } finally {
