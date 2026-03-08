@@ -18,6 +18,7 @@ require_command() {
 require_command rsync
 require_command node
 require_command npm
+require_command bwrap
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
