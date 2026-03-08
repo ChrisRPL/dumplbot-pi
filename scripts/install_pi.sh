@@ -25,6 +25,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_ROOT="/opt/dumplbot"
 CONFIG_ROOT="/etc/dumplbot"
 TMP_ROOT="/tmp/dumplbot"
+SERVICE_USER="pi"
 
 echo "syncing repo into ${INSTALL_ROOT}"
 mkdir -p "${INSTALL_ROOT}" "${CONFIG_ROOT}" "${TMP_ROOT}"
@@ -42,6 +43,9 @@ npm ci
 echo "building runtime artifacts"
 npm run build
 popd >/dev/null
+
+mkdir -p "${INSTALL_ROOT}/workspaces"
+chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_ROOT}/workspaces" "${TMP_ROOT}"
 
 if [[ ! -f "${CONFIG_ROOT}/config.yaml" ]]; then
   install -m 0644 "${INSTALL_ROOT}/config/dumplbot.example.yaml" "${CONFIG_ROOT}/config.yaml"
