@@ -218,6 +218,7 @@ The daemon streams events back to the UI over Server-Sent Events.
       "skill":"coding",
       "enabled":true,
       "last_run_at":null,
+      "last_status":null,
       "last_result":null
     }
   ]
@@ -242,6 +243,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 
 - `workspace` and `skill` optional; when present they must resolve to existing workspace/skill ids.
 - Success response matches the job object in `GET /api/jobs`.
+- Background scheduler runs update `last_run_at`, `last_status`, and `last_result`.
 - Status codes:
   - `200` when created or updated.
   - `404` when workspace or skill does not exist.
