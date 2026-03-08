@@ -11,13 +11,25 @@ export type HostSandboxConfig = {
   backend: "bwrap";
 };
 
+export type HostSchedulerConfig = {
+  enabled: boolean;
+  pollIntervalSeconds: number;
+  store: "file";
+};
+
 const DEFAULT_CONFIG_PATH = "/etc/dumplbot/config.yaml";
 const DEFAULT_WORKSPACE = "default";
 const DEFAULT_SKILL = "coding";
 const DEFAULT_MAX_RUN_SECONDS = 180;
+const DEFAULT_SCHEDULER_POLL_SECONDS = 15;
 const DEFAULT_SANDBOX_CONFIG: HostSandboxConfig = {
   enabled: true,
   backend: "bwrap",
+};
+const DEFAULT_SCHEDULER_CONFIG: HostSchedulerConfig = {
+  enabled: false,
+  pollIntervalSeconds: DEFAULT_SCHEDULER_POLL_SECONDS,
+  store: "file",
 };
 
 const parsePositiveInt = (value: string | undefined, fallback: number): number => {
@@ -169,6 +181,85 @@ export const loadHostSandboxConfig = async (
       const key = trimmedLine.slice(0, separatorIndex).trim();
       const value = trimmedLine.slice(separatorIndex + 1).trim().replace(/^"|"$/gu, "");
       applySandboxConfigLine(config, key, value);
+    }
+  } catch (error) {
+    const isMissingFile =
+      error instanceof Error
+      && "code" in error
+      && error.code === "ENOENT";
+
+    if (!isMissingFile) {
+      throw error;
+    }
+  }
+
+  return config;
+};
+
+const applySchedulerConfigLine = (
+  config: HostSchedulerConfig,
+  key: string,
+  value: string,
+): void => {
+  if (key === "enabled") {
+    const normalized = value.trim().toLowerCase();
+    config.enabled = normalized === "true" || normalized === "1";
+    return;
+  }
+
+  if (key === "store" && value === "file") {
+    config.store = "file";
+    return;
+  }
+
+  if (key === "poll_interval_seconds") {
+    config.pollIntervalSeconds = parsePositiveInt(value, config.pollIntervalSeconds);
+  }
+};
+
+export const loadHostSchedulerConfig = async (
+  configPath = process.env.DUMPLBOT_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
+): Promise<HostSchedulerConfig> => {
+  const config: HostSchedulerConfig = {
+    enabled: process.env.DUMPLBOT_SCHEDULER_ENABLED
+      ? process.env.DUMPLBOT_SCHEDULER_ENABLED.trim().toLowerCase() === "true"
+      : DEFAULT_SCHEDULER_CONFIG.enabled,
+    pollIntervalSeconds: parsePositiveInt(
+      process.env.DUMPLBOT_SCHEDULER_POLL_SECONDS,
+      DEFAULT_SCHEDULER_CONFIG.pollIntervalSeconds,
+    ),
+    store: DEFAULT_SCHEDULER_CONFIG.store,
+  };
+
+  try {
+    const rawConfig = await readFile(configPath, "utf8");
+    let inSchedulerBlock = false;
+
+    for (const rawLine of rawConfig.split(/\r?\n/u)) {
+      const trimmedLine = rawLine.trim();
+
+      if (!trimmedLine || trimmedLine.startsWith("#")) {
+        continue;
+      }
+
+      if (!rawLine.startsWith(" ")) {
+        inSchedulerBlock = trimmedLine === "scheduler:";
+        continue;
+      }
+
+      if (!inSchedulerBlock || !rawLine.startsWith("  ")) {
+        continue;
+      }
+
+      const separatorIndex = trimmedLine.indexOf(":");
+
+      if (separatorIndex <= 0) {
+        continue;
+      }
+
+      const key = trimmedLine.slice(0, separatorIndex).trim();
+      const value = trimmedLine.slice(separatorIndex + 1).trim().replace(/^"|"$/gu, "");
+      applySchedulerConfigLine(config, key, value);
     }
   } catch (error) {
     const isMissingFile =
