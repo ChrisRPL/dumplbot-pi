@@ -25,6 +25,7 @@ BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
 WHISPLAY_PHASE_RGB = {
     "Idle": (0, 64, 16),
+    "Jobs": (0, 56, 72),
     "Listening": (0, 48, 96),
     "Transcribing": (0, 64, 96),
     "Thinking": (96, 72, 0),
@@ -530,6 +531,72 @@ def handle_jobs_command(
         print(f"- {job_id} [{status}] {schedule} :: {run_state}")
 
     renderer.render_notice(f"Jobs listed: {len(jobs)}")
+
+
+def build_jobs_screen_state(jobs: list[dict[str, Any]]) -> ScreenState:
+    if not jobs:
+        return ScreenState(
+            phase="Jobs",
+            status="No scheduler jobs",
+            answer="Create jobs via /api/jobs.",
+        )
+
+    lines: list[str] = []
+
+    for job in jobs[:4]:
+        job_id = job.get("id")
+        schedule = job.get("schedule")
+        enabled = job.get("enabled")
+        last_status = job.get("last_status")
+        last_result = job.get("last_result")
+
+        if not isinstance(job_id, str) or not isinstance(schedule, str):
+            continue
+
+        marker = "on" if enabled else "off"
+        summary = f"{job_id} [{marker}] {schedule}"
+
+        if isinstance(last_status, str) and last_status:
+            summary = f"{summary}\n{last_status}"
+
+        if isinstance(last_result, str) and last_result:
+            summary = f"{summary}: {last_result}"
+
+        lines.append(summary)
+
+    if len(jobs) > 4:
+        lines.append(f"+{len(jobs) - 4} more")
+
+    return ScreenState(
+        phase="Jobs",
+        status=f"{len(jobs)} scheduler job(s)",
+        answer="\n".join(lines),
+    )
+
+
+def run_jobs_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    refresh_seconds: float,
+) -> int:
+    if refresh_seconds <= 0:
+        renderer.render_notice("Jobs refresh must be greater than zero")
+        return 1
+
+    while True:
+        try:
+            jobs = list_job_entries(base_url)
+            renderer.render(build_jobs_screen_state(jobs))
+        except (RuntimeError, urllib.error.URLError) as error:
+            renderer.render(
+                ScreenState(
+                    phase="Error",
+                    status="Jobs screen failed",
+                    error=str(error),
+                )
+            )
+
+        time.sleep(refresh_seconds)
 
 
 def stream_audio_talk(
@@ -1228,6 +1295,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print button transition diagnostics to stderr",
     )
+    parser.add_argument(
+        "--jobs-screen",
+        action="store_true",
+        help="Show scheduler jobs on the renderer and refresh continuously",
+    )
+    parser.add_argument(
+        "--jobs-refresh-seconds",
+        type=float,
+        default=5.0,
+        help="Refresh interval for --jobs-screen",
+    )
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
     return parser.parse_args()
@@ -1248,6 +1326,13 @@ def main() -> int:
                 renderer,
                 ui_config,
                 cancel_at_end=args.record_cancel,
+            )
+
+        if args.jobs_screen:
+            return run_jobs_screen(
+                args.host_url,
+                renderer,
+                args.jobs_refresh_seconds,
             )
 
         if args.prompt is not None:

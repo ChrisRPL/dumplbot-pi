@@ -85,6 +85,7 @@ python apps/ui/dumpl_ui.py --mock
 
 Type into `Dumpl>` and watch streamed output.
 Use `:workspace`, `:workspace <id>`, `:skill`, `:skill <id>`, and `:jobs` inside mock mode to inspect active selections and scheduler jobs.
+For the device renderer path, use `python apps/ui/dumpl_ui.py --jobs-screen` to show a live scheduler status view.
 
 ---
 
