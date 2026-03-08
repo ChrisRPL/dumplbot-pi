@@ -68,7 +68,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `tools` optional; when present, it must be a non-empty string array and each value must be allowed by the selected skill.
 - Response: SSE stream using the event types above.
 - Workspace selection order when `workspace` is omitted: `active_workspace` from `/api/config`, then `runtime.default_workspace`.
-- Skill selection order when `skill` is omitted: `active_skill` from `/api/config`, then `runtime.default_skill`.
+- Skill selection order when `skill` is omitted: `active_skill` from `/api/config`, then workspace `default_skill`, then `runtime.default_skill`.
 - Host emits skill prelude metadata before runner events:
   - `status`: `Using skill <skill-id>`
   - `tool`: `{"name":"skill-policy","detail":"<comma-separated allowlist>"}`
@@ -176,6 +176,31 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `404` when workspace does not exist.
   - `409` when repo id is already attached.
   - `400` for invalid JSON or invalid repo input.
+
+### `POST /api/workspaces/:workspaceId/config`
+
+- Update workspace-local metadata.
+- Current mutable field:
+
+```json
+{"default_skill":"research"}
+```
+
+- Set `"default_skill": null` to clear the workspace-local override.
+- Success response:
+
+```json
+{
+  "id":"default",
+  "default_skill":"research",
+  "attached_repos":[]
+}
+```
+
+- Status codes:
+  - `200` when updated.
+  - `404` when workspace or skill does not exist.
+  - `400` for invalid JSON or invalid field type.
 
 ### `GET /api/jobs`
 
