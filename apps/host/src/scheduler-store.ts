@@ -13,6 +13,7 @@ export type ScheduledJobRecord = {
   skill: string | null;
   enabled: boolean;
   lastRunAt: string | null;
+  lastStatus: "success" | "error" | null;
   lastResult: string | null;
 };
 
@@ -27,6 +28,12 @@ export type UpsertScheduledJobInput = {
 
 type RawScheduledJobStore = {
   jobs?: unknown;
+};
+
+export type ScheduledJobRunUpdate = {
+  completedAt: string;
+  result: string;
+  status: "success" | "error";
 };
 
 const getJobsPath = (): string =>
@@ -65,6 +72,7 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
     skill?: unknown;
     enabled?: unknown;
     last_run_at?: unknown;
+    last_status?: unknown;
     last_result?: unknown;
   };
 
@@ -89,6 +97,10 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
     throw new Error("job entry is invalid");
   }
 
+  if (rawJob.last_status !== null && rawJob.last_status !== "success" && rawJob.last_status !== "error" && typeof rawJob.last_status !== "undefined") {
+    throw new Error("job entry is invalid");
+  }
+
   if (rawJob.last_result !== null && typeof rawJob.last_result !== "string" && typeof rawJob.last_result !== "undefined") {
     throw new Error("job entry is invalid");
   }
@@ -105,6 +117,9 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
       : null,
     enabled: rawJob.enabled,
     lastRunAt: typeof rawJob.last_run_at === "string" ? rawJob.last_run_at : null,
+    lastStatus: rawJob.last_status === "success" || rawJob.last_status === "error"
+      ? rawJob.last_status
+      : null,
     lastResult: typeof rawJob.last_result === "string" ? rawJob.last_result : null,
   };
 };
@@ -161,6 +176,7 @@ const writeScheduledJobStore = async (jobs: ScheduledJobRecord[]): Promise<void>
         skill: job.skill,
         enabled: job.enabled,
         last_run_at: job.lastRunAt,
+        last_status: job.lastStatus,
         last_result: job.lastResult,
       })),
     }, null, 2)}\n`,
@@ -199,6 +215,7 @@ export const upsertScheduledJob = async (
     skill: input.skill,
     enabled: input.enabled,
     lastRunAt: null,
+    lastStatus: null,
     lastResult: null,
   };
   const jobs = await listScheduledJobs();
@@ -219,4 +236,27 @@ export const upsertScheduledJob = async (
   const sortedJobs = jobs.sort((left, right) => left.id.localeCompare(right.id));
   await writeScheduledJobStore(sortedJobs);
   return sortedJobs.find((job) => job.id === nextJob.id) as ScheduledJobRecord;
+};
+
+export const recordScheduledJobRun = async (
+  jobId: string,
+  update: ScheduledJobRunUpdate,
+): Promise<ScheduledJobRecord> => {
+  const normalizedJobId = normalizeScheduledJobId(jobId);
+  const jobs = await listScheduledJobs();
+  const jobIndex = jobs.findIndex((job) => job.id === normalizedJobId);
+
+  if (jobIndex < 0) {
+    throw new Error("job not found");
+  }
+
+  jobs[jobIndex] = {
+    ...jobs[jobIndex],
+    lastRunAt: normalizeRequiredScalar(update.completedAt, "job completedAt"),
+    lastStatus: update.status,
+    lastResult: normalizeRequiredScalar(update.result, "job result"),
+  };
+
+  await writeScheduledJobStore(jobs);
+  return jobs[jobIndex] as ScheduledJobRecord;
 };
