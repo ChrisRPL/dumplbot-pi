@@ -27,6 +27,7 @@ sandbox:
 scheduler:
   enabled: true
   store: file
+  poll_interval_seconds: 15
 
 logging:
   level: info
