@@ -508,12 +508,26 @@ def handle_jobs_command(
         job_id = job.get("id")
         schedule = job.get("schedule")
         enabled = job.get("enabled")
+        last_run_at = job.get("last_run_at")
+        last_status = job.get("last_status")
+        last_result = job.get("last_result")
 
         if not isinstance(job_id, str) or not isinstance(schedule, str):
             continue
 
         status = "on" if enabled else "off"
-        print(f"- {job_id} [{status}] {schedule}")
+        run_state = "never"
+
+        if isinstance(last_run_at, str) and last_run_at:
+            run_state = last_run_at
+
+            if isinstance(last_status, str) and last_status:
+                run_state = f"{last_status} @ {last_run_at}"
+
+        if isinstance(last_result, str) and last_result:
+            run_state = f"{run_state} -> {last_result}"
+
+        print(f"- {job_id} [{status}] {schedule} :: {run_state}")
 
     renderer.render_notice(f"Jobs listed: {len(jobs)}")
 
