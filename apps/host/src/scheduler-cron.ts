@@ -93,7 +93,13 @@ const valueMatchesField = (
   value: number,
 ): boolean => field === null || field.has(value);
 
-export const matchesCronSchedule = (schedule: string, at: Date): boolean => {
+const parseCronScheduleFields = (schedule: string): [
+  Set<number> | null,
+  Set<number> | null,
+  Set<number> | null,
+  Set<number> | null,
+  Set<number> | null,
+] => {
   const parts = schedule.trim().split(/\s+/u);
 
   if (parts.length !== 5) {
@@ -105,6 +111,70 @@ export const matchesCronSchedule = (schedule: string, at: Date): boolean => {
   const dayOfMonthField = parseCronField(parts[2] as string, DAY_OF_MONTH_SPEC);
   const monthField = parseCronField(parts[3] as string, MONTH_SPEC);
   const dayOfWeekField = parseCronField(parts[4] as string, DAY_OF_WEEK_SPEC);
+
+  return [minuteField, hourField, dayOfMonthField, monthField, dayOfWeekField];
+};
+
+const DAY_OF_WEEK_ALIASES: Record<string, number> = {
+  sun: 0,
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+};
+
+const parseTimeOfDay = (value: string): { hour: number; minute: number } => {
+  const match = /^(\d{1,2}):(\d{2})$/u.exec(value.trim());
+
+  if (!match) {
+    throw new Error("job schedule is invalid");
+  }
+
+  const hour = Number.parseInt(match[1] as string, 10);
+  const minute = Number.parseInt(match[2] as string, 10);
+
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    throw new Error("job schedule is invalid");
+  }
+
+  return { hour, minute };
+};
+
+export const normalizeScheduleInput = (scheduleInput: string): string => {
+  const trimmedInput = scheduleInput.trim();
+
+  if (!trimmedInput) {
+    throw new Error("job schedule is invalid");
+  }
+
+  if (trimmedInput === "hourly") {
+    return "0 * * * *";
+  }
+
+  const dailyMatch = /^daily\s+(.+)$/u.exec(trimmedInput);
+
+  if (dailyMatch) {
+    const { hour, minute } = parseTimeOfDay(dailyMatch[1] as string);
+    return `${minute} ${hour} * * *`;
+  }
+
+  const weeklyMatch = /^weekly\s+(sun|mon|tue|wed|thu|fri|sat)\s+(.+)$/iu.exec(trimmedInput);
+
+  if (weeklyMatch) {
+    const dayToken = (weeklyMatch[1] as string).toLowerCase();
+    const { hour, minute } = parseTimeOfDay(weeklyMatch[2] as string);
+    return `${minute} ${hour} * * ${DAY_OF_WEEK_ALIASES[dayToken]}`;
+  }
+
+  const normalizedCron = trimmedInput.split(/\s+/u).join(" ");
+  parseCronScheduleFields(normalizedCron);
+  return normalizedCron;
+};
+
+export const matchesCronSchedule = (schedule: string, at: Date): boolean => {
+  const [minuteField, hourField, dayOfMonthField, monthField, dayOfWeekField] = parseCronScheduleFields(schedule);
 
   return valueMatchesField(minuteField, at.getMinutes())
     && valueMatchesField(hourField, at.getHours())

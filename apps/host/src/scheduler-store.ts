@@ -2,6 +2,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
+import { normalizeScheduleInput } from "./scheduler-cron";
+
 const JOB_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
 const DEFAULT_JOBS_PATH = join(homedir(), ".local", "state", "dumplbot", "jobs.json");
 
@@ -210,7 +212,7 @@ export const upsertScheduledJob = async (
   const nextJob: ScheduledJobRecord = {
     id: normalizeScheduledJobId(input.id),
     prompt: normalizeRequiredScalar(input.prompt, "job prompt"),
-    schedule: normalizeRequiredScalar(input.schedule, "job schedule"),
+    schedule: normalizeScheduleInput(normalizeRequiredScalar(input.schedule, "job schedule")),
     workspace: input.workspace,
     skill: input.skill,
     enabled: input.enabled,
