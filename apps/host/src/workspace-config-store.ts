@@ -1,4 +1,13 @@
-import { lstat, mkdir, readFile, realpath, readlink, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  readlink,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
 const WORKSPACE_CONFIG_FILENAME = ".dumplbot-workspace.json";
@@ -44,7 +53,21 @@ const normalizeWorkspaceRepoPath = async (repoPath: string): Promise<string> => 
     throw new Error("workspace repo path must be absolute");
   }
 
-  return realpath(trimmedRepoPath);
+  let normalizedRepoPath: string;
+
+  try {
+    normalizedRepoPath = await realpath(trimmedRepoPath);
+  } catch {
+    throw new Error("workspace repo path not found");
+  }
+
+  const repoStats = await stat(normalizedRepoPath);
+
+  if (!repoStats.isDirectory()) {
+    throw new Error("workspace repo path must be directory");
+  }
+
+  return normalizedRepoPath;
 };
 
 const parseWorkspaceConfig = (workspacePath: string, raw: string): WorkspaceConfig => {

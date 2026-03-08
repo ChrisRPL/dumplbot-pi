@@ -26,7 +26,11 @@ import {
   listWorkspaces,
   normalizeWorkspaceId,
 } from "./workspace-store";
-import { loadWorkspaceConfig } from "./workspace-config-store";
+import {
+  ensureWorkspaceRepoAttachment,
+  loadWorkspaceConfig,
+  writeWorkspaceConfig,
+} from "./workspace-config-store";
 
 type DumplTalkRequest = {
   text: string;
@@ -46,6 +50,11 @@ type DumplCreateWorkspaceRequest = {
   instructions?: string;
 };
 
+type DumplAttachWorkspaceRepoRequest = {
+  id: string;
+  path: string;
+};
+
 type DumplUpdateConfigRequest = {
   runtime?: {
     active_workspace?: string | null;
@@ -58,6 +67,10 @@ type AudioAction = "talk" | "transcribe";
 type AudioActionRoute = {
   action: AudioAction;
   audioId: string;
+};
+
+type WorkspaceRepoRoute = {
+  workspaceId: string;
 };
 
 const DEFAULT_HOST = process.env.DUMPLBOT_HOST ?? "127.0.0.1";
@@ -110,6 +123,22 @@ const matchAudioActionRoute = (pathname: string): AudioActionRoute | null => {
   return {
     action: action as AudioAction,
     audioId: segments[2],
+  };
+};
+
+const matchWorkspaceRepoRoute = (pathname: string): WorkspaceRepoRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "workspaces" || segments[3] !== "repos") {
+    return null;
+  }
+
+  return {
+    workspaceId: segments[2],
   };
 };
 
@@ -515,6 +544,60 @@ const handleWorkspaceCreate = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : "workspace create failed";
     const statusCode = message === "workspace already exists" ? 409 : 400;
+    sendJson(response, statusCode, { error: message });
+    return;
+  }
+};
+
+const handleWorkspaceRepoAttach = async (
+  request: IncomingMessage,
+  workspaceId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplAttachWorkspaceRepoRequest;
+
+  try {
+    body = await readJson<DumplAttachWorkspaceRepoRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  let workspacePath: string;
+
+  try {
+    workspacePath = await getExistingWorkspacePath(workspaceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace resolution failed";
+    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    const workspaceConfig = await loadWorkspaceConfig(workspacePath);
+    const duplicateAttachment = workspaceConfig.attachedRepos.find(
+      (entry) => entry.id === body.id.trim().toLowerCase() || entry.path === body.path.trim(),
+    );
+
+    if (duplicateAttachment) {
+      throw new Error("workspace repo already attached");
+    }
+
+    const attachment = await ensureWorkspaceRepoAttachment(workspacePath, body.id, body.path);
+    await writeWorkspaceConfig(workspacePath, {
+      defaultSkill: workspaceConfig.defaultSkill,
+      attachedRepos: [...workspaceConfig.attachedRepos, attachment],
+    });
+
+    sendJson(response, 201, {
+      id: attachment.id,
+      path: attachment.path,
+      mount_path: `repos/${attachment.id}`,
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace repo attach failed";
+    const statusCode = message === "workspace repo already attached" ? 409 : 400;
     sendJson(response, statusCode, { error: message });
     return;
   }
@@ -937,6 +1020,9 @@ export const createHostServer = (): Server =>
       const audioActionRoute = request.method === "POST"
         ? matchAudioActionRoute(pathname)
         : null;
+      const workspaceRepoRoute = request.method === "POST"
+        ? matchWorkspaceRepoRoute(pathname)
+        : null;
 
       if (request.method === "GET" && pathname === "/health") {
         handleHealth(request, response);
@@ -960,6 +1046,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/workspaces") {
         await handleWorkspaceCreate(request, response);
+        return;
+      }
+
+      if (request.method === "POST" && workspaceRepoRoute) {
+        await handleWorkspaceRepoAttach(request, workspaceRepoRoute.workspaceId, response);
         return;
       }
 
