@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { recordScheduledJobRun } from "../dist/apps/host/src/scheduler-store.js";
 import { startSchedulerLoop } from "../dist/apps/host/src/scheduler-loop.js";
 
 const assert = (condition, message) => {
@@ -60,6 +61,11 @@ const runSmoke = async () => {
     nowProvider: () => new Date(now),
     onJobDue: async (job) => {
       seenJobs.push(job.id);
+      await recordScheduledJobRun(job.id, {
+        completedAt: now.toISOString(),
+        status: "success",
+        result: "ok",
+      });
     },
     onError: (error) => {
       loopError = error;
