@@ -8,6 +8,7 @@ This file defines the safety baseline for DumplBot.
 - UI process never stores API keys.
 - Agent runs happen inside `bubblewrap`.
 - Current sandbox baseline mounts the active workspace read-write and only a minimal read-only runtime surface.
+- Explicitly attached workspace repos are mounted into the sandbox one path at a time.
 - Workspace mounts should be writable only where needed.
 - Everything outside the active workspace should be read-only or absent by default.
 
