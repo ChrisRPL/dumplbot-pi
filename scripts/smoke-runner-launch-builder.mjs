@@ -8,6 +8,12 @@ const assert = (condition, message) => {
   }
 };
 
+const hasArgumentSequence = (command, expectedSequence) =>
+  command.some((_, index) =>
+    expectedSequence.every((expectedValue, sequenceIndex) =>
+      command[index + sequenceIndex] === expectedValue),
+  );
+
 const runSmoke = async () => {
   const workspacePath = "/tmp/dumplbot-smoke-workspace";
 
@@ -33,8 +39,20 @@ const runSmoke = async () => {
 
   assert(sandboxedCommand[0] === "bwrap", "expected sandboxed command to start with bwrap");
   assert(
+    sandboxedCommand.includes("--unshare-net"),
+    "expected sandboxed command to disable network access",
+  );
+  assert(
+    hasArgumentSequence(sandboxedCommand, ["--tmpfs", "/tmp"]),
+    "expected sandboxed command to isolate /tmp",
+  );
+  assert(
     sandboxedCommand.includes("--bind"),
     "expected sandboxed command to include writable workspace bind",
+  );
+  assert(
+    !hasArgumentSequence(sandboxedCommand, ["--ro-bind", "/", "/"]),
+    "expected sandboxed command to avoid binding the whole host root",
   );
   assert(
     sandboxedCommand.includes(workspacePath),
