@@ -78,6 +78,7 @@ const buildBwrapRunnerCommand = (workspacePath: string): string[] => {
   const args = [
     "bwrap",
     "--die-with-parent",
+    "--unshare-net",
     "--proc",
     "/proc",
     "--dev",
