@@ -205,10 +205,47 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `GET /api/jobs`
 
 - Return scheduler job list plus latest run status.
+- Current response shape:
+
+```json
+{
+  "jobs": [
+    {
+      "id":"daily-status",
+      "prompt":"summarize repo state",
+      "schedule":"0 * * * *",
+      "workspace":"default",
+      "skill":"coding",
+      "enabled":true,
+      "last_run_at":null,
+      "last_result":null
+    }
+  ]
+}
+```
 
 ### `POST /api/jobs`
 
 - Create or update a scheduler job.
+- Request body:
+
+```json
+{
+  "id":"daily-status",
+  "prompt":"summarize repo state",
+  "schedule":"0 * * * *",
+  "workspace":"default",
+  "skill":"coding",
+  "enabled":true
+}
+```
+
+- `workspace` and `skill` optional; when present they must resolve to existing workspace/skill ids.
+- Success response matches the job object in `GET /api/jobs`.
+- Status codes:
+  - `200` when created or updated.
+  - `404` when workspace or skill does not exist.
+  - `400` for invalid JSON or invalid job input.
 
 ### `GET /api/config`
 
