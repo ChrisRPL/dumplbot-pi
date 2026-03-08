@@ -267,6 +267,7 @@ type WorkspaceSelection = {
 type ResolvedWorkspace = {
   id: string;
   path: string;
+  attachedRepoPaths: string[];
 };
 
 const loadWorkspaceSelection = async (): Promise<WorkspaceSelection> => {
@@ -310,9 +311,11 @@ const resolveWorkspace = async (
   }
 
   const workspacePath = await getExistingWorkspacePath(workspaceId);
+  const workspaceConfig = await loadWorkspaceConfig(workspacePath);
   return {
     id: workspaceId,
     path: workspacePath,
+    attachedRepoPaths: workspaceConfig.attachedRepos.map((attachment) => attachment.path),
   };
 };
 
@@ -1029,6 +1032,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   }, {
     sandbox: sandboxConfig,
     workspacePath: resolvedWorkspace.path,
+    attachedRepoPaths: resolvedWorkspace.attachedRepoPaths,
   }, runtimeConfig.maxRunSeconds, buildSkillPreludeEvents({
     id: resolvedSkill.id,
     toolAllowlist,
@@ -1178,6 +1182,7 @@ const handleAudioTalk = async (
     {
       sandbox: sandboxConfig,
       workspacePath: resolvedWorkspace.path,
+      attachedRepoPaths: resolvedWorkspace.attachedRepoPaths,
     },
     runtimeConfig.maxRunSeconds,
     buildSkillPreludeEvents({

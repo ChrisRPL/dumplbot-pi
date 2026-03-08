@@ -30,6 +30,7 @@ export type RunnerInput = {
 export type RunnerLaunchOptions = {
   sandbox: HostSandboxConfig;
   workspacePath: string;
+  attachedRepoPaths?: string[];
 };
 
 const DEFAULT_MAX_RUN_SECONDS = 180;
@@ -72,9 +73,15 @@ const appendReadonlyBind = (
   args.push(optional ? "--ro-bind-try" : "--ro-bind", hostPath, hostPath);
 };
 
-const buildBwrapRunnerCommand = (workspacePath: string): string[] => {
+const buildBwrapRunnerCommand = (
+  workspacePath: string,
+  attachedRepoPaths: string[],
+): string[] => {
   const resolvedNodeBinaryPath = realpathSync(process.execPath);
   const resolvedRunnerEntryPoint = realpathSync(runnerEntryPoint());
+  const resolvedAttachedRepoPaths = Array.from(new Set(attachedRepoPaths.map((repoPath) =>
+    realpathSync(repoPath),
+  )));
   const args = [
     "bwrap",
     "--die-with-parent",
@@ -101,13 +108,13 @@ const buildBwrapRunnerCommand = (workspacePath: string): string[] => {
   }
 
   appendReadonlyBind(args, resolvedRunnerEntryPoint);
-  args.push(
-    "--bind",
-    workspacePath,
-    workspacePath,
-    resolvedNodeBinaryPath,
-    resolvedRunnerEntryPoint,
-  );
+  args.push("--bind", workspacePath, workspacePath);
+
+  for (const attachedRepoPath of resolvedAttachedRepoPaths) {
+    args.push("--bind", attachedRepoPath, attachedRepoPath);
+  }
+
+  args.push(resolvedNodeBinaryPath, resolvedRunnerEntryPoint);
 
   return args;
 };
@@ -123,7 +130,7 @@ export const buildRunnerLaunchCommand = (
     throw new Error("sandbox backend is unsupported");
   }
 
-  return buildBwrapRunnerCommand(options.workspacePath);
+  return buildBwrapRunnerCommand(options.workspacePath, options.attachedRepoPaths ?? []);
 };
 
 const toErrorEvent = (message: string): DumplErrorEvent => ({
@@ -161,6 +168,7 @@ export async function* streamRunnerEvents(
   const resolvedLaunchOptions = launchOptions ?? {
     sandbox: { enabled: false, backend: "bwrap" as const },
     workspacePath: process.cwd(),
+    attachedRepoPaths: [],
   };
   const resolvedMaxRunSeconds = Number.isFinite(maxRunSeconds) && maxRunSeconds > 0
     ? Math.floor(maxRunSeconds)
