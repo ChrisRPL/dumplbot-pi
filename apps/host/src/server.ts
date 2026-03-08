@@ -16,6 +16,7 @@ import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadHostRuntimeConfig, loadHostSandboxConfig } from "./runtime-config";
 import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
+import { listScheduledJobs, upsertScheduledJob } from "./scheduler-store";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
@@ -64,6 +65,15 @@ type DumplUpdateConfigRequest = {
     active_workspace?: string | null;
     active_skill?: string | null;
   };
+};
+
+type DumplUpsertJobRequest = {
+  id: string;
+  prompt: string;
+  schedule: string;
+  workspace?: string | null;
+  skill?: string | null;
+  enabled?: boolean;
 };
 
 type AudioAction = "talk" | "transcribe";
@@ -731,6 +741,95 @@ const handleConfigGet = async (response: ServerResponse): Promise<void> => {
   sendJson(response, 200, await getConfigResponsePayload());
 };
 
+const toJobPayload = (job: Awaited<ReturnType<typeof upsertScheduledJob>>) => ({
+  id: job.id,
+  prompt: job.prompt,
+  schedule: job.schedule,
+  workspace: job.workspace,
+  skill: job.skill,
+  enabled: job.enabled,
+  last_run_at: job.lastRunAt,
+  last_result: job.lastResult,
+});
+
+const handleJobList = async (response: ServerResponse): Promise<void> => {
+  const jobs = await listScheduledJobs();
+  sendJson(response, 200, {
+    jobs: jobs.map(toJobPayload),
+  });
+};
+
+const handleJobUpsert = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplUpsertJobRequest;
+
+  try {
+    body = await readJson<DumplUpsertJobRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  if (body.workspace !== null && typeof body.workspace !== "undefined" && typeof body.workspace !== "string") {
+    sendJson(response, 400, { error: "workspace must be string or null" });
+    return;
+  }
+
+  if (body.skill !== null && typeof body.skill !== "undefined" && typeof body.skill !== "string") {
+    sendJson(response, 400, { error: "skill must be string or null" });
+    return;
+  }
+
+  if (typeof body.enabled !== "undefined" && typeof body.enabled !== "boolean") {
+    sendJson(response, 400, { error: "enabled must be boolean" });
+    return;
+  }
+
+  let normalizedWorkspace: string | null = null;
+  let normalizedSkill: string | null = null;
+
+  try {
+    if (typeof body.workspace === "string") {
+      normalizedWorkspace = normalizeWorkspaceId(body.workspace);
+      await getExistingWorkspacePath(normalizedWorkspace);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace validation failed";
+    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    if (typeof body.skill === "string") {
+      normalizedSkill = normalizeSkillId(body.skill);
+      await loadSkill(normalizedSkill);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "skill validation failed";
+    sendJson(response, getSkillErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    const job = await upsertScheduledJob({
+      id: body.id,
+      prompt: body.prompt,
+      schedule: body.schedule,
+      workspace: normalizedWorkspace,
+      skill: normalizedSkill,
+      enabled: body.enabled ?? true,
+    });
+    sendJson(response, 200, toJobPayload(job));
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "job upsert failed";
+    sendJson(response, 400, { error: message });
+    return;
+  }
+};
+
 const handleConfigUpdate = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -1165,6 +1264,16 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/skills") {
         await handleSkillList(response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/jobs") {
+        await handleJobList(response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/jobs") {
+        await handleJobUpsert(request, response);
         return;
       }
 
