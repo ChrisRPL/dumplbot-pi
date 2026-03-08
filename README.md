@@ -12,7 +12,7 @@ Push-to-talk → transcribe → agent uses real tools (files/shell/web) → resp
 
 A **portable, always-with-you agent** that can **talk, code, run tools, and schedule jobs**—without needing a desktop “agent box”.
 
-Current repo status: architecture, policy, install, and workspace scaffolds are committed; the main app implementations are still in progress.
+Current repo status: text + voice flow, sandbox/policy baseline, and workspace/skill foundations are committed; scheduler, repo attach, and setup UX are still in progress.
 
 ---
 
@@ -139,13 +139,15 @@ DumplBot is built to be powerful **without becoming a pocket root shell**:
 
 ## Roadmap
 
-* [ ] Push-to-talk WAV capture
-* [ ] Whisper API STT integration
-* [ ] bwrap sandbox + policy gates
-* [ ] workspaces + repo attach
-* [ ] scheduler + job UI
-* [ ] skill packs + optional integrations
-* [ ] local setup page (LAN only)
+Status as of March 8, 2026:
+
+* `done` Push-to-talk WAV capture. Software path landed; Pi hardware validation still pending.
+* `done` Whisper API STT integration.
+* `done` `bwrap` sandbox + policy gates. Linux/Pi runtime validation still pending.
+* `partial` workspaces + repo attach. Workspace APIs/state landed; repo attach and UI switcher still pending.
+* `partial` skill packs + optional integrations. Skill schema/loading/policy landed; richer integrations still pending.
+* `todo` scheduler + job UI.
+* `todo` local setup page (LAN only).
 
 ---
 
