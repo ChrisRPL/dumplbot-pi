@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -100,11 +100,16 @@ const runSmoke = async () => {
   const runtimeStatePath = join(tmpRoot, "runtime-state.json");
   const defaultWorkspacePath = join(workspaceRoot, "default");
   const alphaWorkspacePath = join(workspaceRoot, "alpha");
+  const attachedReposRoot = join(tmpRoot, "attached-repos");
+  const notesRepoPath = join(attachedReposRoot, "notes");
 
   await mkdir(defaultWorkspacePath, { recursive: true });
   await mkdir(alphaWorkspacePath, { recursive: true });
+  await mkdir(notesRepoPath, { recursive: true });
   await writeFile(join(defaultWorkspacePath, "CLAUDE.md"), "# default\n", "utf8");
   await writeFile(join(alphaWorkspacePath, "CLAUDE.md"), "# alpha\n", "utf8");
+  await writeFile(join(notesRepoPath, "README.md"), "# notes\n", "utf8");
+  const normalizedNotesRepoPath = await realpath(notesRepoPath);
   await writeFile(
     configPath,
     "runtime:\n  default_workspace: default\n  default_skill: coding\n",
@@ -175,6 +180,43 @@ const runSmoke = async () => {
       (workspace) => workspace.id === "alpha",
     );
     assert(updatedAlphaWorkspace?.is_active, "alpha should be active after update");
+
+    const attachRepoResponse = await fetch(`${baseUrl}/api/workspaces/default/repos`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: "notes", path: notesRepoPath }),
+    });
+    assert(attachRepoResponse.status === 201, "expected workspace repo attach to return 201");
+    const attachRepoPayload = await attachRepoResponse.json();
+    assert(attachRepoPayload.id === "notes", "unexpected attached repo id");
+    assert(attachRepoPayload.path === normalizedNotesRepoPath, "unexpected attached repo path");
+    assert(attachRepoPayload.mount_path === "repos/notes", "unexpected attached repo mount path");
+
+    const attachedMountPath = join(defaultWorkspacePath, "repos", "notes");
+    const attachedMountStats = await lstat(attachedMountPath);
+    assert(attachedMountStats.isSymbolicLink(), "expected attached repo mount to be symlink");
+    const attachedMountTarget = await readlink(attachedMountPath);
+    assert(attachedMountTarget === normalizedNotesRepoPath, "unexpected attached repo symlink target");
+
+    const listWithRepoResponse = await fetch(`${baseUrl}/api/workspaces`);
+    assert(listWithRepoResponse.status === 200, "expected workspace list with repo to return 200");
+    const listWithRepoPayload = await listWithRepoResponse.json();
+    const defaultWorkspaceWithRepo = listWithRepoPayload.workspaces.find(
+      (workspace) => workspace.id === "default",
+    );
+    const attachedRepo = defaultWorkspaceWithRepo?.attached_repos?.find(
+      (repo) => repo.id === "notes",
+    );
+    assert(attachedRepo, "expected attached repo metadata in workspace list");
+    assert(attachedRepo.path === normalizedNotesRepoPath, "workspace list attached repo path mismatch");
+    assert(attachedRepo.mount_path === "repos/notes", "workspace list attached repo mount mismatch");
+
+    const duplicateAttachResponse = await fetch(`${baseUrl}/api/workspaces/default/repos`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: "notes", path: notesRepoPath }),
+    });
+    assert(duplicateAttachResponse.status === 409, "expected duplicate repo attach to return 409");
 
     const talkWithActiveResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
