@@ -72,7 +72,6 @@ const startHostServer = async (
   workspaceRoot,
   skillsRoot,
   configPath,
-  runnerEntryPointPath,
 ) => {
   const childProcess = spawn(
     process.execPath,
@@ -88,7 +87,6 @@ const startHostServer = async (
         DUMPLBOT_SKILLS_ROOT: skillsRoot,
         DUMPLBOT_CONFIG_PATH: configPath,
         DUMPLBOT_SANDBOX_ENABLED: "true",
-        DUMPLBOT_RUNNER_ENTRYPOINT: runnerEntryPointPath,
       },
     },
   );
@@ -119,7 +117,6 @@ const runSmoke = async () => {
   const workspaceRoot = join(tmpRoot, "workspaces");
   const skillsRoot = join(tmpRoot, "skills");
   const configPath = join(tmpRoot, "config.yaml");
-  const runnerEntryPointPath = join(tmpRoot, "sandbox-fs-runner.js");
   const defaultWorkspaceRoot = join(workspaceRoot, "default");
   const insideFilePath = join(defaultWorkspaceRoot, "inside.txt");
   const outsideFilePath = join(tmpRoot, "outside.txt");
@@ -137,7 +134,9 @@ const runSmoke = async () => {
       "prompt_prelude: |",
       "  Sandbox filesystem fixture.",
       "tool_allowlist:",
-      "  - read_file",
+      "  - bash",
+      "bash_prefix_allowlist:",
+      "  - cat",
       "permission_mode: balanced",
       "model:",
       "  reasoning: medium",
@@ -155,80 +154,56 @@ const runSmoke = async () => {
     ].join("\n"),
     "utf8",
   );
-  await writeFile(
-    runnerEntryPointPath,
-    [
-      "const fs = require('node:fs');",
-      "",
-      "const writeEvent = (event) => {",
-      "  process.stdout.write(JSON.stringify(event) + '\\n');",
-      "};",
-      "",
-      "const main = async () => {",
-      "  for await (const _chunk of process.stdin) {",
-      "    // consume input",
-      "  }",
-      "",
-      `  const insideFilePath = ${JSON.stringify(insideFilePath)};`,
-      `  const outsideFilePath = ${JSON.stringify(outsideFilePath)};`,
-      "",
-      "  try {",
-      "    const insideText = fs.readFileSync(insideFilePath, 'utf8').trim();",
-      "    if (insideText !== 'inside') {",
-      "      writeEvent({ type: 'error', message: 'inside workspace file unreadable' });",
-      "      process.exitCode = 1;",
-      "      return;",
-      "    }",
-      "  } catch (error) {",
-      "    writeEvent({ type: 'error', message: `inside workspace read failed: ${error.message}` });",
-      "    process.exitCode = 1;",
-      "    return;",
-      "  }",
-      "",
-      "  try {",
-      "    fs.readFileSync(outsideFilePath, 'utf8');",
-      "    writeEvent({ type: 'error', message: 'outside workspace file unexpectedly readable' });",
-      "    process.exitCode = 1;",
-      "    return;",
-      "  } catch {",
-      "    writeEvent({ type: 'status', message: 'Sandbox filesystem isolation confirmed' });",
-      "    writeEvent({ type: 'done', summary: 'sandbox fs ok' });",
-      "  }",
-      "};",
-      "",
-      "void main();",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-
   const hostServer = await startHostServer(
     tmpRoot,
     workspaceRoot,
     skillsRoot,
     configPath,
-    runnerEntryPointPath,
   );
   const baseUrl = `http://${HOST}:${HOST_PORT}`;
 
   try {
-    const talkResponse = await fetch(`${baseUrl}/api/talk`, {
+    const insideTalkResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "ping" }),
+      body: JSON.stringify({
+        text: "bash: cat inside.txt",
+        tools: ["bash"],
+      }),
     });
-    assert(talkResponse.status === 200, "expected /api/talk to return 200 SSE");
+    assert(insideTalkResponse.status === 200, "expected inside /api/talk to return 200 SSE");
 
-    const events = parseSsePayload(await talkResponse.text());
-    const statusEvent = events.find((event) =>
-      event.eventType === "status"
-      && event.data?.message === "Sandbox filesystem isolation confirmed");
-    const doneEvent = events.find((event) => event.eventType === "done");
-    const errorEvent = events.find((event) => event.eventType === "error");
+    const insideEvents = parseSsePayload(await insideTalkResponse.text());
+    const insideTokenEvent = insideEvents.find((event) => event.eventType === "token");
+    const insideDoneEvent = insideEvents.find((event) => event.eventType === "done");
+    const insideErrorEvent = insideEvents.find((event) => event.eventType === "error");
+    assert(insideTokenEvent?.data?.text === "inside", "expected inside workspace file token");
+    assert(
+      insideDoneEvent?.data?.summary === "Bash tool completed.",
+      "expected inside workspace bash completion",
+    );
+    assert(!insideErrorEvent, "unexpected error event when reading inside workspace file");
 
-    assert(statusEvent, "expected sandbox filesystem confirmation status");
-    assert(doneEvent?.data?.summary === "sandbox fs ok", "expected sandbox filesystem done event");
-    assert(!errorEvent, "unexpected error event for sandbox filesystem smoke");
+    const outsideTalkResponse = await fetch(`${baseUrl}/api/talk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: "bash: cat ../outside.txt",
+        tools: ["bash"],
+      }),
+    });
+    assert(outsideTalkResponse.status === 200, "expected outside /api/talk to return 200 SSE");
+
+    const outsideEvents = parseSsePayload(await outsideTalkResponse.text());
+    const outsideErrorEvent = outsideEvents.find((event) => event.eventType === "error");
+    const outsideDoneEvent = outsideEvents.find((event) => event.eventType === "done");
+
+    assert(outsideErrorEvent, "expected outside workspace read to fail");
+    assert(
+      String(outsideErrorEvent.data?.message ?? "").includes("runner bash command failed"),
+      "expected outside workspace read failure detail",
+    );
+    assert(!outsideDoneEvent, "unexpected done event for outside workspace read");
 
     console.log("runner sandbox fs smoke ok");
   } finally {
