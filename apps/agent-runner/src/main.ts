@@ -7,6 +7,11 @@ import type {
   DumplTokenEvent,
   DumplToolEvent,
 } from "../../../packages/core/src";
+import {
+  commandMatchesAllowedPrefix,
+  executeCommand,
+  parseBashPrompt,
+} from "./bash-tool";
 
 type RunnerPolicy = {
   workspace: string;
@@ -192,34 +197,82 @@ const assertToolAllowedByPolicy = (policy: RunnerPolicy, toolName: string): void
   }
 };
 
-const commandMatchesPrefix = (command: string, prefix: string): boolean =>
-  command === prefix
-  || (
-    command.startsWith(prefix)
-    && /\s/u.test(command[prefix.length] ?? "")
-  );
-
 const assertBashCommandAllowedByPolicy = (
   policy: RunnerPolicy,
-  commandDetail: string | undefined,
+  commandArgv: string[],
 ): void => {
   if (!policy.toolAllowlist.includes("bash")) {
     fail("runner policy blocked tool: bash");
   }
 
-  const command = commandDetail?.trim() ?? "";
-
-  if (command.length === 0) {
-    fail("runner bash tool event requires command detail");
-  }
-
   const commandAllowed = policy.bashCommandPrefixAllowlist.some((allowedPrefix) =>
-    commandMatchesPrefix(command, allowedPrefix),
+    commandMatchesAllowedPrefix(commandArgv, allowedPrefix),
   );
 
   if (!commandAllowed) {
     fail("runner policy blocked bash command prefix");
   }
+};
+
+const buildRunnerStartedEvent = (input: RunnerInput): DumplStatusEvent => ({
+  type: "status",
+  message: `Runner started for ${input.workspace ?? "default"}`,
+});
+
+const runPromptAsTool = async (input: RunnerInput): Promise<boolean> => {
+  let bashInvocation;
+
+  try {
+    bashInvocation = parseBashPrompt(input.prompt);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "runner bash command is invalid";
+    fail(message);
+  }
+
+  if (!bashInvocation) {
+    return false;
+  }
+
+  writeEvent(buildRunnerStartedEvent(input));
+  assertBashCommandAllowedByPolicy(input.policy, bashInvocation.argv);
+
+  const toolEvent: DumplToolEvent = {
+    type: "tool",
+    name: "bash",
+    detail: bashInvocation.detail,
+  };
+  writeEvent(toolEvent);
+
+  let result: { stdout: string; stderr: string } | null = null;
+
+  try {
+    result = await executeCommand(bashInvocation.argv);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "runner bash command failed";
+    fail(message);
+  }
+
+  if (!result) {
+    fail("runner bash command failed");
+  }
+
+  const resolvedResult = result as { stdout: string; stderr: string };
+  const output = resolvedResult.stdout.trimEnd() || resolvedResult.stderr.trimEnd();
+
+  if (output.length > 0) {
+    const tokenEvent: DumplTokenEvent = {
+      type: "token",
+      text: output,
+    };
+    writeEvent(tokenEvent);
+  }
+
+  const doneEvent: DumplDoneEvent = {
+    type: "done",
+    summary: "Bash tool completed.",
+  };
+  writeEvent(doneEvent);
+  return true;
 };
 
 const parseInput = (raw: string): RunnerInput => {
@@ -278,14 +331,15 @@ const parseInput = (raw: string): RunnerInput => {
 const main = async (): Promise<void> => {
   const raw = await readStdIn();
   const input = parseInput(raw);
+  const promptHandledAsTool = await runPromptAsTool(input);
+
+  if (promptHandledAsTool) {
+    return;
+  }
 
   for (const event of buildScaffoldEvents(input)) {
     if (event.type === "tool") {
       assertToolAllowedByPolicy(input.policy, event.name);
-
-      if (event.name === "bash") {
-        assertBashCommandAllowedByPolicy(input.policy, event.detail);
-      }
     }
 
     writeEvent(event);
