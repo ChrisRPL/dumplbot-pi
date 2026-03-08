@@ -55,6 +55,10 @@ type DumplAttachWorkspaceRepoRequest = {
   path: string;
 };
 
+type DumplUpdateWorkspaceConfigRequest = {
+  default_skill?: string | null;
+};
+
 type DumplUpdateConfigRequest = {
   runtime?: {
     active_workspace?: string | null;
@@ -70,6 +74,10 @@ type AudioActionRoute = {
 };
 
 type WorkspaceRepoRoute = {
+  workspaceId: string;
+};
+
+type WorkspaceConfigRoute = {
   workspaceId: string;
 };
 
@@ -134,6 +142,22 @@ const matchWorkspaceRepoRoute = (pathname: string): WorkspaceRepoRoute | null =>
   }
 
   if (segments[0] !== "api" || segments[1] !== "workspaces" || segments[3] !== "repos") {
+    return null;
+  }
+
+  return {
+    workspaceId: segments[2],
+  };
+};
+
+const matchWorkspaceConfigRoute = (pathname: string): WorkspaceConfigRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "workspaces" || segments[3] !== "config") {
     return null;
   }
 
@@ -292,15 +316,20 @@ type ResolvedSkill = {
 type SkillSelection = {
   defaultSkill: string;
   activeSkill: string | null;
+  workspaceDefaultSkill: string | null;
 };
 
-const loadSkillSelection = async (): Promise<SkillSelection> => {
+const loadSkillSelection = async (workspacePath?: string): Promise<SkillSelection> => {
   const runtimeConfig = await loadHostRuntimeConfig();
   const runtimeState = await loadHostRuntimeState();
+  const workspaceConfig = workspacePath
+    ? await loadWorkspaceConfig(workspacePath)
+    : { defaultSkill: null, attachedRepos: [] };
 
   return {
     defaultSkill: runtimeConfig.defaultSkill,
     activeSkill: runtimeState.activeSkill ?? null,
+    workspaceDefaultSkill: workspaceConfig.defaultSkill,
   };
 };
 
@@ -316,6 +345,10 @@ const pickSkillCandidate = (
     return selection.activeSkill;
   }
 
+  if (selection.workspaceDefaultSkill) {
+    return selection.workspaceDefaultSkill;
+  }
+
   if (selection.defaultSkill.trim().length > 0) {
     return selection.defaultSkill;
   }
@@ -323,8 +356,11 @@ const pickSkillCandidate = (
   throw new Error("default skill is required");
 };
 
-const resolveSkill = async (requestedSkill: string | undefined): Promise<ResolvedSkill> => {
-  const selection = await loadSkillSelection();
+const resolveSkill = async (
+  requestedSkill: string | undefined,
+  workspacePath: string,
+): Promise<ResolvedSkill> => {
+  const selection = await loadSkillSelection(workspacePath);
   const skillCandidate = pickSkillCandidate(requestedSkill, selection);
 
   if (!skillCandidate.trim().length) {
@@ -603,6 +639,71 @@ const handleWorkspaceRepoAttach = async (
   }
 };
 
+const handleWorkspaceConfigUpdate = async (
+  request: IncomingMessage,
+  workspaceId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplUpdateWorkspaceConfigRequest;
+
+  try {
+    body = await readJson<DumplUpdateWorkspaceConfigRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  if (!("default_skill" in body)) {
+    sendJson(response, 400, { error: "default_skill is required" });
+    return;
+  }
+
+  let workspacePath: string;
+
+  try {
+    workspacePath = await getExistingWorkspacePath(workspaceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace resolution failed";
+    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
+  if (body.default_skill !== null && typeof body.default_skill !== "string") {
+    sendJson(response, 400, { error: "default_skill must be string or null" });
+    return;
+  }
+
+  let nextDefaultSkill: string | null = null;
+
+  try {
+    if (typeof body.default_skill === "string") {
+      const skillId = normalizeSkillId(body.default_skill);
+      await loadSkill(skillId);
+      nextDefaultSkill = skillId;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace default skill update failed";
+    sendJson(response, getSkillErrorStatus(message), { error: message });
+    return;
+  }
+
+  const workspaceConfig = await loadWorkspaceConfig(workspacePath);
+  const nextWorkspaceConfig = await writeWorkspaceConfig(workspacePath, {
+    defaultSkill: nextDefaultSkill,
+    attachedRepos: workspaceConfig.attachedRepos,
+  });
+
+  sendJson(response, 200, {
+    id: workspaceId,
+    default_skill: nextWorkspaceConfig.defaultSkill,
+    attached_repos: nextWorkspaceConfig.attachedRepos.map((attachment) => ({
+      id: attachment.id,
+      path: attachment.path,
+      mount_path: `repos/${attachment.id}`,
+    })),
+  });
+};
+
 const handleSkillList = async (response: ServerResponse): Promise<void> => {
   const skills = await listSkills();
   const selection = await loadSkillSelection();
@@ -789,7 +890,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   }
 
   try {
-    resolvedSkill = await resolveSkill(body.skill);
+    resolvedSkill = await resolveSkill(body.skill, resolvedWorkspace.path);
   } catch (error) {
     const message = error instanceof Error ? error.message : "skill resolution failed";
     sendJson(response, getSkillErrorStatus(message), { error: message });
@@ -913,7 +1014,7 @@ const handleAudioTalk = async (
   }
 
   try {
-    resolvedSkill = await resolveSkill(body.skill);
+    resolvedSkill = await resolveSkill(body.skill, resolvedWorkspace.path);
   } catch (error) {
     const message = error instanceof Error ? error.message : "skill resolution failed";
     sendJson(response, getSkillErrorStatus(message), { error: message });
@@ -1023,6 +1124,9 @@ export const createHostServer = (): Server =>
       const workspaceRepoRoute = request.method === "POST"
         ? matchWorkspaceRepoRoute(pathname)
         : null;
+      const workspaceConfigRoute = request.method === "POST"
+        ? matchWorkspaceConfigRoute(pathname)
+        : null;
 
       if (request.method === "GET" && pathname === "/health") {
         handleHealth(request, response);
@@ -1051,6 +1155,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && workspaceRepoRoute) {
         await handleWorkspaceRepoAttach(request, workspaceRepoRoute.workspaceId, response);
+        return;
+      }
+
+      if (request.method === "POST" && workspaceConfigRoute) {
+        await handleWorkspaceConfigUpdate(request, workspaceConfigRoute.workspaceId, response);
         return;
       }
 
