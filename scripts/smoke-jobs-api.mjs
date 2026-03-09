@@ -195,6 +195,38 @@ const runSmoke = async () => {
     assert(Array.isArray(updatedJob?.history), "expected listed job history array");
     assert(updatedJob?.history.length === 0, "expected listed job to have empty history");
 
+    const disableJobResponse = await fetch(`${baseUrl}/api/jobs/hourly-status/disable`, {
+      method: "POST",
+    });
+    assert(disableJobResponse.status === 200, "expected job disable to return 200");
+    const disableJobPayload = await disableJobResponse.json();
+    assert(disableJobPayload.enabled === false, "expected disabled job payload");
+
+    const enableJobResponse = await fetch(`${baseUrl}/api/jobs/hourly-status/enable`, {
+      method: "POST",
+    });
+    assert(enableJobResponse.status === 200, "expected job enable to return 200");
+    const enableJobPayload = await enableJobResponse.json();
+    assert(enableJobPayload.enabled === true, "expected enabled job payload");
+
+    const deleteJobResponse = await fetch(`${baseUrl}/api/jobs/weekly-status`, {
+      method: "DELETE",
+    });
+    assert(deleteJobResponse.status === 200, "expected job delete to return 200");
+    const deleteJobPayload = await deleteJobResponse.json();
+    assert(deleteJobPayload.ok === true, "expected job delete ok payload");
+
+    const afterDeleteResponse = await fetch(`${baseUrl}/api/jobs`);
+    assert(afterDeleteResponse.status === 200, "expected GET /api/jobs after delete");
+    const afterDeletePayload = await afterDeleteResponse.json();
+    assert(afterDeletePayload.jobs.length === 2, "expected two jobs after delete");
+    assert(!afterDeletePayload.jobs.some((job) => job.id === "weekly-status"), "expected deleted job to be absent");
+
+    const missingDeleteResponse = await fetch(`${baseUrl}/api/jobs/missing-job`, {
+      method: "DELETE",
+    });
+    assert(missingDeleteResponse.status === 404, "expected missing delete to return 404");
+
     const missingWorkspaceResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
