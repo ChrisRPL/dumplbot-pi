@@ -680,6 +680,51 @@ def build_jobs_screen_state(jobs: list[dict[str, Any]]) -> ScreenState:
     )
 
 
+def build_job_history_screen_state(job: dict[str, Any]) -> ScreenState:
+    job_id = job.get("id")
+    history = job.get("history")
+
+    if not isinstance(job_id, str):
+        raise RuntimeError("job response is invalid")
+
+    if not isinstance(history, list) or not history:
+        return ScreenState(
+            phase="Jobs",
+            status=f"{job_id} has no history",
+            prompt=job_id,
+            answer="No scheduler runs recorded.",
+        )
+
+    lines: list[str] = []
+
+    for entry in history[-4:]:
+        if not isinstance(entry, dict):
+            continue
+
+        completed_at = entry.get("completed_at")
+        status = entry.get("status")
+        result = entry.get("result")
+
+        if not isinstance(completed_at, str) or not isinstance(status, str):
+            continue
+
+        summary = completed_at
+
+        if isinstance(result, str) and result:
+            summary = f"{summary}\n{status}: {result}"
+        else:
+            summary = f"{summary}\n{status}"
+
+        lines.append(summary)
+
+    return ScreenState(
+        phase="Jobs",
+        status=f"{job_id} history ({len(history)} runs)",
+        prompt=job_id,
+        answer="\n".join(lines) if lines else "No valid history entries.",
+    )
+
+
 def run_jobs_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -698,6 +743,33 @@ def run_jobs_screen(
                 ScreenState(
                     phase="Error",
                     status="Jobs screen failed",
+                    error=str(error),
+                )
+            )
+
+        time.sleep(refresh_seconds)
+
+
+def run_job_history_screen(
+    base_url: str,
+    job_id: str,
+    renderer: "ConsoleRenderer",
+    refresh_seconds: float,
+) -> int:
+    if refresh_seconds <= 0:
+        renderer.render_notice("Jobs refresh must be greater than zero")
+        return 1
+
+    while True:
+        try:
+            job = find_job_entry(base_url, job_id)
+            renderer.render(build_job_history_screen_state(job))
+        except (RuntimeError, urllib.error.URLError) as error:
+            renderer.render(
+                ScreenState(
+                    phase="Error",
+                    status="Job history failed",
+                    prompt=job_id,
                     error=str(error),
                 )
             )
@@ -1464,6 +1536,10 @@ def parse_args() -> argparse.Namespace:
         default=5.0,
         help="Refresh interval for --jobs-screen",
     )
+    parser.add_argument(
+        "--job-history",
+        help="Show one scheduler job history on the renderer and refresh continuously",
+    )
     parser.add_argument("--job-id", help="Create or update one scheduler job and exit")
     parser.add_argument("--job-schedule", help="Schedule or preset for --job-id")
     parser.add_argument("--job-prompt", help="Prompt for --job-id")
@@ -1520,6 +1596,14 @@ def main() -> int:
         if args.jobs_screen:
             return run_jobs_screen(
                 args.host_url,
+                renderer,
+                args.jobs_refresh_seconds,
+            )
+
+        if args.job_history is not None:
+            return run_job_history_screen(
+                args.host_url,
+                args.job_history,
                 renderer,
                 args.jobs_refresh_seconds,
             )
