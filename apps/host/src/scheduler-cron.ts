@@ -125,6 +125,23 @@ const DAY_OF_WEEK_ALIASES: Record<string, number> = {
   sat: 6,
 };
 
+const NATURAL_LANGUAGE_DAY_ALIASES: Record<string, string> = {
+  sun: "sun",
+  sunday: "sun",
+  mon: "mon",
+  monday: "mon",
+  tue: "tue",
+  tuesday: "tue",
+  wed: "wed",
+  wednesday: "wed",
+  thu: "thu",
+  thursday: "thu",
+  fri: "fri",
+  friday: "fri",
+  sat: "sat",
+  saturday: "sat",
+};
+
 const parseTimeOfDay = (value: string): { hour: number; minute: number } => {
   const match = /^(\d{1,2}):(\d{2})$/u.exec(value.trim());
 
@@ -142,25 +159,55 @@ const parseTimeOfDay = (value: string): { hour: number; minute: number } => {
   return { hour, minute };
 };
 
+const normalizeNaturalLanguageScheduleInput = (scheduleInput: string): string | null => {
+  const normalizedInput = scheduleInput.trim().toLowerCase().replace(/\s+/gu, " ");
+
+  if (normalizedInput === "every hour") {
+    return "hourly";
+  }
+
+  const dailyMatch = /^(?:daily|every day)(?: at)? (\d{1,2}:\d{2})$/u.exec(normalizedInput);
+
+  if (dailyMatch) {
+    return `daily ${dailyMatch[1]}`;
+  }
+
+  const weeklyMatch = /^(?:weekly|every) ([a-z]+)(?: at)? (\d{1,2}:\d{2})$/u.exec(normalizedInput);
+
+  if (weeklyMatch) {
+    const normalizedDay = NATURAL_LANGUAGE_DAY_ALIASES[weeklyMatch[1] as string];
+
+    if (!normalizedDay) {
+      return null;
+    }
+
+    return `weekly ${normalizedDay} ${weeklyMatch[2]}`;
+  }
+
+  return null;
+};
+
 export const normalizeScheduleInput = (scheduleInput: string): string => {
   const trimmedInput = scheduleInput.trim();
+  const naturalLanguagePreset = normalizeNaturalLanguageScheduleInput(trimmedInput);
+  const candidateInput = naturalLanguagePreset ?? trimmedInput;
 
-  if (!trimmedInput) {
+  if (!candidateInput) {
     throw new Error("job schedule is invalid");
   }
 
-  if (trimmedInput === "hourly") {
+  if (candidateInput === "hourly") {
     return "0 * * * *";
   }
 
-  const dailyMatch = /^daily\s+(.+)$/u.exec(trimmedInput);
+  const dailyMatch = /^daily\s+(.+)$/u.exec(candidateInput);
 
   if (dailyMatch) {
     const { hour, minute } = parseTimeOfDay(dailyMatch[1] as string);
     return `${minute} ${hour} * * *`;
   }
 
-  const weeklyMatch = /^weekly\s+(sun|mon|tue|wed|thu|fri|sat)\s+(.+)$/iu.exec(trimmedInput);
+  const weeklyMatch = /^weekly\s+(sun|mon|tue|wed|thu|fri|sat)\s+(.+)$/iu.exec(candidateInput);
 
   if (weeklyMatch) {
     const dayToken = (weeklyMatch[1] as string).toLowerCase();
@@ -168,7 +215,7 @@ export const normalizeScheduleInput = (scheduleInput: string): string => {
     return `${minute} ${hour} * * ${DAY_OF_WEEK_ALIASES[dayToken]}`;
   }
 
-  const normalizedCron = trimmedInput.split(/\s+/u).join(" ");
+  const normalizedCron = candidateInput.split(/\s+/u).join(" ");
   parseCronScheduleFields(normalizedCron);
   return normalizedCron;
 };
