@@ -499,6 +499,16 @@ def list_job_entries(base_url: str) -> list[dict[str, Any]]:
     return [job for job in jobs if isinstance(job, dict)]
 
 
+def find_job_entry(base_url: str, job_id: str) -> dict[str, Any]:
+    normalized_job_id = job_id.strip().lower()
+
+    for job in list_job_entries(base_url):
+        if job.get("id") == normalized_job_id:
+            return job
+
+    raise RuntimeError("job not found")
+
+
 def normalize_optional_job_value(raw_value: str) -> Optional[str]:
     normalized_value = raw_value.strip()
 
@@ -561,6 +571,39 @@ def handle_jobs_command(
         )
         verb = "updated" if tokens[0] == "edit" else "saved"
         renderer.render_notice(f"Job {verb}: {job.get('id', tokens[1])}")
+        return
+
+    if tokens and tokens[0] == "history":
+        if len(tokens) != 2:
+            renderer.render_notice("Usage: :jobs history <id>")
+            return
+
+        job = find_job_entry(base_url, tokens[1])
+        history = job.get("history")
+
+        if not isinstance(history, list) or len(history) == 0:
+            print(f"Job history: {job.get('id', tokens[1])}")
+            print("- no runs yet")
+            renderer.render_notice(f"History: {job.get('id', tokens[1])} (0 runs)")
+            return
+
+        print(f"Job history: {job.get('id', tokens[1])}")
+
+        for entry in history[-8:]:
+            if not isinstance(entry, dict):
+                continue
+
+            completed_at = entry.get("completed_at")
+            status = entry.get("status")
+            result = entry.get("result")
+
+            if not isinstance(completed_at, str) or not isinstance(status, str):
+                continue
+
+            summary = str(result) if isinstance(result, str) and result else "(no result)"
+            print(f"- {completed_at} [{status}] {summary}")
+
+        renderer.render_notice(f"History: {job.get('id', tokens[1])} ({len(history)} runs)")
         return
 
     jobs = list_job_entries(base_url)
