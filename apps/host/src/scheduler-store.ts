@@ -17,6 +17,7 @@ export type ScheduledJobRecord = {
   lastRunAt: string | null;
   lastStatus: "success" | "error" | null;
   lastResult: string | null;
+  history: ScheduledJobRunRecord[];
 };
 
 export type UpsertScheduledJobInput = {
@@ -33,6 +34,12 @@ type RawScheduledJobStore = {
 };
 
 export type ScheduledJobRunUpdate = {
+  completedAt: string;
+  result: string;
+  status: "success" | "error";
+};
+
+export type ScheduledJobRunRecord = {
   completedAt: string;
   result: string;
   status: "success" | "error";
@@ -61,6 +68,32 @@ const normalizeRequiredScalar = (value: string, fieldName: string): string => {
   return normalizedValue;
 };
 
+const parseScheduledJobRunRecord = (value: unknown): ScheduledJobRunRecord => {
+  if (!value || typeof value !== "object") {
+    throw new Error("job history entry is invalid");
+  }
+
+  const rawRun = value as {
+    completed_at?: unknown;
+    result?: unknown;
+    status?: unknown;
+  };
+
+  if (
+    typeof rawRun.completed_at !== "string"
+    || typeof rawRun.result !== "string"
+    || (rawRun.status !== "success" && rawRun.status !== "error")
+  ) {
+    throw new Error("job history entry is invalid");
+  }
+
+  return {
+    completedAt: normalizeRequiredScalar(rawRun.completed_at, "job completedAt"),
+    result: normalizeRequiredScalar(rawRun.result, "job result"),
+    status: rawRun.status,
+  };
+};
+
 const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
   if (!value || typeof value !== "object") {
     throw new Error("job entry is invalid");
@@ -76,6 +109,7 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
     last_run_at?: unknown;
     last_status?: unknown;
     last_result?: unknown;
+    history?: unknown;
   };
 
   if (
@@ -107,6 +141,10 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
     throw new Error("job entry is invalid");
   }
 
+  if (typeof rawJob.history !== "undefined" && !Array.isArray(rawJob.history)) {
+    throw new Error("job entry is invalid");
+  }
+
   return {
     id: normalizeScheduledJobId(rawJob.id),
     prompt: normalizeRequiredScalar(rawJob.prompt, "job prompt"),
@@ -123,6 +161,9 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
       ? rawJob.last_status
       : null,
     lastResult: typeof rawJob.last_result === "string" ? rawJob.last_result : null,
+    history: Array.isArray(rawJob.history)
+      ? rawJob.history.map(parseScheduledJobRunRecord)
+      : [],
   };
 };
 
@@ -180,6 +221,11 @@ const writeScheduledJobStore = async (jobs: ScheduledJobRecord[]): Promise<void>
         last_run_at: job.lastRunAt,
         last_status: job.lastStatus,
         last_result: job.lastResult,
+        history: job.history.map((entry) => ({
+          completed_at: entry.completedAt,
+          result: entry.result,
+          status: entry.status,
+        })),
       })),
     }, null, 2)}\n`,
     "utf8",
@@ -219,6 +265,7 @@ export const upsertScheduledJob = async (
     lastRunAt: null,
     lastStatus: null,
     lastResult: null,
+    history: [],
   };
   const jobs = await listScheduledJobs();
   const existingJobIndex = jobs.findIndex((job) => job.id === nextJob.id);
@@ -229,7 +276,9 @@ export const upsertScheduledJob = async (
       ...existingJob,
       ...nextJob,
       lastRunAt: existingJob.lastRunAt,
+      lastStatus: existingJob.lastStatus,
       lastResult: existingJob.lastResult,
+      history: existingJob.history,
     };
   } else {
     jobs.push(nextJob);
@@ -257,6 +306,14 @@ export const recordScheduledJobRun = async (
     lastRunAt: normalizeRequiredScalar(update.completedAt, "job completedAt"),
     lastStatus: update.status,
     lastResult: normalizeRequiredScalar(update.result, "job result"),
+    history: [
+      ...jobs[jobIndex].history,
+      {
+        completedAt: normalizeRequiredScalar(update.completedAt, "job completedAt"),
+        result: normalizeRequiredScalar(update.result, "job result"),
+        status: update.status,
+      },
+    ],
   };
 
   await writeScheduledJobStore(jobs);
