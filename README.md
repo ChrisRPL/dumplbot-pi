@@ -84,8 +84,8 @@ python apps/ui/dumpl_ui.py --mock
 ```
 
 Type into `Dumpl>` and watch streamed output.
-Use `:workspace`, `:workspace <id>`, `:skill`, `:skill <id>`, `:jobs`, `:jobs add <id> "<schedule>" "<prompt>" [workspace|-] [skill|-] [on|off]`, and `:jobs edit ...` inside mock mode to inspect active selections and scheduler jobs.
-For the device renderer path, use `python apps/ui/dumpl_ui.py --jobs-screen` to show a live scheduler status view, or `python apps/ui/dumpl_ui.py --job-id daily-status --job-schedule "daily 09:15" --job-prompt "summarize repo state"` to save one scheduler job through the on-device renderer flow.
+Use `:workspace`, `:workspace <id>`, `:skill`, `:skill <id>`, `:jobs`, `:jobs history <id>`, `:jobs on|off|delete <id>`, `:jobs add <id> "<schedule>" "<prompt>" [workspace|-] [skill|-] [on|off]`, and `:jobs edit ...` inside mock mode to inspect active selections and scheduler jobs. Schedule input now accepts cron, presets like `daily 09:15`, and tiny natural phrases like `every day at 09:15`.
+For the device renderer path, use `python apps/ui/dumpl_ui.py --jobs-screen` to show a live scheduler status view, `python apps/ui/dumpl_ui.py --job-history daily-status` to pin one job history on-screen, or `python apps/ui/dumpl_ui.py --job-id daily-status --job-schedule "every monday at 08:30" --job-prompt "summarize repo state"` to save one scheduler job through the on-device renderer flow.
 
 ---
 
@@ -148,7 +148,7 @@ Status as of March 8, 2026:
 * `done` `bwrap` sandbox + policy gates. Linux/Pi runtime validation still pending.
 * `partial` workspaces + repo attach. Workspace APIs/state, repo attach, and mock UI switching landed; hardware-first switcher polish still pending.
 * `partial` skill packs + optional integrations. Skill schema/loading/policy landed; richer integrations still pending.
-* `partial` scheduler + job UI. File-backed jobs API, schedule presets, run history, mock create/edit, and on-device status/save flows landed; richer on-device editing and history views still pending.
+* `partial` scheduler + job UI. File-backed jobs API, schedule presets, natural-language phrases, run history, mock actions, and on-device status/save/history flows landed; richer on-device editing still pending.
 * `todo` local setup page (LAN only).
 
 ---
