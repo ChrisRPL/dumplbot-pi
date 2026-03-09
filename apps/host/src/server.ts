@@ -754,6 +754,11 @@ const toJobPayload = (job: Awaited<ReturnType<typeof upsertScheduledJob>>) => ({
   last_run_at: job.lastRunAt,
   last_status: job.lastStatus,
   last_result: job.lastResult,
+  history: job.history.map((entry) => ({
+    completed_at: entry.completedAt,
+    result: entry.result,
+    status: entry.status,
+  })),
 });
 
 const handleJobList = async (response: ServerResponse): Promise<void> => {
