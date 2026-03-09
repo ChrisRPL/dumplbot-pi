@@ -84,8 +84,8 @@ python apps/ui/dumpl_ui.py --mock
 ```
 
 Type into `Dumpl>` and watch streamed output.
-Use `:workspace`, `:workspace <id>`, `:skill`, `:skill <id>`, and `:jobs` inside mock mode to inspect active selections and scheduler jobs.
-For the device renderer path, use `python apps/ui/dumpl_ui.py --jobs-screen` to show a live scheduler status view.
+Use `:workspace`, `:workspace <id>`, `:skill`, `:skill <id>`, `:jobs`, `:jobs add <id> "<schedule>" "<prompt>" [workspace|-] [skill|-] [on|off]`, and `:jobs edit ...` inside mock mode to inspect active selections and scheduler jobs.
+For the device renderer path, use `python apps/ui/dumpl_ui.py --jobs-screen` to show a live scheduler status view, or `python apps/ui/dumpl_ui.py --job-id daily-status --job-schedule "daily 09:15" --job-prompt "summarize repo state"` to save one scheduler job through the on-device renderer flow.
 
 ---
 
@@ -148,7 +148,7 @@ Status as of March 8, 2026:
 * `done` `bwrap` sandbox + policy gates. Linux/Pi runtime validation still pending.
 * `partial` workspaces + repo attach. Workspace APIs/state, repo attach, and mock UI switching landed; hardware-first switcher polish still pending.
 * `partial` skill packs + optional integrations. Skill schema/loading/policy landed; richer integrations still pending.
-* `partial` scheduler + job UI. File-backed jobs API and mock UI list landed; scheduler loop and on-device job views still pending.
+* `partial` scheduler + job UI. File-backed jobs API, schedule presets, run history, mock create/edit, and on-device status/save flows landed; richer on-device editing and history views still pending.
 * `todo` local setup page (LAN only).
 
 ---
