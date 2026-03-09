@@ -319,3 +319,36 @@ export const recordScheduledJobRun = async (
   await writeScheduledJobStore(jobs);
   return jobs[jobIndex] as ScheduledJobRecord;
 };
+
+export const setScheduledJobEnabled = async (
+  jobId: string,
+  enabled: boolean,
+): Promise<ScheduledJobRecord> => {
+  const normalizedJobId = normalizeScheduledJobId(jobId);
+  const jobs = await listScheduledJobs();
+  const jobIndex = jobs.findIndex((job) => job.id === normalizedJobId);
+
+  if (jobIndex < 0) {
+    throw new Error("job not found");
+  }
+
+  jobs[jobIndex] = {
+    ...jobs[jobIndex],
+    enabled,
+  };
+
+  await writeScheduledJobStore(jobs);
+  return jobs[jobIndex] as ScheduledJobRecord;
+};
+
+export const deleteScheduledJob = async (jobId: string): Promise<void> => {
+  const normalizedJobId = normalizeScheduledJobId(jobId);
+  const jobs = await listScheduledJobs();
+  const nextJobs = jobs.filter((job) => job.id !== normalizedJobId);
+
+  if (nextJobs.length === jobs.length) {
+    throw new Error("job not found");
+  }
+
+  await writeScheduledJobStore(nextJobs);
+};
