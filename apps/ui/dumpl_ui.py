@@ -1222,6 +1222,58 @@ def run_single_prompt(
     return 0
 
 
+def run_job_upsert(
+    base_url: str,
+    job_id: str,
+    schedule: str,
+    prompt: str,
+    workspace: Optional[str],
+    skill: Optional[str],
+    enabled: bool,
+    renderer: ConsoleRenderer,
+) -> int:
+    renderer.render(
+        ScreenState(
+            phase="Jobs",
+            status="Saving scheduler job",
+            prompt=job_id,
+            transcript=schedule,
+            answer=prompt,
+        )
+    )
+
+    try:
+        job = upsert_job_entry(
+            base_url,
+            job_id,
+            schedule,
+            prompt,
+            workspace,
+            skill,
+            enabled,
+        )
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Job save failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+    renderer.render(
+        ScreenState(
+            phase="Jobs",
+            status=f"Job saved: {job.get('id', job_id)}",
+            prompt=job_id,
+            transcript=schedule,
+            answer=prompt,
+        )
+    )
+    return 0
+
+
 def run_record_smoke(
     duration_seconds: float,
     renderer: ConsoleRenderer,
@@ -1369,6 +1421,16 @@ def parse_args() -> argparse.Namespace:
         default=5.0,
         help="Refresh interval for --jobs-screen",
     )
+    parser.add_argument("--job-id", help="Create or update one scheduler job and exit")
+    parser.add_argument("--job-schedule", help="Schedule or preset for --job-id")
+    parser.add_argument("--job-prompt", help="Prompt for --job-id")
+    parser.add_argument("--job-workspace", help="Workspace for --job-id")
+    parser.add_argument("--job-skill", help="Skill for --job-id")
+    parser.add_argument(
+        "--job-disabled",
+        action="store_true",
+        help="Save --job-id as disabled",
+    )
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
     return parser.parse_args()
@@ -1389,6 +1451,27 @@ def main() -> int:
                 renderer,
                 ui_config,
                 cancel_at_end=args.record_cancel,
+            )
+
+        has_job_upsert_arg = any(
+            value is not None
+            for value in (args.job_id, args.job_schedule, args.job_prompt)
+        )
+
+        if has_job_upsert_arg:
+            if not args.job_id or not args.job_schedule or not args.job_prompt:
+                renderer.render_notice("--job-id, --job-schedule, and --job-prompt are required together")
+                return 1
+
+            return run_job_upsert(
+                args.host_url,
+                args.job_id,
+                args.job_schedule,
+                args.job_prompt,
+                args.job_workspace,
+                args.job_skill,
+                not args.job_disabled,
+                renderer,
             )
 
         if args.jobs_screen:
