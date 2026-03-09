@@ -16,7 +16,12 @@ import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadHostRuntimeConfig, loadHostSandboxConfig } from "./runtime-config";
 import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
-import { listScheduledJobs, upsertScheduledJob } from "./scheduler-store";
+import {
+  deleteScheduledJob,
+  listScheduledJobs,
+  setScheduledJobEnabled,
+  upsertScheduledJob,
+} from "./scheduler-store";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { transcribeAudioFile } from "./transcriber";
@@ -89,6 +94,16 @@ type WorkspaceRepoRoute = {
 
 type WorkspaceConfigRoute = {
   workspaceId: string;
+};
+
+type JobAction = "enable" | "disable";
+
+type JobRoute = {
+  jobId: string;
+};
+
+type JobActionRoute = JobRoute & {
+  action: JobAction;
 };
 
 const DEFAULT_HOST = process.env.DUMPLBOT_HOST ?? "127.0.0.1";
@@ -176,6 +191,43 @@ const matchWorkspaceConfigRoute = (pathname: string): WorkspaceConfigRoute | nul
   };
 };
 
+const matchJobRoute = (pathname: string): JobRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 3) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "jobs") {
+    return null;
+  }
+
+  return {
+    jobId: segments[2],
+  };
+};
+
+const matchJobActionRoute = (pathname: string): JobActionRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "jobs") {
+    return null;
+  }
+
+  if (segments[3] !== "enable" && segments[3] !== "disable") {
+    return null;
+  }
+
+  return {
+    jobId: segments[2],
+    action: segments[3],
+  };
+};
+
 const readJson = async <T>(request: IncomingMessage): Promise<T> => {
   const chunks: Buffer[] = [];
 
@@ -237,6 +289,18 @@ const getSkillErrorStatus = (message: string): number => {
   }
 
   return 500;
+};
+
+const getJobErrorStatus = (message: string): number => {
+  if (message === "job not found") {
+    return 404;
+  }
+
+  if (message === "job id is invalid") {
+    return 400;
+  }
+
+  return 400;
 };
 
 const getPolicyErrorCode = (message: string): string => {
@@ -839,6 +903,37 @@ const handleJobUpsert = async (
   }
 };
 
+const handleJobDelete = async (
+  jobId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  try {
+    await deleteScheduledJob(jobId);
+    sendJson(response, 200, { ok: true });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "job delete failed";
+    sendJson(response, getJobErrorStatus(message), { error: message });
+    return;
+  }
+};
+
+const handleJobAction = async (
+  jobId: string,
+  action: JobAction,
+  response: ServerResponse,
+): Promise<void> => {
+  try {
+    const job = await setScheduledJobEnabled(jobId, action === "enable");
+    sendJson(response, 200, toJobPayload(job));
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "job update failed";
+    sendJson(response, getJobErrorStatus(message), { error: message });
+    return;
+  }
+};
+
 const handleConfigUpdate = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -1237,6 +1332,12 @@ export const createHostServer = (): Server =>
       const workspaceConfigRoute = request.method === "POST"
         ? matchWorkspaceConfigRoute(pathname)
         : null;
+      const jobRoute = request.method === "DELETE"
+        ? matchJobRoute(pathname)
+        : null;
+      const jobActionRoute = request.method === "POST"
+        ? matchJobActionRoute(pathname)
+        : null;
 
       if (request.method === "GET" && pathname === "/health") {
         handleHealth(request, response);
@@ -1285,6 +1386,16 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/jobs") {
         await handleJobUpsert(request, response);
+        return;
+      }
+
+      if (request.method === "DELETE" && jobRoute) {
+        await handleJobDelete(jobRoute.jobId, response);
+        return;
+      }
+
+      if (request.method === "POST" && jobActionRoute) {
+        await handleJobAction(jobActionRoute.jobId, jobActionRoute.action, response);
         return;
       }
 
