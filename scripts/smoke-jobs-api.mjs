@@ -163,6 +163,45 @@ const runSmoke = async () => {
     const weeklyJobPayload = await weeklyJobResponse.json();
     assert(weeklyJobPayload.schedule === "30 8 * * 1", "expected weekly preset normalization");
 
+    const naturalHourlyJobResponse = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "hourly-status",
+        prompt: "hourly phrase ping",
+        schedule: "every hour",
+      }),
+    });
+    assert(naturalHourlyJobResponse.status === 200, "expected hourly phrase to return 200");
+    const naturalHourlyJobPayload = await naturalHourlyJobResponse.json();
+    assert(naturalHourlyJobPayload.schedule === "0 * * * *", "expected hourly phrase normalization");
+
+    const naturalDailyJobResponse = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "daily-status",
+        prompt: "daily phrase ping",
+        schedule: "every day at 09:15",
+      }),
+    });
+    assert(naturalDailyJobResponse.status === 200, "expected daily phrase to return 200");
+    const naturalDailyJobPayload = await naturalDailyJobResponse.json();
+    assert(naturalDailyJobPayload.schedule === "15 9 * * *", "expected daily phrase normalization");
+
+    const naturalWeeklyJobResponse = await fetch(`${baseUrl}/api/jobs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "weekly-status",
+        prompt: "weekly phrase ping",
+        schedule: "every monday at 08:30",
+      }),
+    });
+    assert(naturalWeeklyJobResponse.status === 200, "expected weekly phrase to return 200");
+    const naturalWeeklyJobPayload = await naturalWeeklyJobResponse.json();
+    assert(naturalWeeklyJobPayload.schedule === "30 8 * * 1", "expected weekly phrase normalization");
+
     const updateJobResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
