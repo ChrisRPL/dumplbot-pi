@@ -542,6 +542,26 @@ def upsert_job_entry(
     )
 
 
+def set_job_enabled(
+    base_url: str,
+    job_id: str,
+    enabled: bool,
+) -> dict[str, Any]:
+    return request_json(
+        base_url,
+        f"/api/jobs/{job_id}/{'enable' if enabled else 'disable'}",
+        method="POST",
+    )
+
+
+def delete_job_entry(base_url: str, job_id: str) -> None:
+    request_json(
+        base_url,
+        f"/api/jobs/{job_id}",
+        method="DELETE",
+    )
+
+
 def handle_jobs_command(
     base_url: str,
     command: str,
@@ -604,6 +624,25 @@ def handle_jobs_command(
             print(f"- {completed_at} [{status}] {summary}")
 
         renderer.render_notice(f"History: {job.get('id', tokens[1])} ({len(history)} runs)")
+        return
+
+    if tokens and tokens[0] in {"on", "off"}:
+        if len(tokens) != 2:
+            renderer.render_notice("Usage: :jobs on|off <id>")
+            return
+
+        job = set_job_enabled(base_url, tokens[1], tokens[0] == "on")
+        state = "enabled" if job.get("enabled") else "disabled"
+        renderer.render_notice(f"Job {state}: {job.get('id', tokens[1])}")
+        return
+
+    if tokens and tokens[0] == "delete":
+        if len(tokens) != 2:
+            renderer.render_notice("Usage: :jobs delete <id>")
+            return
+
+        delete_job_entry(base_url, tokens[1])
+        renderer.render_notice(f"Job deleted: {tokens[1]}")
         return
 
     jobs = list_job_entries(base_url)
