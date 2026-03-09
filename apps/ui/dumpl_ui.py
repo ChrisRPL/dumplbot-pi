@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import shlex
 import signal
 import subprocess
 import sys
@@ -498,10 +499,69 @@ def list_job_entries(base_url: str) -> list[dict[str, Any]]:
     return [job for job in jobs if isinstance(job, dict)]
 
 
+def normalize_optional_job_value(raw_value: str) -> Optional[str]:
+    normalized_value = raw_value.strip()
+
+    if normalized_value.lower() in {"-", "none", "null"}:
+        return None
+
+    return normalized_value
+
+
+def upsert_job_entry(
+    base_url: str,
+    job_id: str,
+    schedule: str,
+    prompt: str,
+    workspace: Optional[str],
+    skill: Optional[str],
+    enabled: bool,
+) -> dict[str, Any]:
+    return request_json(
+        base_url,
+        "/api/jobs",
+        method="POST",
+        payload={
+            "id": job_id,
+            "schedule": schedule,
+            "prompt": prompt,
+            "workspace": workspace,
+            "skill": skill,
+            "enabled": enabled,
+        },
+    )
+
+
 def handle_jobs_command(
     base_url: str,
+    command: str,
     renderer: "ConsoleRenderer",
 ) -> None:
+    _, _, argument = command.partition(" ")
+    tokens = shlex.split(argument)
+
+    if tokens and tokens[0] == "add":
+        if len(tokens) < 4 or len(tokens) > 7:
+            renderer.render_notice("Usage: :jobs add <id> \"<schedule>\" \"<prompt>\" [workspace|-] [skill|-] [on|off]")
+            return
+
+        enabled = True
+
+        if len(tokens) >= 7:
+            enabled = tokens[6].strip().lower() not in {"off", "false", "0"}
+
+        job = upsert_job_entry(
+            base_url,
+            tokens[1],
+            tokens[2],
+            tokens[3],
+            normalize_optional_job_value(tokens[4]) if len(tokens) >= 5 else None,
+            normalize_optional_job_value(tokens[5]) if len(tokens) >= 6 else None,
+            enabled,
+        )
+        renderer.render_notice(f"Job saved: {job.get('id', tokens[1])}")
+        return
+
     jobs = list_job_entries(base_url)
     print("Jobs:")
 
@@ -1127,7 +1187,7 @@ def run_mock_loop(
 
         if prompt.startswith(":jobs") or prompt.startswith("/jobs"):
             try:
-                handle_jobs_command(base_url, renderer)
+                handle_jobs_command(base_url, prompt.replace("/", ":", 1), renderer)
             except (RuntimeError, urllib.error.URLError) as error:
                 renderer.render(
                     ScreenState(
