@@ -540,9 +540,9 @@ def handle_jobs_command(
     _, _, argument = command.partition(" ")
     tokens = shlex.split(argument)
 
-    if tokens and tokens[0] == "add":
+    if tokens and tokens[0] in {"add", "edit"}:
         if len(tokens) < 4 or len(tokens) > 7:
-            renderer.render_notice("Usage: :jobs add <id> \"<schedule>\" \"<prompt>\" [workspace|-] [skill|-] [on|off]")
+            renderer.render_notice("Usage: :jobs add|edit <id> \"<schedule>\" \"<prompt>\" [workspace|-] [skill|-] [on|off]")
             return
 
         enabled = True
@@ -559,7 +559,8 @@ def handle_jobs_command(
             normalize_optional_job_value(tokens[5]) if len(tokens) >= 6 else None,
             enabled,
         )
-        renderer.render_notice(f"Job saved: {job.get('id', tokens[1])}")
+        verb = "updated" if tokens[0] == "edit" else "saved"
+        renderer.render_notice(f"Job {verb}: {job.get('id', tokens[1])}")
         return
 
     jobs = list_job_entries(base_url)
@@ -572,6 +573,7 @@ def handle_jobs_command(
         last_run_at = job.get("last_run_at")
         last_status = job.get("last_status")
         last_result = job.get("last_result")
+        history = job.get("history")
 
         if not isinstance(job_id, str) or not isinstance(schedule, str):
             continue
@@ -588,7 +590,8 @@ def handle_jobs_command(
         if isinstance(last_result, str) and last_result:
             run_state = f"{run_state} -> {last_result}"
 
-        print(f"- {job_id} [{status}] {schedule} :: {run_state}")
+        history_count = len(history) if isinstance(history, list) else 0
+        print(f"- {job_id} [{status}] {schedule} :: {run_state} ({history_count} runs)")
 
     renderer.render_notice(f"Jobs listed: {len(jobs)}")
 
