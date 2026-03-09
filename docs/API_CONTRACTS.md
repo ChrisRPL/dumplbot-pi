@@ -242,6 +242,10 @@ The daemon streams events back to the UI over Server-Sent Events.
 }
 ```
 
+- `schedule` accepts:
+  - raw cron expressions like `"0 * * * *"`
+  - preset syntax: `"hourly"`, `"daily 09:15"`, `"weekly mon 08:30"`
+  - tiny natural phrases: `"every hour"`, `"every day at 09:15"`, `"every monday at 08:30"`
 - `workspace` and `skill` optional; when present they must resolve to existing workspace/skill ids.
 - Success response matches the job object in `GET /api/jobs`.
 - Background scheduler runs update `last_run_at`, `last_status`, `last_result`, and append `{completed_at,status,result}` entries to `history`.
@@ -249,6 +253,38 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `200` when created or updated.
   - `404` when workspace or skill does not exist.
   - `400` for invalid JSON or invalid job input.
+
+### `POST /api/jobs/:jobId/enable`
+
+- Enable one scheduler job.
+- Success response matches the job object in `GET /api/jobs`.
+- Status codes:
+  - `200` when updated.
+  - `404` when the job does not exist.
+  - `400` when the job id is invalid.
+
+### `POST /api/jobs/:jobId/disable`
+
+- Disable one scheduler job.
+- Success response matches the job object in `GET /api/jobs`.
+- Status codes:
+  - `200` when updated.
+  - `404` when the job does not exist.
+  - `400` when the job id is invalid.
+
+### `DELETE /api/jobs/:jobId`
+
+- Delete one scheduler job.
+- Success response:
+
+```json
+{"ok":true}
+```
+
+- Status codes:
+  - `200` when deleted.
+  - `404` when the job does not exist.
+  - `400` when the job id is invalid.
 
 ### `GET /api/config`
 
