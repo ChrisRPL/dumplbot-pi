@@ -4,7 +4,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { recordScheduledJobRun } from "../dist/apps/host/src/scheduler-store.js";
+import {
+  listScheduledJobs,
+  recordScheduledJobRun,
+} from "../dist/apps/host/src/scheduler-store.js";
 import { startSchedulerLoop } from "../dist/apps/host/src/scheduler-loop.js";
 
 const assert = (condition, message) => {
@@ -55,6 +58,7 @@ const runSmoke = async () => {
   process.env.DUMPLBOT_JOBS_PATH = jobsPath;
   const seenJobs = [];
   let loopError = null;
+  let persistedJobs = [];
   const loop = startSchedulerLoop({
     enabled: true,
     pollIntervalMs: 250,
@@ -74,6 +78,7 @@ const runSmoke = async () => {
 
   try {
     await sleep(900);
+    persistedJobs = await listScheduledJobs();
   } finally {
     loop.close();
     delete process.env.DUMPLBOT_JOBS_PATH;
@@ -83,6 +88,11 @@ const runSmoke = async () => {
   assert(!loopError, `unexpected scheduler loop error: ${loopError?.message ?? "unknown"}`);
   assert(seenJobs.length === 1, `expected one due job execution, got ${seenJobs.length}`);
   assert(seenJobs[0] === "due-job", "expected only due job to run");
+  const dueJob = persistedJobs.find((job) => job.id === "due-job");
+  assert(dueJob?.lastStatus === "success", "expected due job last status");
+  assert(Array.isArray(dueJob?.history), "expected due job history array");
+  assert(dueJob?.history.length === 1, "expected one persisted history entry");
+  assert(dueJob?.history[0]?.result === "ok", "expected persisted history result");
 
   console.log("scheduler loop smoke ok");
 };

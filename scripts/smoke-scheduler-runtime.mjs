@@ -139,6 +139,9 @@ const runSmoke = async () => {
     const job = await waitForJobRun(baseUrl, "scheduler-ping");
     assert(job.last_status === "success", "expected successful scheduler run");
     assert(typeof job.last_result === "string" && job.last_result.length > 0, "expected scheduler result text");
+    assert(Array.isArray(job.history), "expected scheduler job history array");
+    assert(job.history.length === 1, "expected single scheduler history entry");
+    assert(job.history[0]?.status === "success", "expected scheduler history status");
 
     console.log("scheduler runtime smoke ok");
   } finally {

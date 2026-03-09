@@ -117,6 +117,8 @@ const runSmoke = async () => {
     assert(createJobPayload.last_run_at === null, "expected empty last_run_at");
     assert(createJobPayload.last_status === null, "expected empty last_status");
     assert(createJobPayload.last_result === null, "expected empty last_result");
+    assert(Array.isArray(createJobPayload.history), "expected empty history array");
+    assert(createJobPayload.history.length === 0, "expected no history entries");
 
     const jobsFilePayload = JSON.parse(await readFile(jobsPath, "utf8"));
     assert(Array.isArray(jobsFilePayload.jobs), "expected jobs file to contain jobs array");
@@ -181,6 +183,8 @@ const runSmoke = async () => {
     assert(updateJobPayload.skill === "research", "expected updated skill");
     assert(updateJobPayload.enabled === false, "expected updated enabled flag");
     assert(updateJobPayload.last_status === null, "expected last_status to remain empty after update");
+    assert(Array.isArray(updateJobPayload.history), "expected update to include history array");
+    assert(updateJobPayload.history.length === 0, "expected no history entries after update");
 
     const listedJobsResponse = await fetch(`${baseUrl}/api/jobs`);
     assert(listedJobsResponse.status === 200, "expected GET /api/jobs after upsert");
@@ -188,6 +192,8 @@ const runSmoke = async () => {
     assert(listedJobsPayload.jobs.length === 3, "expected three jobs after preset coverage");
     const updatedJob = listedJobsPayload.jobs.find((job) => job.id === "daily-status");
     assert(updatedJob?.schedule === "30 * * * *", "expected updated job in list");
+    assert(Array.isArray(updatedJob?.history), "expected listed job history array");
+    assert(updatedJob?.history.length === 0, "expected listed job to have empty history");
 
     const missingWorkspaceResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",
