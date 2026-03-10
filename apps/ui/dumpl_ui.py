@@ -499,14 +499,13 @@ def list_job_entries(base_url: str) -> list[dict[str, Any]]:
     return [job for job in jobs if isinstance(job, dict)]
 
 
-def find_job_entry(base_url: str, job_id: str) -> dict[str, Any]:
-    normalized_job_id = job_id.strip().lower()
+def get_job_entry(base_url: str, job_id: str) -> dict[str, Any]:
+    payload = request_json(base_url, f"/api/jobs/{job_id.strip().lower()}")
 
-    for job in list_job_entries(base_url):
-        if job.get("id") == normalized_job_id:
-            return job
+    if not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
+        raise RuntimeError("job response is invalid")
 
-    raise RuntimeError("job not found")
+    return payload
 
 
 def normalize_optional_job_value(raw_value: str) -> Optional[str]:
@@ -598,7 +597,7 @@ def handle_jobs_command(
             renderer.render_notice("Usage: :jobs history <id>")
             return
 
-        job = find_job_entry(base_url, tokens[1])
+        job = get_job_entry(base_url, tokens[1])
         history = job.get("history")
 
         if not isinstance(history, list) or len(history) == 0:
@@ -858,7 +857,7 @@ def run_job_history_screen(
 
     while True:
         try:
-            job = find_job_entry(base_url, job_id)
+            job = get_job_entry(base_url, job_id)
             renderer.render(build_job_history_screen_state(job))
         except (RuntimeError, urllib.error.URLError) as error:
             renderer.render(
@@ -885,7 +884,7 @@ def run_job_detail_screen(
 
     while True:
         try:
-            job = find_job_entry(base_url, job_id)
+            job = get_job_entry(base_url, job_id)
             renderer.render(build_job_detail_screen_state(job))
         except (RuntimeError, urllib.error.URLError) as error:
             renderer.render(
