@@ -8,6 +8,7 @@ export type ScheduledJobRunOutcome = {
   completedAt: string;
   result: string;
   status: "success" | "error";
+  durationMs: number;
 };
 
 const parseSseEvents = (payload: string): Array<{ eventType: string; data: Record<string, unknown> }> =>
@@ -36,6 +37,7 @@ const parseSseEvents = (payload: string): Array<{ eventType: string; data: Recor
 export const runScheduledJob = async (
   job: ScheduledJobRecord,
 ): Promise<ScheduledJobRunOutcome> => {
+  const startedAt = Date.now();
   const payload: { text: string; workspace?: string; skill?: string } = {
     text: job.prompt,
   };
@@ -55,11 +57,13 @@ export const runScheduledJob = async (
       body: JSON.stringify(payload),
     });
     const completedAt = new Date().toISOString();
+    const durationMs = Math.max(0, Date.now() - startedAt);
     const rawBody = await response.text();
 
     if (!response.ok) {
       return {
         completedAt,
+        durationMs,
         status: "error",
         result: rawBody.trim() || `scheduler job failed with HTTP ${response.status}`,
       };
@@ -74,6 +78,7 @@ export const runScheduledJob = async (
         : "scheduler job failed";
       return {
         completedAt,
+        durationMs,
         status: "error",
         result: errorMessage,
       };
@@ -91,12 +96,14 @@ export const runScheduledJob = async (
 
     return {
       completedAt,
+      durationMs,
       status: "success",
       result: summary || tokenText || "Run finished",
     };
   } catch (error) {
     return {
       completedAt: new Date().toISOString(),
+      durationMs: Math.max(0, Date.now() - startedAt),
       status: "error",
       result: error instanceof Error ? error.message : String(error),
     };
