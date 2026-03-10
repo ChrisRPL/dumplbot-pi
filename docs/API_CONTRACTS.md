@@ -226,6 +226,14 @@ The daemon streams events back to the UI over Server-Sent Events.
 }
 ```
 
+### `GET /api/jobs/:jobId`
+
+- Return one scheduler job with the same payload shape used in `GET /api/jobs`.
+- Status codes:
+  - `200` when found.
+  - `404` when the job does not exist.
+  - `400` when the job id is invalid.
+
 ### `POST /api/jobs`
 
 - Create or update a scheduler job.
