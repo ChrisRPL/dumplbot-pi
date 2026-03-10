@@ -257,6 +257,20 @@ export const listScheduledJobs = async (): Promise<ScheduledJobRecord[]> => {
   return [];
 };
 
+export const getScheduledJob = async (
+  jobId: string,
+): Promise<ScheduledJobRecord> => {
+  const normalizedJobId = normalizeScheduledJobId(jobId);
+  const jobs = await listScheduledJobs();
+  const job = jobs.find((entry) => entry.id === normalizedJobId);
+
+  if (!job) {
+    throw new Error("job not found");
+  }
+
+  return job;
+};
+
 export const upsertScheduledJob = async (
   input: UpsertScheduledJobInput,
 ): Promise<ScheduledJobRecord> => {
