@@ -6,6 +6,7 @@ import { normalizeScheduleInput } from "./scheduler-cron";
 
 const JOB_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
 const DEFAULT_JOBS_PATH = join(homedir(), ".local", "state", "dumplbot", "jobs.json");
+const MAX_SCHEDULED_JOB_HISTORY_ENTRIES = 20;
 
 export type ScheduledJobRecord = {
   id: string;
@@ -94,6 +95,10 @@ const parseScheduledJobRunRecord = (value: unknown): ScheduledJobRunRecord => {
   };
 };
 
+const trimScheduledJobHistory = (
+  history: ScheduledJobRunRecord[],
+): ScheduledJobRunRecord[] => history.slice(-MAX_SCHEDULED_JOB_HISTORY_ENTRIES);
+
 const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
   if (!value || typeof value !== "object") {
     throw new Error("job entry is invalid");
@@ -162,7 +167,7 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
       : null,
     lastResult: typeof rawJob.last_result === "string" ? rawJob.last_result : null,
     history: Array.isArray(rawJob.history)
-      ? rawJob.history.map(parseScheduledJobRunRecord)
+      ? trimScheduledJobHistory(rawJob.history.map(parseScheduledJobRunRecord))
       : [],
   };
 };
@@ -278,7 +283,7 @@ export const upsertScheduledJob = async (
       lastRunAt: existingJob.lastRunAt,
       lastStatus: existingJob.lastStatus,
       lastResult: existingJob.lastResult,
-      history: existingJob.history,
+      history: trimScheduledJobHistory(existingJob.history),
     };
   } else {
     jobs.push(nextJob);
@@ -306,14 +311,14 @@ export const recordScheduledJobRun = async (
     lastRunAt: normalizeRequiredScalar(update.completedAt, "job completedAt"),
     lastStatus: update.status,
     lastResult: normalizeRequiredScalar(update.result, "job result"),
-    history: [
+    history: trimScheduledJobHistory([
       ...jobs[jobIndex].history,
       {
         completedAt: normalizeRequiredScalar(update.completedAt, "job completedAt"),
         result: normalizeRequiredScalar(update.result, "job result"),
         status: update.status,
       },
-    ],
+    ]),
   };
 
   await writeScheduledJobStore(jobs);
