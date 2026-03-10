@@ -234,6 +234,15 @@ const runSmoke = async () => {
     assert(Array.isArray(updatedJob?.history), "expected listed job history array");
     assert(updatedJob?.history.length === 0, "expected listed job to have empty history");
 
+    const detailJobResponse = await fetch(`${baseUrl}/api/jobs/daily-status`);
+    assert(detailJobResponse.status === 200, "expected job detail to return 200");
+    const detailJobPayload = await detailJobResponse.json();
+    assert(detailJobPayload.id === "daily-status", "expected job detail id");
+    assert(detailJobPayload.schedule === "30 * * * *", "expected job detail schedule");
+
+    const missingDetailResponse = await fetch(`${baseUrl}/api/jobs/missing-job`);
+    assert(missingDetailResponse.status === 404, "expected missing job detail to return 404");
+
     const disableJobResponse = await fetch(`${baseUrl}/api/jobs/hourly-status/disable`, {
       method: "POST",
     });
