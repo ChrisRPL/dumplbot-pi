@@ -11,6 +11,7 @@
     "smoke:bash-tool-execution": "npm run build && node scripts/smoke-bash-tool-execution.mjs",
     "smoke:bash-prefix-policy": "npm run build && node scripts/smoke-bash-prefix-policy.mjs",
     "smoke:jobs-api": "npm run build && node scripts/smoke-jobs-api.mjs",
+    "smoke:scheduler-history-retention": "npm run build && node scripts/smoke-scheduler-history-retention.mjs",
     "smoke:scheduler-loop": "npm run build && node scripts/smoke-scheduler-loop.mjs",
     "smoke:scheduler-runtime": "npm run build && node scripts/smoke-scheduler-runtime.mjs",
     "smoke:runner-bash-prefix": "npm run build && node scripts/smoke-runner-bash-prefix.mjs",
