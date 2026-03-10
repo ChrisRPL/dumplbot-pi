@@ -764,6 +764,63 @@ def build_job_history_screen_state(job: dict[str, Any]) -> ScreenState:
     )
 
 
+def build_job_detail_screen_state(job: dict[str, Any]) -> ScreenState:
+    job_id = job.get("id")
+    schedule = job.get("schedule")
+    enabled = job.get("enabled")
+    last_run_at = job.get("last_run_at")
+    last_status = job.get("last_status")
+    last_result = job.get("last_result")
+    history = job.get("history")
+
+    if not isinstance(job_id, str) or not isinstance(schedule, str):
+        raise RuntimeError("job response is invalid")
+
+    state = "on" if enabled else "off"
+    last_run_summary = "never"
+
+    if isinstance(last_run_at, str) and last_run_at:
+        last_run_summary = last_run_at
+
+        if isinstance(last_status, str) and last_status:
+            last_run_summary = f"{last_status} @ {last_run_at}"
+
+        if isinstance(last_result, str) and last_result:
+            last_run_summary = f"{last_run_summary} -> {last_result}"
+
+    history_lines: list[str] = []
+
+    if isinstance(history, list):
+        for entry in history[-3:]:
+            if not isinstance(entry, dict):
+                continue
+
+            completed_at = entry.get("completed_at")
+            status = entry.get("status")
+            result = entry.get("result")
+
+            if not isinstance(completed_at, str) or not isinstance(status, str):
+                continue
+
+            summary = f"{completed_at}\n{status}"
+
+            if isinstance(result, str) and result:
+                summary = f"{summary}: {result}"
+
+            history_lines.append(summary)
+
+    if not history_lines:
+        history_lines.append("No history entries.")
+
+    return ScreenState(
+        phase="Jobs",
+        status=f"{job_id} [{state}]",
+        prompt=schedule,
+        transcript=last_run_summary,
+        answer="\n".join(history_lines),
+    )
+
+
 def run_jobs_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -808,6 +865,33 @@ def run_job_history_screen(
                 ScreenState(
                     phase="Error",
                     status="Job history failed",
+                    prompt=job_id,
+                    error=str(error),
+                )
+            )
+
+        time.sleep(refresh_seconds)
+
+
+def run_job_detail_screen(
+    base_url: str,
+    job_id: str,
+    renderer: "ConsoleRenderer",
+    refresh_seconds: float,
+) -> int:
+    if refresh_seconds <= 0:
+        renderer.render_notice("Jobs refresh must be greater than zero")
+        return 1
+
+    while True:
+        try:
+            job = find_job_entry(base_url, job_id)
+            renderer.render(build_job_detail_screen_state(job))
+        except (RuntimeError, urllib.error.URLError) as error:
+            renderer.render(
+                ScreenState(
+                    phase="Error",
+                    status="Job detail failed",
                     prompt=job_id,
                     error=str(error),
                 )
@@ -1627,6 +1711,10 @@ def parse_args() -> argparse.Namespace:
         "--job-history",
         help="Show one scheduler job history on the renderer and refresh continuously",
     )
+    parser.add_argument(
+        "--job-detail",
+        help="Show one scheduler job detail screen on the renderer and refresh continuously",
+    )
     parser.add_argument("--job-id", help="Create or update one scheduler job and exit")
     parser.add_argument("--job-schedule", help="Schedule or preset for --job-id")
     parser.add_argument("--job-prompt", help="Prompt for --job-id")
@@ -1721,6 +1809,14 @@ def main() -> int:
             return run_job_history_screen(
                 args.host_url,
                 args.job_history,
+                renderer,
+                args.jobs_refresh_seconds,
+            )
+
+        if args.job_detail is not None:
+            return run_job_detail_screen(
+                args.host_url,
+                args.job_detail,
                 renderer,
                 args.jobs_refresh_seconds,
             )
