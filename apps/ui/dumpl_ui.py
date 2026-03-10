@@ -1428,6 +1428,54 @@ def run_job_upsert(
     return 0
 
 
+def run_job_action(
+    base_url: str,
+    action: str,
+    job_id: str,
+    renderer: ConsoleRenderer,
+) -> int:
+    renderer.render(
+        ScreenState(
+            phase="Jobs",
+            status=f"{action.capitalize()} scheduler job",
+            prompt=job_id,
+        )
+    )
+
+    try:
+        if action == "enable":
+            job = set_job_enabled(base_url, job_id, True)
+            status = "Job enabled"
+        elif action == "disable":
+            job = set_job_enabled(base_url, job_id, False)
+            status = "Job disabled"
+        else:
+            delete_job_entry(base_url, job_id)
+            job = None
+            status = "Job deleted"
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status=f"Job {action} failed",
+                prompt=job_id,
+                error=str(error),
+            )
+        )
+        return 1
+
+    renderer.render(
+        ScreenState(
+            phase="Jobs",
+            status=status,
+            prompt=job_id,
+            transcript=job.get("schedule") if isinstance(job, dict) else None,
+            answer=str(job.get("last_result")) if isinstance(job, dict) and job.get("last_result") else "",
+        )
+    )
+    return 0
+
+
 def run_record_smoke(
     duration_seconds: float,
     renderer: ConsoleRenderer,
@@ -1589,6 +1637,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Save --job-id as disabled",
     )
+    parser.add_argument("--job-enable", help="Enable one scheduler job and exit")
+    parser.add_argument("--job-disable", help="Disable one scheduler job and exit")
+    parser.add_argument("--job-delete", help="Delete one scheduler job and exit")
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
     return parser.parse_args()
@@ -1615,6 +1666,24 @@ def main() -> int:
             value is not None
             for value in (args.job_id, args.job_schedule, args.job_prompt)
         )
+        job_action_args = [
+            ("enable", args.job_enable),
+            ("disable", args.job_disable),
+            ("delete", args.job_delete),
+        ]
+        selected_job_actions = [
+            (action, value)
+            for action, value in job_action_args
+            if value is not None
+        ]
+
+        if has_job_upsert_arg and selected_job_actions:
+            renderer.render_notice("Use one scheduler action mode at a time")
+            return 1
+
+        if len(selected_job_actions) > 1:
+            renderer.render_notice("Use only one of --job-enable, --job-disable, or --job-delete")
+            return 1
 
         if has_job_upsert_arg:
             if not args.job_id or not args.job_schedule or not args.job_prompt:
@@ -1629,6 +1698,15 @@ def main() -> int:
                 args.job_workspace,
                 args.job_skill,
                 not args.job_disabled,
+                renderer,
+            )
+
+        if selected_job_actions:
+            action, job_id = selected_job_actions[0]
+            return run_job_action(
+                args.host_url,
+                action,
+                job_id,
                 renderer,
             )
 
