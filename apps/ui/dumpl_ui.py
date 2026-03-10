@@ -877,10 +877,20 @@ def run_job_detail_screen(
     job_id: str,
     renderer: "ConsoleRenderer",
     refresh_seconds: float,
+    initial_action: Optional[str] = None,
 ) -> int:
     if refresh_seconds <= 0:
         renderer.render_notice("Jobs refresh must be greater than zero")
         return 1
+
+    if initial_action is not None:
+        action_result = run_job_action(base_url, initial_action, job_id, renderer)
+
+        if action_result != 0:
+            return action_result
+
+        if initial_action == "delete":
+            return 0
 
     while True:
         try:
@@ -1714,6 +1724,11 @@ def parse_args() -> argparse.Namespace:
         "--job-detail",
         help="Show one scheduler job detail screen on the renderer and refresh continuously",
     )
+    parser.add_argument(
+        "--job-detail-action",
+        choices=["enable", "disable", "delete"],
+        help="Apply one action before entering --job-detail",
+    )
     parser.add_argument("--job-id", help="Create or update one scheduler job and exit")
     parser.add_argument("--job-schedule", help="Schedule or preset for --job-id")
     parser.add_argument("--job-prompt", help="Prompt for --job-id")
@@ -1772,6 +1787,14 @@ def main() -> int:
             renderer.render_notice("Use only one of --job-enable, --job-disable, or --job-delete")
             return 1
 
+        if args.job_detail_action is not None and args.job_detail is None:
+            renderer.render_notice("--job-detail-action requires --job-detail")
+            return 1
+
+        if args.job_detail_action is not None and selected_job_actions:
+            renderer.render_notice("Use --job-detail-action or direct job action flags, not both")
+            return 1
+
         if has_job_upsert_arg:
             if not args.job_id or not args.job_schedule or not args.job_prompt:
                 renderer.render_notice("--job-id, --job-schedule, and --job-prompt are required together")
@@ -1818,6 +1841,7 @@ def main() -> int:
                 args.job_detail,
                 renderer,
                 args.jobs_refresh_seconds,
+                args.job_detail_action,
             )
 
         if args.prompt is not None:
