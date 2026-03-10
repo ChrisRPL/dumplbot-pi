@@ -561,6 +561,32 @@ def delete_job_entry(base_url: str, job_id: str) -> None:
     )
 
 
+def format_job_run_state(job: dict[str, Any]) -> str:
+    last_run_at = job.get("last_run_at")
+    last_status = job.get("last_status")
+    last_result = job.get("last_result")
+    last_duration_ms = job.get("last_duration_ms")
+    last_error = job.get("last_error")
+    run_state = "never"
+
+    if isinstance(last_run_at, str) and last_run_at:
+        run_state = last_run_at
+
+        if isinstance(last_status, str) and last_status:
+            run_state = f"{last_status} @ {last_run_at}"
+
+    if isinstance(last_result, str) and last_result:
+        run_state = f"{run_state} -> {last_result}"
+
+    if isinstance(last_duration_ms, (int, float)):
+        run_state = f"{run_state} ({int(last_duration_ms)} ms)"
+
+    if isinstance(last_error, str) and last_error:
+        run_state = f"{run_state}\nerror: {last_error}"
+
+    return run_state
+
+
 def handle_jobs_command(
     base_url: str,
     command: str,
@@ -651,26 +677,13 @@ def handle_jobs_command(
         job_id = job.get("id")
         schedule = job.get("schedule")
         enabled = job.get("enabled")
-        last_run_at = job.get("last_run_at")
-        last_status = job.get("last_status")
-        last_result = job.get("last_result")
         history = job.get("history")
 
         if not isinstance(job_id, str) or not isinstance(schedule, str):
             continue
 
         status = "on" if enabled else "off"
-        run_state = "never"
-
-        if isinstance(last_run_at, str) and last_run_at:
-            run_state = last_run_at
-
-            if isinstance(last_status, str) and last_status:
-                run_state = f"{last_status} @ {last_run_at}"
-
-        if isinstance(last_result, str) and last_result:
-            run_state = f"{run_state} -> {last_result}"
-
+        run_state = format_job_run_state(job)
         history_count = len(history) if isinstance(history, list) else 0
         print(f"- {job_id} [{status}] {schedule} :: {run_state} ({history_count} runs)")
 
@@ -691,20 +704,12 @@ def build_jobs_screen_state(jobs: list[dict[str, Any]]) -> ScreenState:
         job_id = job.get("id")
         schedule = job.get("schedule")
         enabled = job.get("enabled")
-        last_status = job.get("last_status")
-        last_result = job.get("last_result")
-
         if not isinstance(job_id, str) or not isinstance(schedule, str):
             continue
 
         marker = "on" if enabled else "off"
         summary = f"{job_id} [{marker}] {schedule}"
-
-        if isinstance(last_status, str) and last_status:
-            summary = f"{summary}\n{last_status}"
-
-        if isinstance(last_result, str) and last_result:
-            summary = f"{summary}: {last_result}"
+        summary = f"{summary}\n{format_job_run_state(job)}"
 
         lines.append(summary)
 
@@ -767,25 +772,13 @@ def build_job_detail_screen_state(job: dict[str, Any]) -> ScreenState:
     job_id = job.get("id")
     schedule = job.get("schedule")
     enabled = job.get("enabled")
-    last_run_at = job.get("last_run_at")
-    last_status = job.get("last_status")
-    last_result = job.get("last_result")
     history = job.get("history")
 
     if not isinstance(job_id, str) or not isinstance(schedule, str):
         raise RuntimeError("job response is invalid")
 
     state = "on" if enabled else "off"
-    last_run_summary = "never"
-
-    if isinstance(last_run_at, str) and last_run_at:
-        last_run_summary = last_run_at
-
-        if isinstance(last_status, str) and last_status:
-            last_run_summary = f"{last_status} @ {last_run_at}"
-
-        if isinstance(last_result, str) and last_result:
-            last_run_summary = f"{last_run_summary} -> {last_result}"
+    last_run_summary = format_job_run_state(job)
 
     history_lines: list[str] = []
 
