@@ -117,6 +117,8 @@ const runSmoke = async () => {
     assert(createJobPayload.last_run_at === null, "expected empty last_run_at");
     assert(createJobPayload.last_status === null, "expected empty last_status");
     assert(createJobPayload.last_result === null, "expected empty last_result");
+    assert(createJobPayload.last_duration_ms === null, "expected empty last_duration_ms");
+    assert(createJobPayload.last_error === null, "expected empty last_error");
     assert(Array.isArray(createJobPayload.history), "expected empty history array");
     assert(createJobPayload.history.length === 0, "expected no history entries");
 
@@ -222,6 +224,8 @@ const runSmoke = async () => {
     assert(updateJobPayload.skill === "research", "expected updated skill");
     assert(updateJobPayload.enabled === false, "expected updated enabled flag");
     assert(updateJobPayload.last_status === null, "expected last_status to remain empty after update");
+    assert(updateJobPayload.last_duration_ms === null, "expected last_duration_ms to remain empty after update");
+    assert(updateJobPayload.last_error === null, "expected last_error to remain empty after update");
     assert(Array.isArray(updateJobPayload.history), "expected update to include history array");
     assert(updateJobPayload.history.length === 0, "expected no history entries after update");
 
@@ -239,6 +243,8 @@ const runSmoke = async () => {
     const detailJobPayload = await detailJobResponse.json();
     assert(detailJobPayload.id === "daily-status", "expected job detail id");
     assert(detailJobPayload.schedule === "30 * * * *", "expected job detail schedule");
+    assert(detailJobPayload.last_duration_ms === null, "expected empty job detail duration");
+    assert(detailJobPayload.last_error === null, "expected empty job detail error");
 
     const missingDetailResponse = await fetch(`${baseUrl}/api/jobs/missing-job`);
     assert(missingDetailResponse.status === 404, "expected missing job detail to return 404");
