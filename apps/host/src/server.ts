@@ -18,6 +18,7 @@ import { loadHostRuntimeConfig, loadHostSandboxConfig } from "./runtime-config";
 import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
 import {
   deleteScheduledJob,
+  getScheduledJob,
   listScheduledJobs,
   setScheduledJobEnabled,
   upsertScheduledJob,
@@ -832,6 +833,21 @@ const handleJobList = async (response: ServerResponse): Promise<void> => {
   });
 };
 
+const handleJobGet = async (
+  jobId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  try {
+    const job = await getScheduledJob(jobId);
+    sendJson(response, 200, toJobPayload(job));
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "job lookup failed";
+    sendJson(response, getJobErrorStatus(message), { error: message });
+    return;
+  }
+};
+
 const handleJobUpsert = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -1332,7 +1348,7 @@ export const createHostServer = (): Server =>
       const workspaceConfigRoute = request.method === "POST"
         ? matchWorkspaceConfigRoute(pathname)
         : null;
-      const jobRoute = request.method === "DELETE"
+      const jobRoute = request.method === "GET" || request.method === "DELETE"
         ? matchJobRoute(pathname)
         : null;
       const jobActionRoute = request.method === "POST"
@@ -1381,6 +1397,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/jobs") {
         await handleJobList(response);
+        return;
+      }
+
+      if (request.method === "GET" && jobRoute) {
+        await handleJobGet(jobRoute.jobId, response);
         return;
       }
 
