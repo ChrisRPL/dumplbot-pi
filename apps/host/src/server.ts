@@ -12,6 +12,7 @@ import type {
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
 import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
+import { isLanClientAddress, isLanOnlySetupPath } from "./lan-only";
 import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadHostRuntimeConfig, loadHostSandboxConfig } from "./runtime-config";
@@ -1703,6 +1704,24 @@ const handleInternalError = (
   response.end();
 };
 
+const sendLanOnlySetupDenied = (
+  pathname: string,
+  response: ServerResponse,
+): void => {
+  const message = "setup routes are only available from localhost or a private LAN address";
+
+  if (pathname === "/setup") {
+    sendHtml(
+      response,
+      403,
+      `<!doctype html><html lang="en"><body><p>${message}</p></body></html>`,
+    );
+    return;
+  }
+
+  sendJson(response, 403, { error: message });
+};
+
 export const createHostServer = (): Server =>
   createServer(async (request, response) => {
     try {
@@ -1725,6 +1744,11 @@ export const createHostServer = (): Server =>
       const jobActionRoute = request.method === "POST"
         ? matchJobActionRoute(pathname)
         : null;
+
+      if (isLanOnlySetupPath(pathname) && !isLanClientAddress(request.socket.remoteAddress)) {
+        sendLanOnlySetupDenied(pathname, response);
+        return;
+      }
 
       if (request.method === "GET" && pathname === "/health") {
         handleHealth(request, response);
