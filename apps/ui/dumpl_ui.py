@@ -894,6 +894,8 @@ def run_job_detail_screen(
     initial_action: Optional[str] = None,
     patched_prompt: Optional[str] = None,
     patched_schedule: Optional[str] = None,
+    patched_workspace: Optional[str] = None,
+    patched_skill: Optional[str] = None,
 ) -> int:
     if refresh_seconds <= 0:
         renderer.render_notice("Jobs refresh must be greater than zero")
@@ -908,7 +910,12 @@ def run_job_detail_screen(
         if initial_action == "delete":
             return 0
 
-    if patched_prompt is not None or patched_schedule is not None:
+    if (
+        patched_prompt is not None
+        or patched_schedule is not None
+        or patched_workspace is not None
+        or patched_skill is not None
+    ):
         patch_payload: dict[str, Any] = {}
 
         if patched_prompt is not None:
@@ -916,6 +923,12 @@ def run_job_detail_screen(
 
         if patched_schedule is not None:
             patch_payload["schedule"] = patched_schedule
+
+        if patched_workspace is not None:
+            patch_payload["workspace"] = normalize_optional_job_value(patched_workspace)
+
+        if patched_skill is not None:
+            patch_payload["skill"] = normalize_optional_job_value(patched_skill)
 
         renderer.render(
             ScreenState(
@@ -1777,6 +1790,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--job-detail-prompt", help="Patch prompt before entering --job-detail")
     parser.add_argument("--job-detail-schedule", help="Patch schedule before entering --job-detail")
+    parser.add_argument("--job-detail-workspace", help="Patch workspace before entering --job-detail")
+    parser.add_argument("--job-detail-skill", help="Patch skill before entering --job-detail")
     parser.add_argument("--job-id", help="Create or update one scheduler job and exit")
     parser.add_argument("--job-schedule", help="Schedule or preset for --job-id")
     parser.add_argument("--job-prompt", help="Prompt for --job-id")
@@ -1845,7 +1860,12 @@ def main() -> int:
 
         has_job_detail_patch_arg = any(
             value is not None
-            for value in (args.job_detail_prompt, args.job_detail_schedule)
+            for value in (
+                args.job_detail_prompt,
+                args.job_detail_schedule,
+                args.job_detail_workspace,
+                args.job_detail_skill,
+            )
         )
 
         if has_job_detail_patch_arg and args.job_detail is None:
@@ -1905,6 +1925,8 @@ def main() -> int:
                 args.job_detail_action,
                 args.job_detail_prompt,
                 args.job_detail_schedule,
+                args.job_detail_workspace,
+                args.job_detail_skill,
             )
 
         if args.prompt is not None:
