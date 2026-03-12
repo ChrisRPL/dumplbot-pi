@@ -34,6 +34,7 @@ import {
   setScheduledJobEnabled,
   upsertScheduledJob,
 } from "./scheduler-store";
+import { writeSetupSecretUpdate } from "./secret-store";
 import { loadSetupSecretStatus } from "./secret-status";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
@@ -91,6 +92,11 @@ type DumplUpdateConfigRequest = {
 
 type DumplImportConfigRequest = {
   config: string;
+};
+
+type DumplSetupSecretsUpdateRequest = {
+  anthropic_api_key?: string;
+  openai_api_key?: string;
 };
 
 type DumplUpsertJobRequest = {
@@ -879,6 +885,34 @@ const handleSetupStatusGet = async (response: ServerResponse): Promise<void> => 
       secrets_file_present: secretStatus.secretsFilePresent,
     },
   });
+};
+
+const handleSetupSecretsUpdate = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplSetupSecretsUpdateRequest;
+
+  try {
+    body = await readJson<DumplSetupSecretsUpdateRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  const hasOpenAiKey = typeof body.openai_api_key === "string" && body.openai_api_key.trim().length > 0;
+  const hasAnthropicKey = typeof body.anthropic_api_key === "string" && body.anthropic_api_key.trim().length > 0;
+
+  if (!hasOpenAiKey && !hasAnthropicKey) {
+    sendJson(response, 400, { error: "at least one non-empty setup secret is required" });
+    return;
+  }
+
+  await writeSetupSecretUpdate({
+    openaiApiKey: hasOpenAiKey ? body.openai_api_key : undefined,
+    anthropicApiKey: hasAnthropicKey ? body.anthropic_api_key : undefined,
+  });
+  await handleSetupStatusGet(response);
 };
 
 const handleConfigImport = async (
@@ -1844,6 +1878,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/setup/status") {
         await handleSetupStatusGet(response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/setup/secrets") {
+        await handleSetupSecretsUpdate(request, response);
         return;
       }
 

@@ -3,6 +3,7 @@ const SETUP_ONLY_PATHS = new Set<string>([
   "/api/config",
   "/api/config/export",
   "/api/config/import",
+  "/api/setup/secrets",
   "/api/setup/status",
 ]);
 
