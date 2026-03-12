@@ -68,7 +68,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         font-size: 0.96rem;
       }
 
-      select, button {
+      select, button, textarea {
         width: 100%;
         border-radius: 0.9rem;
         border: 1px solid var(--border);
@@ -77,6 +77,11 @@ export const renderSetupPage = (): string => `<!doctype html>
       }
 
       select { background: white; }
+      textarea {
+        min-height: 14rem;
+        background: white;
+        resize: vertical;
+      }
 
       button {
         background: var(--accent);
@@ -99,6 +104,17 @@ export const renderSetupPage = (): string => `<!doctype html>
         min-height: 1.4rem;
         color: var(--accent-strong);
         font-weight: 700;
+      }
+
+      .secondary-button {
+        background: transparent;
+        color: var(--accent-strong);
+      }
+
+      .button-row {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
       }
     </style>
   </head>
@@ -147,6 +163,22 @@ export const renderSetupPage = (): string => `<!doctype html>
           <p>OpenAI key: <span id="openai-key-status">-</span></p>
           <p>Anthropic key: <span id="anthropic-key-status">-</span></p>
         </div>
+
+        <form id="config-form">
+          <label>
+            Config export
+            <textarea
+              id="config-export"
+              name="config_export"
+              spellcheck="false"
+            ></textarea>
+          </label>
+
+          <div class="button-row">
+            <button type="button" class="secondary-button" id="refresh-config">Refresh export</button>
+            <button type="submit" id="import-config">Import config</button>
+          </div>
+        </form>
       </section>
     </main>
 
@@ -161,6 +193,9 @@ export const renderSetupPage = (): string => `<!doctype html>
       const openAiKeyStatusNode = document.querySelector("#openai-key-status");
       const anthropicKeyStatusNode = document.querySelector("#anthropic-key-status");
       const formNode = document.querySelector("#setup-form");
+      const configFormNode = document.querySelector("#config-form");
+      const configExportNode = document.querySelector("#config-export");
+      const refreshConfigButtonNode = document.querySelector("#refresh-config");
 
       const renderOptions = (selectNode, items, selectedValue) => {
         selectNode.innerHTML = "";
@@ -186,6 +221,11 @@ export const renderSetupPage = (): string => `<!doctype html>
       };
 
       const formatConfiguredStatus = (isConfigured) => isConfigured ? "configured" : "missing";
+
+      const loadConfigExport = async () => {
+        const configExportPayload = await fetchJson("/api/config/export");
+        configExportNode.value = configExportPayload.config;
+      };
 
       const loadSetup = async () => {
         statusNode.textContent = "Loading setup…";
@@ -226,6 +266,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         anthropicKeyStatusNode.textContent = formatConfiguredStatus(
           setupStatusPayload.secrets.anthropic_api_key_configured,
         );
+        await loadConfigExport();
         statusNode.textContent = "Setup loaded";
       };
 
@@ -251,6 +292,37 @@ export const renderSetupPage = (): string => `<!doctype html>
           statusNode.textContent = "Setup saved";
         } catch (error) {
           statusNode.textContent = error instanceof Error ? error.message : "save failed";
+        }
+      });
+
+      refreshConfigButtonNode.addEventListener("click", async () => {
+        statusNode.textContent = "Refreshing config export…";
+
+        try {
+          await loadConfigExport();
+          statusNode.textContent = "Config export refreshed";
+        } catch (error) {
+          statusNode.textContent = error instanceof Error ? error.message : "config refresh failed";
+        }
+      });
+
+      configFormNode.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        statusNode.textContent = "Importing config…";
+
+        try {
+          await fetchJson("/api/config/import", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              config: configExportNode.value,
+            }),
+          });
+
+          await loadSetup();
+          statusNode.textContent = "Config imported";
+        } catch (error) {
+          statusNode.textContent = error instanceof Error ? error.message : "config import failed";
         }
       });
 
