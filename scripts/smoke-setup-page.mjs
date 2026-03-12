@@ -141,6 +141,12 @@ const runSmoke = async () => {
     assert(initialConfigPayload.runtime.default_skill === "coding", "unexpected initial default skill");
     assert(initialConfigPayload.runtime.safety_mode === "balanced", "unexpected initial safety mode");
 
+    const configExportResponse = await fetch(`${baseUrl}/api/config/export`);
+    assert(configExportResponse.status === 200, "expected GET /api/config/export to return 200");
+    const configExportPayload = await configExportResponse.json();
+    assert(configExportPayload.config.includes("default_workspace: default"), "expected config export default workspace");
+    assert(configExportPayload.config.includes("default_skill: coding"), "expected config export default skill");
+
     const setupSaveResponse = await fetch(`${baseUrl}/api/config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -173,6 +179,50 @@ const runSmoke = async () => {
       }),
     });
     assert(invalidSafetyResponse.status === 400, "expected invalid safety mode to return 400");
+
+    const configImportResponse = await fetch(`${baseUrl}/api/config/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        config: [
+          "runtime:",
+          "  default_workspace: default",
+          "  default_skill: research",
+          "  permission_mode: permissive",
+          "  max_run_seconds: 240",
+          "",
+          "sandbox:",
+          "  enabled: true",
+          "  backend: bwrap",
+          "",
+        ].join("\n"),
+      }),
+    });
+    assert(configImportResponse.status === 200, "expected config import to return 200");
+    const configImportPayload = await configImportResponse.json();
+    assert(configImportPayload.runtime.default_workspace === "default", "expected imported default workspace");
+    assert(configImportPayload.runtime.default_skill === "research", "expected imported default skill");
+    assert(configImportPayload.runtime.safety_mode === "permissive", "expected imported safety mode");
+
+    const importedConfig = await readFile(configPath, "utf8");
+    assert(importedConfig.includes("default_skill: research"), "expected imported config default skill");
+    assert(importedConfig.includes("permission_mode: permissive"), "expected imported config safety mode");
+    assert(importedConfig.includes("max_run_seconds: 240"), "expected imported config max run seconds");
+
+    const invalidImportResponse = await fetch(`${baseUrl}/api/config/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        config: [
+          "runtime:",
+          "  default_workspace: default",
+          "  default_skill: research",
+          "  permission_mode: unsafe",
+          "",
+        ].join("\n"),
+      }),
+    });
+    assert(invalidImportResponse.status === 400, "expected invalid config import to return 400");
 
     console.log("setup page smoke ok");
   } finally {
