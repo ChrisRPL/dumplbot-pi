@@ -111,6 +111,10 @@ export const renderSetupPage = (): string => `<!doctype html>
           Non-secret appliance setup for the current device. Update the default workspace,
           default skill, and safety mode without SSH.
         </p>
+        <p class="lede">
+          Secret values stay hidden here. The page only shows whether the local secrets file
+          and provider keys are configured.
+        </p>
 
         <form id="setup-form">
           <label>
@@ -139,6 +143,9 @@ export const renderSetupPage = (): string => `<!doctype html>
         <div class="meta" id="meta">
           <p>Active workspace: <span id="active-workspace">-</span></p>
           <p>Active skill: <span id="active-skill">-</span></p>
+          <p>Secrets file: <span id="secrets-file-status">-</span></p>
+          <p>OpenAI key: <span id="openai-key-status">-</span></p>
+          <p>Anthropic key: <span id="anthropic-key-status">-</span></p>
         </div>
       </section>
     </main>
@@ -150,6 +157,9 @@ export const renderSetupPage = (): string => `<!doctype html>
       const safetySelect = document.querySelector("#safety-mode");
       const activeWorkspaceNode = document.querySelector("#active-workspace");
       const activeSkillNode = document.querySelector("#active-skill");
+      const secretsFileStatusNode = document.querySelector("#secrets-file-status");
+      const openAiKeyStatusNode = document.querySelector("#openai-key-status");
+      const anthropicKeyStatusNode = document.querySelector("#anthropic-key-status");
       const formNode = document.querySelector("#setup-form");
 
       const renderOptions = (selectNode, items, selectedValue) => {
@@ -175,13 +185,16 @@ export const renderSetupPage = (): string => `<!doctype html>
         return payload;
       };
 
+      const formatConfiguredStatus = (isConfigured) => isConfigured ? "configured" : "missing";
+
       const loadSetup = async () => {
         statusNode.textContent = "Loading setup…";
 
-        const [configPayload, workspacePayload, skillPayload] = await Promise.all([
+        const [configPayload, workspacePayload, skillPayload, setupStatusPayload] = await Promise.all([
           fetchJson("/api/config"),
           fetchJson("/api/workspaces"),
           fetchJson("/api/skills"),
+          fetchJson("/api/setup/status"),
         ]);
 
         renderOptions(
@@ -204,6 +217,15 @@ export const renderSetupPage = (): string => `<!doctype html>
         safetySelect.value = configPayload.runtime.safety_mode;
         activeWorkspaceNode.textContent = configPayload.runtime.active_workspace || "default fallback";
         activeSkillNode.textContent = configPayload.runtime.active_skill || "default fallback";
+        secretsFileStatusNode.textContent = formatConfiguredStatus(
+          setupStatusPayload.secrets.secrets_file_present,
+        );
+        openAiKeyStatusNode.textContent = formatConfiguredStatus(
+          setupStatusPayload.secrets.openai_api_key_configured,
+        );
+        anthropicKeyStatusNode.textContent = formatConfiguredStatus(
+          setupStatusPayload.secrets.anthropic_api_key_configured,
+        );
         statusNode.textContent = "Setup loaded";
       };
 
