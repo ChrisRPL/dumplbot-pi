@@ -372,6 +372,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config` and raw config imports through `POST /api/config/import`.
 - Status codes:
   - `200` with `text/html`.
+  - `403` when the client is outside localhost or a private LAN range.
 
 ### `GET /api/setup/status`
 
@@ -390,6 +391,9 @@ The daemon streams events back to the UI over Server-Sent Events.
 
 - `secrets_file_present` only reports whether the configured secrets file exists.
 - Provider booleans only report whether a non-empty key is present in that file.
+- Status codes:
+  - `200` when requested from localhost or a private LAN range.
+  - `403` otherwise.
 
 ### `GET /api/config/export`
 
@@ -401,6 +405,10 @@ The daemon streams events back to the UI over Server-Sent Events.
   "config": "runtime:\n  default_workspace: default\n  default_skill: coding\n  permission_mode: balanced\n"
 }
 ```
+
+- Status codes:
+  - `200` when requested from localhost or a private LAN range.
+  - `403` otherwise.
 
 ### `POST /api/config/import`
 
@@ -418,6 +426,10 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `runtime.default_skill` must resolve to an existing skill id.
 - `runtime.permission_mode` must be one of `strict`, `balanced`, or `permissive`.
 - `runtime.max_run_seconds`, when present, must be a positive integer.
+- Status codes:
+  - `200` import applied.
+  - `400` invalid JSON or invalid imported config.
+  - `403` when the client is outside localhost or a private LAN range.
 
 ### `POST /api/config`
 
@@ -447,6 +459,7 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `404` workspace does not exist.
   - `404` skill does not exist.
   - `400` invalid JSON, invalid safety mode, or missing all runtime config fields.
+  - `403` when the client is outside localhost or a private LAN range.
 
 ## Agent Runner Stream
 
