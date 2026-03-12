@@ -68,7 +68,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         font-size: 0.96rem;
       }
 
-      select, button, textarea {
+      select, input, button, textarea {
         width: 100%;
         border-radius: 0.9rem;
         border: 1px solid var(--border);
@@ -76,7 +76,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         font: inherit;
       }
 
-      select { background: white; }
+      select, input { background: white; }
       textarea {
         min-height: 14rem;
         background: white;
@@ -129,7 +129,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         </p>
         <p class="lede">
           Secret values stay hidden here. The page only shows whether the local secrets file
-          and provider keys are configured.
+          and provider keys are configured. Leave key fields blank to keep existing values.
         </p>
 
         <form id="setup-form">
@@ -164,6 +164,32 @@ export const renderSetupPage = (): string => `<!doctype html>
           <p>Anthropic key: <span id="anthropic-key-status">-</span></p>
         </div>
 
+        <form id="secrets-form">
+          <label>
+            OpenAI API key
+            <input
+              id="openai-api-key"
+              name="openai_api_key"
+              type="password"
+              autocomplete="off"
+              placeholder="sk-..."
+            />
+          </label>
+
+          <label>
+            Anthropic API key
+            <input
+              id="anthropic-api-key"
+              name="anthropic_api_key"
+              type="password"
+              autocomplete="off"
+              placeholder="sk-ant-..."
+            />
+          </label>
+
+          <button type="submit">Save keys</button>
+        </form>
+
         <form id="config-form">
           <label>
             Config export
@@ -193,6 +219,9 @@ export const renderSetupPage = (): string => `<!doctype html>
       const openAiKeyStatusNode = document.querySelector("#openai-key-status");
       const anthropicKeyStatusNode = document.querySelector("#anthropic-key-status");
       const formNode = document.querySelector("#setup-form");
+      const secretsFormNode = document.querySelector("#secrets-form");
+      const openAiApiKeyNode = document.querySelector("#openai-api-key");
+      const anthropicApiKeyNode = document.querySelector("#anthropic-api-key");
       const configFormNode = document.querySelector("#config-form");
       const configExportNode = document.querySelector("#config-export");
       const refreshConfigButtonNode = document.querySelector("#refresh-config");
@@ -227,14 +256,26 @@ export const renderSetupPage = (): string => `<!doctype html>
         configExportNode.value = configExportPayload.config;
       };
 
+      const loadSetupStatus = async () => {
+        const setupStatusPayload = await fetchJson("/api/setup/status");
+        secretsFileStatusNode.textContent = formatConfiguredStatus(
+          setupStatusPayload.secrets.secrets_file_present,
+        );
+        openAiKeyStatusNode.textContent = formatConfiguredStatus(
+          setupStatusPayload.secrets.openai_api_key_configured,
+        );
+        anthropicKeyStatusNode.textContent = formatConfiguredStatus(
+          setupStatusPayload.secrets.anthropic_api_key_configured,
+        );
+      };
+
       const loadSetup = async () => {
         statusNode.textContent = "Loading setup…";
 
-        const [configPayload, workspacePayload, skillPayload, setupStatusPayload] = await Promise.all([
+        const [configPayload, workspacePayload, skillPayload] = await Promise.all([
           fetchJson("/api/config"),
           fetchJson("/api/workspaces"),
           fetchJson("/api/skills"),
-          fetchJson("/api/setup/status"),
         ]);
 
         renderOptions(
@@ -257,15 +298,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         safetySelect.value = configPayload.runtime.safety_mode;
         activeWorkspaceNode.textContent = configPayload.runtime.active_workspace || "default fallback";
         activeSkillNode.textContent = configPayload.runtime.active_skill || "default fallback";
-        secretsFileStatusNode.textContent = formatConfiguredStatus(
-          setupStatusPayload.secrets.secrets_file_present,
-        );
-        openAiKeyStatusNode.textContent = formatConfiguredStatus(
-          setupStatusPayload.secrets.openai_api_key_configured,
-        );
-        anthropicKeyStatusNode.textContent = formatConfiguredStatus(
-          setupStatusPayload.secrets.anthropic_api_key_configured,
-        );
+        await loadSetupStatus();
         await loadConfigExport();
         statusNode.textContent = "Setup loaded";
       };
@@ -292,6 +325,42 @@ export const renderSetupPage = (): string => `<!doctype html>
           statusNode.textContent = "Setup saved";
         } catch (error) {
           statusNode.textContent = error instanceof Error ? error.message : "save failed";
+        }
+      });
+
+      secretsFormNode.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const payload = {};
+
+        if (openAiApiKeyNode.value.trim().length > 0) {
+          payload.openai_api_key = openAiApiKeyNode.value.trim();
+        }
+
+        if (anthropicApiKeyNode.value.trim().length > 0) {
+          payload.anthropic_api_key = anthropicApiKeyNode.value.trim();
+        }
+
+        if (Object.keys(payload).length === 0) {
+          statusNode.textContent = "Enter at least one key to update";
+          return;
+        }
+
+        statusNode.textContent = "Saving keys…";
+
+        try {
+          await fetchJson("/api/setup/secrets", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          openAiApiKeyNode.value = "";
+          anthropicApiKeyNode.value = "";
+          await loadSetupStatus();
+          statusNode.textContent = "Keys saved";
+        } catch (error) {
+          statusNode.textContent = error instanceof Error ? error.message : "key save failed";
         }
       });
 
