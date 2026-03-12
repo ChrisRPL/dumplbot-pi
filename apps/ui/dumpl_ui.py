@@ -327,6 +327,36 @@ def list_workspace_entries(base_url: str) -> list[dict[str, Any]]:
     return [workspace for workspace in workspaces if isinstance(workspace, dict)]
 
 
+def get_workspace_entry(base_url: str, workspace_id: str) -> dict[str, Any]:
+    normalized_workspace_id = workspace_id.strip().lower()
+
+    for workspace in list_workspace_entries(base_url):
+        if workspace.get("id") == normalized_workspace_id:
+            return workspace
+
+    raise RuntimeError("workspace not found")
+
+
+def create_workspace_entry(
+    base_url: str,
+    workspace_id: str,
+    instructions: Optional[str] = None,
+) -> dict[str, Any]:
+    payload: dict[str, str] = {
+        "id": workspace_id,
+    }
+
+    if instructions is not None:
+        payload["instructions"] = instructions
+
+    return request_json(
+        base_url,
+        "/api/workspaces",
+        method="POST",
+        payload=payload,
+    )
+
+
 def update_active_workspace(
     base_url: str,
     workspace: Optional[str],
@@ -456,6 +486,48 @@ def build_workspace_screen_state(workspaces: list[dict[str, Any]]) -> ScreenStat
     )
 
 
+def build_workspace_detail_screen_state(workspace: dict[str, Any]) -> ScreenState:
+    workspace_id = workspace.get("id")
+    has_instructions = workspace.get("has_instructions")
+    default_skill = workspace.get("default_skill")
+    attached_repos = workspace.get("attached_repos")
+    is_active = workspace.get("is_active")
+
+    if not isinstance(workspace_id, str):
+        raise RuntimeError("workspace response is invalid")
+
+    repo_lines: list[str] = []
+
+    if isinstance(attached_repos, list):
+        for attachment in attached_repos[:3]:
+            if not isinstance(attachment, dict):
+                continue
+
+            attachment_id = attachment.get("id")
+            mount_path = attachment.get("mount_path")
+
+            if not isinstance(attachment_id, str):
+                continue
+
+            if isinstance(mount_path, str) and mount_path:
+                repo_lines.append(f"repo: {attachment_id} -> {mount_path}")
+            else:
+                repo_lines.append(f"repo: {attachment_id}")
+
+    if not repo_lines:
+        repo_lines.append("repo: (none)")
+
+    return ScreenState(
+        phase="Workspaces",
+        status=f"{workspace_id} [{'active' if is_active else 'idle'}]",
+        answer="\n".join([
+            f"instructions: {'yes' if has_instructions else 'no'}",
+            f"default skill: {default_skill if isinstance(default_skill, str) and default_skill else '(none)'}",
+            *repo_lines,
+        ]),
+    )
+
+
 def run_workspace_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -515,6 +587,55 @@ def run_workspace_action(
                 phase="Error",
                 status="Workspace update failed",
                 prompt=selection or action,
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_workspace_detail(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    workspace_id: str,
+) -> int:
+    try:
+        renderer.render(build_workspace_detail_screen_state(get_workspace_entry(base_url, workspace_id)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Workspace detail failed",
+                prompt=workspace_id,
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_workspace_create(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    workspace_id: str,
+    instructions: Optional[str] = None,
+) -> int:
+    renderer.render(
+        ScreenState(
+            phase="Workspaces",
+            status="Creating workspace",
+            prompt=workspace_id,
+        )
+    )
+
+    try:
+        create_workspace_entry(base_url, workspace_id, instructions)
+        return run_workspace_detail(base_url, renderer, workspace_id)
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Workspace create failed",
+                prompt=workspace_id,
                 error=str(error),
             )
         )
@@ -2199,6 +2320,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-disable", help="Disable one scheduler job and exit")
     parser.add_argument("--job-delete", help="Delete one scheduler job and exit")
     parser.add_argument("--workspace-screen", action="store_true", help="Show the workspace selector screen")
+    parser.add_argument("--workspace-detail", help="Show one workspace detail screen and exit")
+    parser.add_argument("--workspace-create", help="Create one workspace and show its detail screen")
+    parser.add_argument("--workspace-instructions", help="Instructions used by --workspace-create")
     parser.add_argument("--workspace-select", help="Select one active workspace and exit")
     parser.add_argument("--workspace-cycle", action="store_true", help="Cycle to the next workspace and exit")
     parser.add_argument("--workspace-clear", action="store_true", help="Clear the active workspace and exit")
@@ -2324,6 +2448,8 @@ def main() -> int:
             1
             for value in (
                 args.workspace_screen,
+                args.workspace_detail is not None,
+                args.workspace_create is not None,
                 args.workspace_cycle,
                 args.workspace_clear,
                 args.workspace_select is not None,
@@ -2333,6 +2459,10 @@ def main() -> int:
 
         if workspace_selector_count > 1:
             renderer.render_notice("Use one workspace selector mode at a time")
+            return 1
+
+        if args.workspace_instructions is not None and args.workspace_create is None:
+            renderer.render_notice("--workspace-instructions requires --workspace-create")
             return 1
 
         skill_selector_count = sum(
@@ -2416,6 +2546,21 @@ def main() -> int:
                 args.host_url,
                 renderer,
                 args.selection_refresh_seconds,
+            )
+
+        if args.workspace_detail is not None:
+            return run_workspace_detail(
+                args.host_url,
+                renderer,
+                args.workspace_detail,
+            )
+
+        if args.workspace_create is not None:
+            return run_workspace_create(
+                args.host_url,
+                renderer,
+                args.workspace_create,
+                args.workspace_instructions,
             )
 
         if args.workspace_cycle:
