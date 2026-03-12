@@ -526,6 +526,48 @@ const runSmoke = async () => {
     const stateFileAfterUiClear = await readFile(runtimeStatePath, "utf8");
     assert(stateFileAfterUiClear.trim() === "{}", "runtime state file should be empty after UI clear");
 
+    const workspaceCreateResult = runUiCommand(
+      baseUrl,
+      "--workspace-create",
+      "field-lab",
+      "--workspace-instructions",
+      "# Field Lab\n\n- Capture hardware notes.\n",
+    );
+    assert(workspaceCreateResult.status === 0, "expected UI workspace create to return 0");
+    assert(
+      workspaceCreateResult.stdout.includes("field-lab [idle]"),
+      "expected UI workspace create detail output",
+    );
+    assert(
+      workspaceCreateResult.stdout.includes("instructions: yes"),
+      "expected UI workspace create instructions output",
+    );
+    const workspaceListAfterCreateResponse = await fetch(`${baseUrl}/api/workspaces`);
+    const workspaceListAfterCreatePayload = await workspaceListAfterCreateResponse.json();
+    const fieldLabWorkspace = workspaceListAfterCreatePayload.workspaces.find(
+      (workspace) => workspace.id === "field-lab",
+    );
+    assert(fieldLabWorkspace, "expected created workspace in workspace list");
+    assert(fieldLabWorkspace.has_instructions === true, "expected created workspace instructions metadata");
+
+    const workspaceDetailResult = runUiCommand(baseUrl, "--workspace-detail", "alpha");
+    assert(workspaceDetailResult.status === 0, "expected UI workspace detail to return 0");
+    assert(
+      workspaceDetailResult.stdout.includes("default skill: research"),
+      "expected UI workspace detail default skill output",
+    );
+
+    const skillDetailResult = runUiCommand(baseUrl, "--skill-detail", "coding");
+    assert(skillDetailResult.status === 0, "expected UI skill detail to return 0");
+    assert(
+      skillDetailResult.stdout.includes("permission: balanced"),
+      "expected UI skill detail permission output",
+    );
+    assert(
+      skillDetailResult.stdout.includes("bash: git status"),
+      "expected UI skill detail bash prefix output",
+    );
+
     const talkAfterClearResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
