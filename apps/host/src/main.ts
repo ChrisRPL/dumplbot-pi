@@ -5,7 +5,7 @@ import { recordScheduledJobRun } from "./scheduler-store";
 import { startHostServer } from "./server";
 
 const main = async (): Promise<void> => {
-  const server = startHostServer();
+  const server = await startHostServer();
   const schedulerConfig = await loadHostSchedulerConfig();
   const scheduler = startSchedulerLoop({
     enabled: schedulerConfig.enabled,

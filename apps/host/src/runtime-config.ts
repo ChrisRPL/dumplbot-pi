@@ -9,6 +9,11 @@ export type HostRuntimeConfig = {
   maxRunSeconds: number;
 };
 
+export type HostServerConfig = {
+  host: string;
+  port: number;
+};
+
 export type HostSandboxConfig = {
   enabled: boolean;
   backend: "bwrap";
@@ -23,6 +28,8 @@ export type HostSchedulerConfig = {
 const DEFAULT_CONFIG_PATH = "/etc/dumplbot/config.yaml";
 const DEFAULT_WORKSPACE = "default";
 const DEFAULT_SKILL = "coding";
+const DEFAULT_SERVER_HOST = process.env.DUMPLBOT_HOST ?? "127.0.0.1";
+const DEFAULT_SERVER_PORT = 4123;
 const DEFAULT_PERMISSION_MODE: PermissionMode = "balanced";
 const DEFAULT_MAX_RUN_SECONDS = 180;
 const DEFAULT_SCHEDULER_POLL_SECONDS = 15;
@@ -48,6 +55,81 @@ const parsePositiveInt = (value: string | undefined, fallback: number): number =
   }
 
   return parsed;
+};
+
+const normalizeServerHost = (value: string, fallback: string): string => {
+  if (value === "127.0.0.1" || value === "0.0.0.0" || value === "::1" || value === "::") {
+    return value;
+  }
+
+  return fallback;
+};
+
+const applyServerConfigLine = (
+  config: HostServerConfig,
+  key: string,
+  value: string,
+): void => {
+  if (key === "host" && value) {
+    config.host = normalizeServerHost(value, config.host);
+    return;
+  }
+
+  if (key === "port") {
+    config.port = parsePositiveInt(value, config.port);
+  }
+};
+
+export const loadHostServerConfig = async (
+  configPath = process.env.DUMPLBOT_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
+): Promise<HostServerConfig> => {
+  const config: HostServerConfig = {
+    host: DEFAULT_SERVER_HOST,
+    port: parsePositiveInt(process.env.DUMPLBOT_PORT, DEFAULT_SERVER_PORT),
+  };
+
+  try {
+    const rawConfig = await readFile(configPath, "utf8");
+    let inServerBlock = false;
+
+    for (const rawLine of rawConfig.split(/\r?\n/u)) {
+      const trimmedLine = rawLine.trim();
+
+      if (!trimmedLine || trimmedLine.startsWith("#")) {
+        continue;
+      }
+
+      if (!rawLine.startsWith(" ")) {
+        inServerBlock = trimmedLine === "server:";
+        continue;
+      }
+
+      if (!inServerBlock || !rawLine.startsWith("  ")) {
+        continue;
+      }
+
+      const separatorIndex = trimmedLine.indexOf(":");
+
+      if (separatorIndex <= 0) {
+        continue;
+      }
+
+      const key = trimmedLine.slice(0, separatorIndex).trim();
+      const value = trimmedLine.slice(separatorIndex + 1).trim().replace(/^"|"$/gu, "");
+      applyServerConfigLine(config, key, value);
+    }
+  } catch (error) {
+    const isMissingFile =
+      error instanceof Error
+      && "code" in error
+      && error.code === "ENOENT";
+
+    if (!isMissingFile) {
+      throw error;
+    }
+  }
+
+  return config;
 };
 
 const applyRuntimeConfigLine = (

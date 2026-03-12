@@ -15,7 +15,11 @@ import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
 import { isLanClientAddress, isLanOnlySetupPath } from "./lan-only";
 import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
-import { loadHostRuntimeConfig, loadHostSandboxConfig } from "./runtime-config";
+import {
+  loadHostRuntimeConfig,
+  loadHostSandboxConfig,
+  loadHostServerConfig,
+} from "./runtime-config";
 import {
   parseImportedHostRuntimeConfig,
   readHostConfigText,
@@ -133,8 +137,6 @@ type JobActionRoute = JobRoute & {
   action: JobAction;
 };
 
-const DEFAULT_HOST = process.env.DUMPLBOT_HOST ?? "127.0.0.1";
-const DEFAULT_PORT = Number.parseInt(process.env.DUMPLBOT_PORT ?? "4123", 10);
 const AUDIO_ACTIONS = new Set<AudioAction>(["talk", "transcribe"]);
 
 const sendJson = (
@@ -1872,12 +1874,19 @@ export const createHostServer = (): Server =>
     }
   });
 
-export const startHostServer = (): Server => {
+const formatServerBindHost = (host: string): string => (
+  host.includes(":")
+    ? `[${host}]`
+    : host
+);
+
+export const startHostServer = async (): Promise<Server> => {
+  const serverConfig = await loadHostServerConfig();
   const server = createHostServer();
 
-  server.listen(DEFAULT_PORT, DEFAULT_HOST, () => {
+  server.listen(serverConfig.port, serverConfig.host, () => {
     process.stdout.write(
-      `dumplbotd listening on http://${DEFAULT_HOST}:${DEFAULT_PORT}\n`,
+      `dumplbotd listening on http://${formatServerBindHost(serverConfig.host)}:${serverConfig.port}\n`,
     );
   });
 
