@@ -243,6 +243,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Return retained run-history entries for one scheduler job.
 - Optional query params:
   - `limit=<positive-int>` returns only the newest `N` retained entries.
+  - `offset=<non-negative-int>` skips the newest `N` retained entries before `limit` is applied.
 - Response shape:
 
 ```json
@@ -259,7 +260,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Status codes:
   - `200` when found.
   - `404` when the job does not exist.
-  - `400` when the job id or `limit` is invalid.
+  - `400` when the job id, `limit`, or `offset` is invalid.
 
 ### `POST /api/jobs`
 
