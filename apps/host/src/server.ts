@@ -26,6 +26,7 @@ import {
 } from "./scheduler-store";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
+import { renderSetupPage } from "./setup-page";
 import { transcribeAudioFile } from "./transcriber";
 import {
   createWorkspace,
@@ -132,6 +133,15 @@ const sendJson = (
 ): void => {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
+};
+
+const sendHtml = (
+  response: ServerResponse,
+  statusCode: number,
+  html: string,
+): void => {
+  response.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  response.end(html);
 };
 
 const sendSseHeaders = (response: ServerResponse): void => {
@@ -1628,6 +1638,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/health") {
         handleHealth(request, response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/setup") {
+        sendHtml(response, 200, renderSetupPage());
         return;
       }
 
