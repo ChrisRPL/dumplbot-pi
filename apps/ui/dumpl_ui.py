@@ -31,6 +31,7 @@ WHISPLAY_PHASE_RGB = {
     "Idle": (0, 64, 16),
     "Jobs": (0, 56, 72),
     "Workspaces": (24, 56, 96),
+    "Skills": (56, 72, 24),
     "Listening": (0, 48, 96),
     "Transcribing": (0, 64, 96),
     "Thinking": (96, 72, 0),
@@ -616,6 +617,112 @@ def handle_skill_command(
     next_skill = update_active_skill(base_url, selection)
     renderer.render_notice(f"Skill: {next_skill or 'workspace/default'}")
     return next_skill
+
+
+def build_skill_screen_state(skills: list[dict[str, Any]]) -> ScreenState:
+    if not skills:
+        return ScreenState(
+            phase="Skills",
+            status="No skills",
+            answer="Install skills under skills/<id>/.",
+        )
+
+    lines: list[str] = []
+
+    for skill in skills[:5]:
+        skill_id = skill.get("id")
+        permission_mode = skill.get("permission_mode")
+        tool_allowlist = skill.get("tool_allowlist")
+
+        if not isinstance(skill_id, str):
+            continue
+
+        marker = "*" if skill.get("is_active") else " "
+        summary = f"{marker} {skill_id}"
+
+        if isinstance(permission_mode, str) and permission_mode:
+            summary = f"{summary} [{permission_mode}]"
+
+        tool_count = len(tool_allowlist) if isinstance(tool_allowlist, list) else 0
+
+        if tool_count > 0:
+            summary = f"{summary} tools:{tool_count}"
+
+        lines.append(summary)
+
+    if len(skills) > 5:
+        lines.append(f"+{len(skills) - 5} more")
+
+    return ScreenState(
+        phase="Skills",
+        status=f"{len(skills)} skill(s)",
+        answer="\n".join(lines),
+    )
+
+
+def run_skill_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    refresh_seconds: float,
+) -> int:
+    if refresh_seconds <= 0:
+        renderer.render_notice("Selection refresh must be greater than zero")
+        return 1
+
+    while True:
+        try:
+            renderer.render(build_skill_screen_state(list_skill_entries(base_url)))
+        except (RuntimeError, urllib.error.URLError) as error:
+            renderer.render(
+                ScreenState(
+                    phase="Error",
+                    status="Skill screen failed",
+                    error=str(error),
+                )
+            )
+
+        time.sleep(refresh_seconds)
+
+
+def run_skill_action(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    action: str,
+    selection: Optional[str] = None,
+) -> int:
+    renderer.render(
+        ScreenState(
+            phase="Skills",
+            status="Updating skill",
+            prompt=selection or action,
+        )
+    )
+
+    try:
+        if action == "cycle":
+            selected_skill = cycle_skill(base_url)
+        elif action == "clear":
+            update_active_skill(base_url, None)
+            selected_skill = "workspace/default"
+        else:
+            selected_skill = update_active_skill(base_url, selection)
+            if selected_skill is None:
+                selected_skill = "workspace/default"
+
+        state = build_skill_screen_state(list_skill_entries(base_url))
+        state.status = f"Skill: {selected_skill}"
+        renderer.render(state)
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Skill update failed",
+                prompt=selection or action,
+                error=str(error),
+            )
+        )
+        return 1
 
 
 def list_job_entries(base_url: str) -> list[dict[str, Any]]:
@@ -2095,6 +2202,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace-select", help="Select one active workspace and exit")
     parser.add_argument("--workspace-cycle", action="store_true", help="Cycle to the next workspace and exit")
     parser.add_argument("--workspace-clear", action="store_true", help="Clear the active workspace and exit")
+    parser.add_argument("--skill-screen", action="store_true", help="Show the skill selector screen")
+    parser.add_argument("--skill-select", help="Select one active skill and exit")
+    parser.add_argument("--skill-cycle", action="store_true", help="Cycle to the next skill and exit")
+    parser.add_argument("--skill-clear", action="store_true", help="Clear the active skill and exit")
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
     return parser.parse_args()
@@ -2224,7 +2335,36 @@ def main() -> int:
             renderer.render_notice("Use one workspace selector mode at a time")
             return 1
 
-        if workspace_selector_count and (
+        skill_selector_count = sum(
+            1
+            for value in (
+                args.skill_screen,
+                args.skill_cycle,
+                args.skill_clear,
+                args.skill_select is not None,
+            )
+            if value
+        )
+
+        if skill_selector_count > 1:
+            renderer.render_notice("Use one skill selector mode at a time")
+            return 1
+
+        if workspace_selector_count and skill_selector_count:
+            renderer.render_notice("Use workspace or skill selector modes, not both at once")
+            return 1
+
+        selector_mode_active = workspace_selector_count or skill_selector_count
+
+        if workspace_selector_count and args.workspace is not None:
+            renderer.render_notice("Use --workspace-select/cycle/clear or talk override --workspace, not both")
+            return 1
+
+        if skill_selector_count and args.skill is not None:
+            renderer.render_notice("Use --skill-select/cycle/clear or talk override --skill, not both")
+            return 1
+
+        if selector_mode_active and (
             args.prompt is not None
             or args.scheduler_screen is not None
             or args.jobs_screen
@@ -2233,7 +2373,7 @@ def main() -> int:
             or has_job_upsert_arg
             or selected_job_actions
         ):
-            renderer.render_notice("Use workspace selector modes separately from prompt/scheduler flows")
+            renderer.render_notice("Use workspace/skill selector modes separately from prompt/scheduler flows")
             return 1
 
         if has_job_upsert_arg:
@@ -2298,6 +2438,35 @@ def main() -> int:
                 renderer,
                 "select",
                 args.workspace_select,
+            )
+
+        if args.skill_screen:
+            return run_skill_screen(
+                args.host_url,
+                renderer,
+                args.selection_refresh_seconds,
+            )
+
+        if args.skill_cycle:
+            return run_skill_action(
+                args.host_url,
+                renderer,
+                "cycle",
+            )
+
+        if args.skill_clear:
+            return run_skill_action(
+                args.host_url,
+                renderer,
+                "clear",
+            )
+
+        if args.skill_select is not None:
+            return run_skill_action(
+                args.host_url,
+                renderer,
+                "select",
+                args.skill_select,
             )
 
         if args.jobs_screen:
