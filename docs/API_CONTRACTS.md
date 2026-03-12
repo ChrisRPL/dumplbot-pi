@@ -356,6 +356,7 @@ The daemon streams events back to the UI over Server-Sent Events.
   "runtime": {
     "default_workspace": "default",
     "default_skill": "coding",
+    "safety_mode": "balanced",
     "active_workspace": "default",
     "active_skill": "coding"
   }
@@ -364,6 +365,13 @@ The daemon streams events back to the UI over Server-Sent Events.
 
 - `active_workspace` may be `null`.
 - `active_skill` may be `null`.
+
+### `GET /setup`
+
+- Return the LAN-only setup shell for phone/browser appliance setup.
+- The current shell reads `/api/config`, `/api/workspaces`, and `/api/skills`, then saves non-secret runtime config back through `POST /api/config`.
+- Status codes:
+  - `200` with `text/html`.
 
 ### `POST /api/config`
 
@@ -374,19 +382,25 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```json
 {
   "runtime": {
+    "default_workspace": "default",
+    "default_skill": "coding",
+    "safety_mode": "balanced",
     "active_workspace": "default",
     "active_skill": "coding"
   }
 }
 ```
 
+- `default_workspace` must resolve to an existing workspace id.
+- `default_skill` must resolve to an existing skill id.
+- `safety_mode` must be one of `strict`, `balanced`, or `permissive`.
 - Set `"active_workspace": null` to clear and fall back to `default_workspace`.
 - Set `"active_skill": null` to clear and fall back to `default_skill`.
 - Status codes:
   - `200` update applied.
   - `404` workspace does not exist.
   - `404` skill does not exist.
-  - `400` invalid JSON or missing both runtime selection fields.
+  - `400` invalid JSON, invalid safety mode, or missing all runtime config fields.
 
 ## Agent Runner Stream
 
