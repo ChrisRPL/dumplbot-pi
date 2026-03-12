@@ -147,6 +147,14 @@ const runSmoke = async () => {
     assert(job.history.length === 1, "expected single scheduler history entry");
     assert(job.history[0]?.status === "success", "expected scheduler history status");
 
+    const historyResponse = await fetch(`${baseUrl}/api/jobs/scheduler-ping/history?limit=1`);
+    assert(historyResponse.status === 200, "expected scheduler history route to return 200");
+    const historyPayload = await historyResponse.json();
+    assert(historyPayload.job_id === "scheduler-ping", "expected scheduler history id");
+    assert(historyPayload.total === 1, "expected scheduler history total");
+    assert(historyPayload.returned === 1, "expected scheduler history returned");
+    assert(historyPayload.history[0]?.status === "success", "expected scheduler history route entry");
+
     console.log("scheduler runtime smoke ok");
   } finally {
     await stopHostProcess(hostProcess);

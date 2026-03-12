@@ -273,8 +273,23 @@ const runSmoke = async () => {
     assert(detailJobPayload.failure_count === 0, "expected empty job detail failure count");
     assert(detailJobPayload.last_success_at === null, "expected empty job detail last success");
 
+    const emptyHistoryResponse = await fetch(`${baseUrl}/api/jobs/daily-status/history`);
+    assert(emptyHistoryResponse.status === 200, "expected empty job history to return 200");
+    const emptyHistoryPayload = await emptyHistoryResponse.json();
+    assert(emptyHistoryPayload.job_id === "daily-status", "expected job history id");
+    assert(emptyHistoryPayload.total === 0, "expected empty job history total");
+    assert(emptyHistoryPayload.returned === 0, "expected empty job history returned");
+    assert(Array.isArray(emptyHistoryPayload.history), "expected job history array");
+    assert(emptyHistoryPayload.history.length === 0, "expected empty job history entries");
+
+    const invalidHistoryLimitResponse = await fetch(`${baseUrl}/api/jobs/daily-status/history?limit=0`);
+    assert(invalidHistoryLimitResponse.status === 400, "expected invalid history limit to return 400");
+
     const missingDetailResponse = await fetch(`${baseUrl}/api/jobs/missing-job`);
     assert(missingDetailResponse.status === 404, "expected missing job detail to return 404");
+
+    const missingHistoryResponse = await fetch(`${baseUrl}/api/jobs/missing-job/history`);
+    assert(missingHistoryResponse.status === 404, "expected missing job history to return 404");
 
     const disableJobResponse = await fetch(`${baseUrl}/api/jobs/hourly-status/disable`, {
       method: "POST",
