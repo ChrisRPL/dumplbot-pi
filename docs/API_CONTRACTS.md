@@ -222,6 +222,8 @@ The daemon streams events back to the UI over Server-Sent Events.
       "last_result":null,
       "last_duration_ms":null,
       "last_error":null,
+      "failure_count":0,
+      "last_success_at":null,
       "history":[]
     }
   ]
@@ -258,12 +260,35 @@ The daemon streams events back to the UI over Server-Sent Events.
   - tiny natural phrases: `"every hour"`, `"every day at 09:15"`, `"every monday at 08:30"`
 - `workspace` and `skill` optional; when present they must resolve to existing workspace/skill ids.
 - Success response matches the job object in `GET /api/jobs`.
-- Background scheduler runs update `last_run_at`, `last_status`, `last_result`, `last_duration_ms`, `last_error`, and append `{completed_at,status,result}` entries to `history`.
+- Background scheduler runs update `last_run_at`, `last_status`, `last_result`, `last_duration_ms`, `last_error`, `failure_count`, `last_success_at`, and append `{completed_at,status,result}` entries to `history`.
 - `history` currently retains the newest 20 run entries per job.
 - Status codes:
   - `200` when created or updated.
   - `404` when workspace or skill does not exist.
   - `400` for invalid JSON or invalid job input.
+
+### `PATCH /api/jobs/:jobId`
+
+- Patch one scheduler job in place.
+- Mutable fields:
+
+```json
+{
+  "prompt":"summarize repo state via patch",
+  "schedule":"45 * * * *",
+  "workspace":null,
+  "skill":"research",
+  "enabled":false
+}
+```
+
+- At least one mutable field is required.
+- Omitted fields keep their existing values.
+- Success response matches the job object in `GET /api/jobs`.
+- Status codes:
+  - `200` when updated.
+  - `404` when the job, workspace, or skill does not exist.
+  - `400` for invalid JSON, invalid field types, or an empty patch body.
 
 ### `POST /api/jobs/:jobId/enable`
 
