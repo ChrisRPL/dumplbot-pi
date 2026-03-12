@@ -862,20 +862,42 @@ const toJobHistoryEntryPayload = (entry: Awaited<ReturnType<typeof upsertSchedul
   status: entry.status,
 });
 
-const parseJobHistoryLimit = (request: IncomingMessage): number | null => {
-  const rawLimit = new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get("limit");
+const parseOptionalPositiveIntSearchParam = (
+  request: IncomingMessage,
+  key: string,
+  { allowZero = false }: { allowZero?: boolean } = {},
+): number | null => {
+  const rawValue = new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get(key);
 
-  if (rawLimit === null) {
+  if (rawValue === null) {
     return null;
   }
 
-  const parsedLimit = Number.parseInt(rawLimit, 10);
+  const parsedValue = Number.parseInt(rawValue, 10);
+  const minimumValue = allowZero ? 0 : 1;
 
-  if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
-    throw new Error("history limit is invalid");
+  if (!Number.isInteger(parsedValue) || parsedValue < minimumValue) {
+    throw new Error(`history ${key} is invalid`);
   }
 
-  return parsedLimit;
+  return parsedValue;
+};
+
+const parseJobHistoryWindow = (request: IncomingMessage): { limit: number | null; offset: number } => ({
+  limit: parseOptionalPositiveIntSearchParam(request, "limit"),
+  offset: parseOptionalPositiveIntSearchParam(request, "offset", { allowZero: true }) ?? 0,
+});
+
+const sliceJobHistory = (
+  history: Awaited<ReturnType<typeof upsertScheduledJob>>["history"],
+  { limit, offset }: { limit: number | null; offset: number },
+) => {
+  const endIndex = Math.max(0, history.length - offset);
+  const startIndex = limit === null
+    ? 0
+    : Math.max(0, endIndex - limit);
+
+  return history.slice(startIndex, endIndex);
 };
 
 const handleJobList = async (response: ServerResponse): Promise<void> => {
@@ -907,10 +929,8 @@ const handleJobHistoryGet = async (
 ): Promise<void> => {
   try {
     const job = await getScheduledJob(jobId);
-    const limit = parseJobHistoryLimit(request);
-    const returnedHistory = limit === null
-      ? job.history
-      : job.history.slice(-limit);
+    const historyWindow = parseJobHistoryWindow(request);
+    const returnedHistory = sliceJobHistory(job.history, historyWindow);
 
     sendJson(response, 200, {
       job_id: job.id,
