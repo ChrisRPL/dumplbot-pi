@@ -20,6 +20,8 @@ export type ScheduledJobRecord = {
   lastResult: string | null;
   lastDurationMs: number | null;
   lastError: string | null;
+  failureCount: number;
+  lastSuccessAt: string | null;
   history: ScheduledJobRunRecord[];
 };
 
@@ -84,6 +86,18 @@ const normalizeOptionalDurationMs = (value: unknown): number | null => {
   return Math.floor(value);
 };
 
+const normalizeOptionalFailureCount = (value: unknown): number => {
+  if (typeof value === "undefined" || value === null) {
+    return 0;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error("job failure count is invalid");
+  }
+
+  return value;
+};
+
 const parseScheduledJobRunRecord = (value: unknown): ScheduledJobRunRecord => {
   if (!value || typeof value !== "object") {
     throw new Error("job history entry is invalid");
@@ -131,6 +145,8 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
     last_result?: unknown;
     last_duration_ms?: unknown;
     last_error?: unknown;
+    failure_count?: unknown;
+    last_success_at?: unknown;
     history?: unknown;
   };
 
@@ -175,6 +191,22 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
     throw new Error("job entry is invalid");
   }
 
+  if (
+    rawJob.failure_count !== null
+    && typeof rawJob.failure_count !== "number"
+    && typeof rawJob.failure_count !== "undefined"
+  ) {
+    throw new Error("job entry is invalid");
+  }
+
+  if (
+    rawJob.last_success_at !== null
+    && typeof rawJob.last_success_at !== "string"
+    && typeof rawJob.last_success_at !== "undefined"
+  ) {
+    throw new Error("job entry is invalid");
+  }
+
   if (typeof rawJob.history !== "undefined" && !Array.isArray(rawJob.history)) {
     throw new Error("job entry is invalid");
   }
@@ -197,6 +229,8 @@ const parseScheduledJobRecord = (value: unknown): ScheduledJobRecord => {
     lastResult: typeof rawJob.last_result === "string" ? rawJob.last_result : null,
     lastDurationMs: normalizeOptionalDurationMs(rawJob.last_duration_ms),
     lastError: typeof rawJob.last_error === "string" ? rawJob.last_error : null,
+    failureCount: normalizeOptionalFailureCount(rawJob.failure_count),
+    lastSuccessAt: typeof rawJob.last_success_at === "string" ? rawJob.last_success_at : null,
     history: Array.isArray(rawJob.history)
       ? trimScheduledJobHistory(rawJob.history.map(parseScheduledJobRunRecord))
       : [],
@@ -259,6 +293,8 @@ const writeScheduledJobStore = async (jobs: ScheduledJobRecord[]): Promise<void>
         last_result: job.lastResult,
         last_duration_ms: job.lastDurationMs,
         last_error: job.lastError,
+        failure_count: job.failureCount,
+        last_success_at: job.lastSuccessAt,
         history: job.history.map((entry) => ({
           completed_at: entry.completedAt,
           result: entry.result,
@@ -319,6 +355,8 @@ export const upsertScheduledJob = async (
     lastResult: null,
     lastDurationMs: null,
     lastError: null,
+    failureCount: 0,
+    lastSuccessAt: null,
     history: [],
   };
   const jobs = await listScheduledJobs();
@@ -334,6 +372,8 @@ export const upsertScheduledJob = async (
       lastResult: existingJob.lastResult,
       lastDurationMs: existingJob.lastDurationMs,
       lastError: existingJob.lastError,
+      failureCount: existingJob.failureCount,
+      lastSuccessAt: existingJob.lastSuccessAt,
       history: trimScheduledJobHistory(existingJob.history),
     };
   } else {
@@ -366,6 +406,12 @@ export const recordScheduledJobRun = async (
     lastError: update.status === "error"
       ? normalizeRequiredScalar(update.result, "job result")
       : null,
+    failureCount: update.status === "error"
+      ? jobs[jobIndex].failureCount + 1
+      : jobs[jobIndex].failureCount,
+    lastSuccessAt: update.status === "success"
+      ? normalizeRequiredScalar(update.completedAt, "job completedAt")
+      : jobs[jobIndex].lastSuccessAt,
     history: trimScheduledJobHistory([
       ...jobs[jobIndex].history,
       {
