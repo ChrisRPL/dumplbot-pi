@@ -82,6 +82,14 @@ type DumplUpsertJobRequest = {
   enabled?: boolean;
 };
 
+type DumplPatchJobRequest = {
+  prompt?: string;
+  schedule?: string;
+  workspace?: string | null;
+  skill?: string | null;
+  enabled?: boolean;
+};
+
 type AudioAction = "talk" | "transcribe";
 
 type AudioActionRoute = {
@@ -921,6 +929,117 @@ const handleJobUpsert = async (
   }
 };
 
+const handleJobPatch = async (
+  request: IncomingMessage,
+  jobId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: Partial<DumplPatchJobRequest>;
+
+  try {
+    body = await readOptionalJson<DumplPatchJobRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  const hasPrompt = "prompt" in body;
+  const hasSchedule = "schedule" in body;
+  const hasWorkspace = "workspace" in body;
+  const hasSkill = "skill" in body;
+  const hasEnabled = "enabled" in body;
+
+  if (!hasPrompt && !hasSchedule && !hasWorkspace && !hasSkill && !hasEnabled) {
+    sendJson(response, 400, { error: "job patch requires at least one mutable field" });
+    return;
+  }
+
+  if (hasPrompt && typeof body.prompt !== "string") {
+    sendJson(response, 400, { error: "prompt must be string" });
+    return;
+  }
+
+  if (hasSchedule && typeof body.schedule !== "string") {
+    sendJson(response, 400, { error: "schedule must be string" });
+    return;
+  }
+
+  if (hasWorkspace && body.workspace !== null && typeof body.workspace !== "string") {
+    sendJson(response, 400, { error: "workspace must be string or null" });
+    return;
+  }
+
+  if (hasSkill && body.skill !== null && typeof body.skill !== "string") {
+    sendJson(response, 400, { error: "skill must be string or null" });
+    return;
+  }
+
+  if (hasEnabled && typeof body.enabled !== "boolean") {
+    sendJson(response, 400, { error: "enabled must be boolean" });
+    return;
+  }
+
+  let existingJob;
+
+  try {
+    existingJob = await getScheduledJob(jobId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "job lookup failed";
+    sendJson(response, getJobErrorStatus(message), { error: message });
+    return;
+  }
+
+  let normalizedWorkspace = existingJob.workspace;
+  let normalizedSkill = existingJob.skill;
+
+  try {
+    if (hasWorkspace) {
+      if (body.workspace === null) {
+        normalizedWorkspace = null;
+      } else {
+        normalizedWorkspace = normalizeWorkspaceId(body.workspace as string);
+        await getExistingWorkspacePath(normalizedWorkspace);
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace validation failed";
+    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    if (hasSkill) {
+      if (body.skill === null) {
+        normalizedSkill = null;
+      } else {
+        normalizedSkill = normalizeSkillId(body.skill as string);
+        await loadSkill(normalizedSkill);
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "skill validation failed";
+    sendJson(response, getSkillErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    const job = await upsertScheduledJob({
+      id: existingJob.id,
+      prompt: hasPrompt ? body.prompt as string : existingJob.prompt,
+      schedule: hasSchedule ? body.schedule as string : existingJob.schedule,
+      workspace: normalizedWorkspace,
+      skill: normalizedSkill,
+      enabled: hasEnabled ? body.enabled as boolean : existingJob.enabled,
+    });
+    sendJson(response, 200, toJobPayload(job));
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "job patch failed";
+    sendJson(response, 400, { error: message });
+    return;
+  }
+};
+
 const handleJobDelete = async (
   jobId: string,
   response: ServerResponse,
@@ -1350,7 +1469,7 @@ export const createHostServer = (): Server =>
       const workspaceConfigRoute = request.method === "POST"
         ? matchWorkspaceConfigRoute(pathname)
         : null;
-      const jobRoute = request.method === "GET" || request.method === "DELETE"
+      const jobRoute = request.method === "GET" || request.method === "DELETE" || request.method === "PATCH"
         ? matchJobRoute(pathname)
         : null;
       const jobActionRoute = request.method === "POST"
@@ -1409,6 +1528,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/jobs") {
         await handleJobUpsert(request, response);
+        return;
+      }
+
+      if (request.method === "PATCH" && jobRoute) {
+        await handleJobPatch(request, jobRoute.jobId, response);
         return;
       }
 
