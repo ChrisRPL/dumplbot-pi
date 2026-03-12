@@ -3,7 +3,7 @@
 import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const HOST = "127.0.0.1";
 const HOST_PORT = 4135;
@@ -91,6 +91,25 @@ const stopHostServer = async (childProcess) => {
     childProcess.once("exit", resolve);
     setTimeout(() => resolve(), 3000);
   });
+};
+
+const runUiCommand = (baseUrl, ...args) => {
+  const result = spawnSync(
+    "python3",
+    ["apps/ui/dumpl_ui.py", "--mock", "--host-url", baseUrl, ...args],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 8000,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return result;
 };
 
 const runSmoke = async () => {
@@ -451,6 +470,61 @@ const runSmoke = async () => {
 
     const stateFileContents = await readFile(runtimeStatePath, "utf8");
     assert(stateFileContents.trim() === "{}", "runtime state file should be empty after clear");
+
+    const workspaceSelectResult = runUiCommand(baseUrl, "--workspace-select", "alpha");
+    assert(workspaceSelectResult.status === 0, "expected UI workspace select to return 0");
+    assert(
+      workspaceSelectResult.stdout.includes("Workspace: alpha"),
+      "expected UI workspace select output",
+    );
+    const configAfterUiWorkspaceSelect = await fetch(`${baseUrl}/api/config`);
+    const configAfterUiWorkspaceSelectPayload = await configAfterUiWorkspaceSelect.json();
+    assert(
+      configAfterUiWorkspaceSelectPayload.runtime.active_workspace === "alpha",
+      "UI workspace select did not persist active workspace",
+    );
+
+    const workspaceClearResult = runUiCommand(baseUrl, "--workspace-clear");
+    assert(workspaceClearResult.status === 0, "expected UI workspace clear to return 0");
+    assert(
+      workspaceClearResult.stdout.includes("Workspace: host default"),
+      "expected UI workspace clear output",
+    );
+    const configAfterUiWorkspaceClear = await fetch(`${baseUrl}/api/config`);
+    const configAfterUiWorkspaceClearPayload = await configAfterUiWorkspaceClear.json();
+    assert(
+      configAfterUiWorkspaceClearPayload.runtime.active_workspace === null,
+      "UI workspace clear did not persist runtime fallback",
+    );
+
+    const skillSelectResult = runUiCommand(baseUrl, "--skill-select", "research");
+    assert(skillSelectResult.status === 0, "expected UI skill select to return 0");
+    assert(
+      skillSelectResult.stdout.includes("Skill: research"),
+      "expected UI skill select output",
+    );
+    const configAfterUiSkillSelect = await fetch(`${baseUrl}/api/config`);
+    const configAfterUiSkillSelectPayload = await configAfterUiSkillSelect.json();
+    assert(
+      configAfterUiSkillSelectPayload.runtime.active_skill === "research",
+      "UI skill select did not persist active skill",
+    );
+
+    const skillClearResult = runUiCommand(baseUrl, "--skill-clear");
+    assert(skillClearResult.status === 0, "expected UI skill clear to return 0");
+    assert(
+      skillClearResult.stdout.includes("Skill: workspace/default"),
+      "expected UI skill clear output",
+    );
+    const configAfterUiSkillClear = await fetch(`${baseUrl}/api/config`);
+    const configAfterUiSkillClearPayload = await configAfterUiSkillClear.json();
+    assert(
+      configAfterUiSkillClearPayload.runtime.active_skill === null,
+      "UI skill clear did not persist runtime fallback",
+    );
+
+    const stateFileAfterUiClear = await readFile(runtimeStatePath, "utf8");
+    assert(stateFileAfterUiClear.trim() === "{}", "runtime state file should be empty after UI clear");
 
     const talkAfterClearResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
