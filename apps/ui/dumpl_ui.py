@@ -30,6 +30,7 @@ JOB_DETAIL_HISTORY_LIMIT = 3
 WHISPLAY_PHASE_RGB = {
     "Idle": (0, 64, 16),
     "Jobs": (0, 56, 72),
+    "Workspaces": (24, 56, 96),
     "Listening": (0, 48, 96),
     "Transcribing": (0, 64, 96),
     "Thinking": (96, 72, 0),
@@ -411,6 +412,112 @@ def handle_workspace_command(
     next_workspace = update_active_workspace(base_url, selection)
     renderer.render_notice(f"Workspace: {next_workspace or 'host default'}")
     return next_workspace
+
+
+def build_workspace_screen_state(workspaces: list[dict[str, Any]]) -> ScreenState:
+    if not workspaces:
+        return ScreenState(
+            phase="Workspaces",
+            status="No workspaces",
+            answer="Create via /api/workspaces.",
+        )
+
+    lines: list[str] = []
+
+    for workspace in workspaces[:5]:
+        workspace_id = workspace.get("id")
+        default_skill = workspace.get("default_skill")
+        attached_repos = workspace.get("attached_repos")
+
+        if not isinstance(workspace_id, str):
+            continue
+
+        marker = "*" if workspace.get("is_active") else " "
+        summary = f"{marker} {workspace_id}"
+
+        if isinstance(default_skill, str) and default_skill:
+            summary = f"{summary} [{default_skill}]"
+
+        repo_count = len(attached_repos) if isinstance(attached_repos, list) else 0
+
+        if repo_count > 0:
+            summary = f"{summary} repos:{repo_count}"
+
+        lines.append(summary)
+
+    if len(workspaces) > 5:
+        lines.append(f"+{len(workspaces) - 5} more")
+
+    return ScreenState(
+        phase="Workspaces",
+        status=f"{len(workspaces)} workspace(s)",
+        answer="\n".join(lines),
+    )
+
+
+def run_workspace_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    refresh_seconds: float,
+) -> int:
+    if refresh_seconds <= 0:
+        renderer.render_notice("Selection refresh must be greater than zero")
+        return 1
+
+    while True:
+        try:
+            renderer.render(build_workspace_screen_state(list_workspace_entries(base_url)))
+        except (RuntimeError, urllib.error.URLError) as error:
+            renderer.render(
+                ScreenState(
+                    phase="Error",
+                    status="Workspace screen failed",
+                    error=str(error),
+                )
+            )
+
+        time.sleep(refresh_seconds)
+
+
+def run_workspace_action(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    action: str,
+    selection: Optional[str] = None,
+) -> int:
+    renderer.render(
+        ScreenState(
+            phase="Workspaces",
+            status="Updating workspace",
+            prompt=selection or action,
+        )
+    )
+
+    try:
+        if action == "cycle":
+            selected_workspace = cycle_workspace(base_url)
+        elif action == "clear":
+            update_active_workspace(base_url, None)
+            selected_workspace = "host default"
+        else:
+            selected_workspace = update_active_workspace(base_url, selection)
+            if selected_workspace is None:
+                selected_workspace = "host default"
+
+        state = build_workspace_screen_state(list_workspace_entries(base_url))
+        state.status = f"Workspace: {selected_workspace}"
+        renderer.render(state)
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Workspace update failed",
+                prompt=selection or action,
+                error=str(error),
+            )
+        )
+        return 1
 
 
 def list_skill_entries(base_url: str) -> list[dict[str, Any]]:
@@ -1937,6 +2044,12 @@ def parse_args() -> argparse.Namespace:
         help="Refresh interval for --jobs-screen",
     )
     parser.add_argument(
+        "--selection-refresh-seconds",
+        type=float,
+        default=5.0,
+        help="Refresh interval for workspace/skill selector screens",
+    )
+    parser.add_argument(
         "--job-history",
         help="Show one scheduler job history on the renderer and refresh continuously",
     )
@@ -1978,6 +2091,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-enable", help="Enable one scheduler job and exit")
     parser.add_argument("--job-disable", help="Disable one scheduler job and exit")
     parser.add_argument("--job-delete", help="Delete one scheduler job and exit")
+    parser.add_argument("--workspace-screen", action="store_true", help="Show the workspace selector screen")
+    parser.add_argument("--workspace-select", help="Select one active workspace and exit")
+    parser.add_argument("--workspace-cycle", action="store_true", help="Cycle to the next workspace and exit")
+    parser.add_argument("--workspace-clear", action="store_true", help="Clear the active workspace and exit")
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
     return parser.parse_args()
@@ -2092,6 +2209,33 @@ def main() -> int:
             renderer.render_notice("--scheduler-screen detail/history requires --scheduler-job")
             return 1
 
+        workspace_selector_count = sum(
+            1
+            for value in (
+                args.workspace_screen,
+                args.workspace_cycle,
+                args.workspace_clear,
+                args.workspace_select is not None,
+            )
+            if value
+        )
+
+        if workspace_selector_count > 1:
+            renderer.render_notice("Use one workspace selector mode at a time")
+            return 1
+
+        if workspace_selector_count and (
+            args.prompt is not None
+            or args.scheduler_screen is not None
+            or args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or has_job_upsert_arg
+            or selected_job_actions
+        ):
+            renderer.render_notice("Use workspace selector modes separately from prompt/scheduler flows")
+            return 1
+
         if has_job_upsert_arg:
             if not args.job_id or not args.job_schedule or not args.job_prompt:
                 renderer.render_notice("--job-id, --job-schedule, and --job-prompt are required together")
@@ -2125,6 +2269,35 @@ def main() -> int:
                 args.scheduler_history_offset,
                 renderer,
                 args.jobs_refresh_seconds,
+            )
+
+        if args.workspace_screen:
+            return run_workspace_screen(
+                args.host_url,
+                renderer,
+                args.selection_refresh_seconds,
+            )
+
+        if args.workspace_cycle:
+            return run_workspace_action(
+                args.host_url,
+                renderer,
+                "cycle",
+            )
+
+        if args.workspace_clear:
+            return run_workspace_action(
+                args.host_url,
+                renderer,
+                "clear",
+            )
+
+        if args.workspace_select is not None:
+            return run_workspace_action(
+                args.host_url,
+                renderer,
+                "select",
+                args.workspace_select,
             )
 
         if args.jobs_screen:
