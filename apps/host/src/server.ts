@@ -111,6 +111,8 @@ type JobRoute = {
   jobId: string;
 };
 
+type JobHistoryRoute = JobRoute;
+
 type JobActionRoute = JobRoute & {
   action: JobAction;
 };
@@ -234,6 +236,22 @@ const matchJobActionRoute = (pathname: string): JobActionRoute | null => {
   return {
     jobId: segments[2],
     action: segments[3],
+  };
+};
+
+const matchJobHistoryRoute = (pathname: string): JobHistoryRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "jobs" || segments[3] !== "history") {
+    return null;
+  }
+
+  return {
+    jobId: segments[2],
   };
 };
 
@@ -838,6 +856,28 @@ const toJobPayload = (job: Awaited<ReturnType<typeof upsertScheduledJob>>) => ({
   })),
 });
 
+const toJobHistoryEntryPayload = (entry: Awaited<ReturnType<typeof upsertScheduledJob>>["history"][number]) => ({
+  completed_at: entry.completedAt,
+  result: entry.result,
+  status: entry.status,
+});
+
+const parseJobHistoryLimit = (request: IncomingMessage): number | null => {
+  const rawLimit = new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get("limit");
+
+  if (rawLimit === null) {
+    return null;
+  }
+
+  const parsedLimit = Number.parseInt(rawLimit, 10);
+
+  if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
+    throw new Error("history limit is invalid");
+  }
+
+  return parsedLimit;
+};
+
 const handleJobList = async (response: ServerResponse): Promise<void> => {
   const jobs = await listScheduledJobs();
   sendJson(response, 200, {
@@ -855,6 +895,32 @@ const handleJobGet = async (
     return;
   } catch (error) {
     const message = error instanceof Error ? error.message : "job lookup failed";
+    sendJson(response, getJobErrorStatus(message), { error: message });
+    return;
+  }
+};
+
+const handleJobHistoryGet = async (
+  request: IncomingMessage,
+  jobId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  try {
+    const job = await getScheduledJob(jobId);
+    const limit = parseJobHistoryLimit(request);
+    const returnedHistory = limit === null
+      ? job.history
+      : job.history.slice(-limit);
+
+    sendJson(response, 200, {
+      job_id: job.id,
+      total: job.history.length,
+      returned: returnedHistory.length,
+      history: returnedHistory.map(toJobHistoryEntryPayload),
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "job history lookup failed";
     sendJson(response, getJobErrorStatus(message), { error: message });
     return;
   }
@@ -1471,6 +1537,9 @@ export const createHostServer = (): Server =>
       const workspaceConfigRoute = request.method === "POST"
         ? matchWorkspaceConfigRoute(pathname)
         : null;
+      const jobHistoryRoute = request.method === "GET"
+        ? matchJobHistoryRoute(pathname)
+        : null;
       const jobRoute = request.method === "GET" || request.method === "DELETE" || request.method === "PATCH"
         ? matchJobRoute(pathname)
         : null;
@@ -1520,6 +1589,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/jobs") {
         await handleJobList(response);
+        return;
+      }
+
+      if (request.method === "GET" && jobHistoryRoute) {
+        await handleJobHistoryGet(request, jobHistoryRoute.jobId, response);
         return;
       }
 
