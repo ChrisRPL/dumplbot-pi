@@ -63,6 +63,8 @@ const runSmoke = async () => {
     assert(job.lastResult === "run-24 failed", "expected last result to match newest history entry");
     assert(job.lastDurationMs === 240, "expected last duration to match newest history entry");
     assert(job.lastError === "run-24 failed", "expected last error to match newest error entry");
+    assert(job.failureCount === 1, "expected one retained failure count");
+    assert(job.lastSuccessAt === new Date(Date.UTC(2026, 2, 10, 12, 23, 0)).toISOString(), "expected last success timestamp to stay on newest success");
   } finally {
     delete process.env.DUMPLBOT_JOBS_PATH;
     await rm(tmpRoot, { recursive: true, force: true });

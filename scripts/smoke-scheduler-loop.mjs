@@ -93,6 +93,8 @@ const runSmoke = async () => {
   assert(dueJob?.lastStatus === "success", "expected due job last status");
   assert(dueJob?.lastDurationMs === 42, "expected due job duration");
   assert(dueJob?.lastError === null, "expected due job error to stay empty");
+  assert(dueJob?.failureCount === 0, "expected due job failure count to stay empty");
+  assert(dueJob?.lastSuccessAt === now.toISOString(), "expected due job last success timestamp");
   assert(Array.isArray(dueJob?.history), "expected due job history array");
   assert(dueJob?.history.length === 1, "expected one persisted history entry");
   assert(dueJob?.history[0]?.result === "ok", "expected persisted history result");

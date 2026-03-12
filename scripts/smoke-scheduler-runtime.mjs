@@ -141,6 +141,8 @@ const runSmoke = async () => {
     assert(typeof job.last_result === "string" && job.last_result.length > 0, "expected scheduler result text");
     assert(typeof job.last_duration_ms === "number" && job.last_duration_ms >= 0, "expected scheduler duration");
     assert(job.last_error === null, "expected empty scheduler error for success");
+    assert(job.failure_count === 0, "expected zero scheduler failures after success");
+    assert(typeof job.last_success_at === "string" && job.last_success_at.length > 0, "expected scheduler last success timestamp");
     assert(Array.isArray(job.history), "expected scheduler job history array");
     assert(job.history.length === 1, "expected single scheduler history entry");
     assert(job.history[0]?.status === "success", "expected scheduler history status");
