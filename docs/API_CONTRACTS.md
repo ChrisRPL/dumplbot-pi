@@ -369,7 +369,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `GET /setup`
 
 - Return the LAN-only setup shell for phone/browser appliance setup.
-- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, and `/api/setup/status`, then saves non-secret runtime config back through `POST /api/config`.
+- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config` and raw config imports through `POST /api/config/import`.
 - Status codes:
   - `200` with `text/html`.
 
@@ -390,6 +390,34 @@ The daemon streams events back to the UI over Server-Sent Events.
 
 - `secrets_file_present` only reports whether the configured secrets file exists.
 - Provider booleans only report whether a non-empty key is present in that file.
+
+### `GET /api/config/export`
+
+- Return the current host config file contents for setup export/import editing.
+- Current response shape:
+
+```json
+{
+  "config": "runtime:\n  default_workspace: default\n  default_skill: coding\n  permission_mode: balanced\n"
+}
+```
+
+### `POST /api/config/import`
+
+- Replace the host config file with imported YAML text after validating the runtime section.
+- Current request shape:
+
+```json
+{
+  "config": "runtime:\n  default_workspace: default\n  default_skill: coding\n  permission_mode: balanced\n"
+}
+```
+
+- The imported config must include `runtime.default_workspace`, `runtime.default_skill`, and `runtime.permission_mode`.
+- `runtime.default_workspace` must resolve to an existing workspace id.
+- `runtime.default_skill` must resolve to an existing skill id.
+- `runtime.permission_mode` must be one of `strict`, `balanced`, or `permissive`.
+- `runtime.max_run_seconds`, when present, must be a positive integer.
 
 ### `POST /api/config`
 
