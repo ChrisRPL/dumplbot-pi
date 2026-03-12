@@ -24,6 +24,9 @@ WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
 BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
+JOB_HISTORY_COMMAND_LIMIT = 8
+JOB_HISTORY_SCREEN_LIMIT = 4
+JOB_DETAIL_HISTORY_LIMIT = 3
 WHISPLAY_PHASE_RGB = {
     "Idle": (0, 64, 16),
     "Jobs": (0, 56, 72),
@@ -508,6 +511,24 @@ def get_job_entry(base_url: str, job_id: str) -> dict[str, Any]:
     return payload
 
 
+def get_job_history(
+    base_url: str,
+    job_id: str,
+    limit: Optional[int] = None,
+) -> dict[str, Any]:
+    path = f"/api/jobs/{job_id.strip().lower()}/history"
+
+    if isinstance(limit, int) and limit > 0:
+        path = f"{path}?limit={limit}"
+
+    payload = request_json(base_url, path)
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("job_id"), str):
+        raise RuntimeError("job history response is invalid")
+
+    return payload
+
+
 def normalize_optional_job_value(raw_value: str) -> Optional[str]:
     normalized_value = raw_value.strip()
 
@@ -644,18 +665,25 @@ def handle_jobs_command(
             renderer.render_notice("Usage: :jobs history <id>")
             return
 
-        job = get_job_entry(base_url, tokens[1])
-        history = job.get("history")
+        history_payload = get_job_history(
+            base_url,
+            tokens[1],
+            limit=JOB_HISTORY_COMMAND_LIMIT,
+        )
+        history = history_payload.get("history")
+        total = history_payload.get("total")
+        returned = history_payload.get("returned")
+        job_id = history_payload.get("job_id")
 
         if not isinstance(history, list) or len(history) == 0:
-            print(f"Job history: {job.get('id', tokens[1])}")
+            print(f"Job history: {job_id or tokens[1]}")
             print("- no runs yet")
-            renderer.render_notice(f"History: {job.get('id', tokens[1])} (0 runs)")
+            renderer.render_notice(f"History: {job_id or tokens[1]} (0 runs)")
             return
 
-        print(f"Job history: {job.get('id', tokens[1])}")
+        print(f"Job history: {job_id or tokens[1]}")
 
-        for entry in history[-8:]:
+        for entry in history:
             if not isinstance(entry, dict):
                 continue
 
@@ -669,7 +697,9 @@ def handle_jobs_command(
             summary = str(result) if isinstance(result, str) and result else "(no result)"
             print(f"- {completed_at} [{status}] {summary}")
 
-        renderer.render_notice(f"History: {job.get('id', tokens[1])} ({len(history)} runs)")
+        total_runs = total if isinstance(total, int) else len(history)
+        shown_runs = returned if isinstance(returned, int) else len(history)
+        renderer.render_notice(f"History: {job_id or tokens[1]} ({shown_runs}/{total_runs} runs)")
         return
 
     if tokens and tokens[0] in {"on", "off"}:
@@ -744,9 +774,11 @@ def build_jobs_screen_state(jobs: list[dict[str, Any]]) -> ScreenState:
     )
 
 
-def build_job_history_screen_state(job: dict[str, Any]) -> ScreenState:
-    job_id = job.get("id")
-    history = job.get("history")
+def build_job_history_screen_state(history_payload: dict[str, Any]) -> ScreenState:
+    job_id = history_payload.get("job_id")
+    history = history_payload.get("history")
+    total = history_payload.get("total")
+    returned = history_payload.get("returned")
 
     if not isinstance(job_id, str):
         raise RuntimeError("job response is invalid")
@@ -761,7 +793,7 @@ def build_job_history_screen_state(job: dict[str, Any]) -> ScreenState:
 
     lines: list[str] = []
 
-    for entry in history[-4:]:
+    for entry in history:
         if not isinstance(entry, dict):
             continue
 
@@ -783,17 +815,22 @@ def build_job_history_screen_state(job: dict[str, Any]) -> ScreenState:
 
     return ScreenState(
         phase="Jobs",
-        status=f"{job_id} history ({len(history)} runs)",
+        status=f"{job_id} history ({returned if isinstance(returned, int) else len(history)}/{total if isinstance(total, int) else len(history)} runs)",
         prompt=job_id,
         answer="\n".join(lines) if lines else "No valid history entries.",
     )
 
 
-def build_job_detail_screen_state(job: dict[str, Any]) -> ScreenState:
+def build_job_detail_screen_state(
+    job: dict[str, Any],
+    history_payload: dict[str, Any],
+) -> ScreenState:
     job_id = job.get("id")
     schedule = job.get("schedule")
     enabled = job.get("enabled")
-    history = job.get("history")
+    workspace = job.get("workspace")
+    skill = job.get("skill")
+    history = history_payload.get("history")
 
     if not isinstance(job_id, str) or not isinstance(schedule, str):
         raise RuntimeError("job response is invalid")
@@ -829,8 +866,12 @@ def build_job_detail_screen_state(job: dict[str, Any]) -> ScreenState:
         phase="Jobs",
         status=f"{job_id} [{state}]",
         prompt=schedule,
-        transcript=last_run_summary,
-        answer="\n".join(history_lines),
+        answer="\n".join([
+            f"workspace: {workspace if isinstance(workspace, str) and workspace else '(none)'}",
+            f"skill: {skill if isinstance(skill, str) and skill else '(none)'}",
+            f"last run: {last_run_summary}",
+            *history_lines,
+        ]),
     )
 
 
@@ -871,8 +912,12 @@ def run_job_history_screen(
 
     while True:
         try:
-            job = get_job_entry(base_url, job_id)
-            renderer.render(build_job_history_screen_state(job))
+            history_payload = get_job_history(
+                base_url,
+                job_id,
+                limit=JOB_HISTORY_SCREEN_LIMIT,
+            )
+            renderer.render(build_job_history_screen_state(history_payload))
         except (RuntimeError, urllib.error.URLError) as error:
             renderer.render(
                 ScreenState(
@@ -954,7 +999,12 @@ def run_job_detail_screen(
     while True:
         try:
             job = get_job_entry(base_url, job_id)
-            renderer.render(build_job_detail_screen_state(job))
+            history_payload = get_job_history(
+                base_url,
+                job_id,
+                limit=JOB_DETAIL_HISTORY_LIMIT,
+            )
+            renderer.render(build_job_detail_screen_state(job, history_payload))
         except (RuntimeError, urllib.error.URLError) as error:
             renderer.render(
                 ScreenState(
