@@ -282,8 +282,37 @@ const runSmoke = async () => {
     assert(Array.isArray(emptyHistoryPayload.history), "expected job history array");
     assert(emptyHistoryPayload.history.length === 0, "expected empty job history entries");
 
+    const seededJobsFilePayload = JSON.parse(await readFile(jobsPath, "utf8"));
+    const seededDailyJob = seededJobsFilePayload.jobs.find((job) => job.id === "daily-status");
+    assert(seededDailyJob, "expected seeded daily-status job");
+    seededDailyJob.history = [
+      { completed_at: "2026-03-12T08:00:00.000Z", status: "success", result: "run 1" },
+      { completed_at: "2026-03-12T09:00:00.000Z", status: "error", result: "run 2" },
+      { completed_at: "2026-03-12T10:00:00.000Z", status: "success", result: "run 3" },
+      { completed_at: "2026-03-12T11:00:00.000Z", status: "success", result: "run 4" },
+      { completed_at: "2026-03-12T12:00:00.000Z", status: "error", result: "run 5" },
+    ];
+    await writeFile(jobsPath, `${JSON.stringify(seededJobsFilePayload, null, 2)}\n`, "utf8");
+
+    const pagedHistoryResponse = await fetch(`${baseUrl}/api/jobs/daily-status/history?limit=2&offset=1`);
+    assert(pagedHistoryResponse.status === 200, "expected paged job history to return 200");
+    const pagedHistoryPayload = await pagedHistoryResponse.json();
+    assert(pagedHistoryPayload.total === 5, "expected paged job history total");
+    assert(pagedHistoryPayload.returned === 2, "expected paged job history returned");
+    assert(pagedHistoryPayload.history[0]?.result === "run 3", "expected paged job history window start");
+    assert(pagedHistoryPayload.history[1]?.result === "run 4", "expected paged job history window end");
+
+    const overflowHistoryResponse = await fetch(`${baseUrl}/api/jobs/daily-status/history?limit=2&offset=9`);
+    assert(overflowHistoryResponse.status === 200, "expected overflow job history to return 200");
+    const overflowHistoryPayload = await overflowHistoryResponse.json();
+    assert(overflowHistoryPayload.total === 5, "expected overflow job history total");
+    assert(overflowHistoryPayload.returned === 0, "expected overflow job history returned");
+    assert(Array.isArray(overflowHistoryPayload.history) && overflowHistoryPayload.history.length === 0, "expected overflow job history to be empty");
+
     const invalidHistoryLimitResponse = await fetch(`${baseUrl}/api/jobs/daily-status/history?limit=0`);
     assert(invalidHistoryLimitResponse.status === 400, "expected invalid history limit to return 400");
+    const invalidHistoryOffsetResponse = await fetch(`${baseUrl}/api/jobs/daily-status/history?offset=-1`);
+    assert(invalidHistoryOffsetResponse.status === 400, "expected invalid history offset to return 400");
 
     const missingDetailResponse = await fetch(`${baseUrl}/api/jobs/missing-job`);
     assert(missingDetailResponse.status === 404, "expected missing job detail to return 404");
