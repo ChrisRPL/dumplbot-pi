@@ -21,6 +21,7 @@
     "smoke:runner-sandbox-launch": "npm run build && node scripts/smoke-runner-sandbox-launch.mjs",
     "smoke:runner-timeout": "npm run build && node scripts/smoke-runner-timeout.mjs",
     "smoke:runner-launch-builder": "npm run build && node scripts/smoke-runner-launch-builder.mjs",
+    "smoke:setup-lan-guard": "npm run build && node scripts/smoke-setup-lan-guard.mjs",
     "smoke:setup-page": "npm run build && node scripts/smoke-setup-page.mjs",
     "smoke:workspace-config": "npm run build && node scripts/smoke-workspace-config.mjs",
     "start:agent-runner": "node dist/apps/agent-runner/src/main.js",
