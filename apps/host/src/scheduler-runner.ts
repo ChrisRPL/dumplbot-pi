@@ -1,8 +1,15 @@
+import { loadHostServerConfig } from "./runtime-config";
 import type { ScheduledJobRecord } from "./scheduler-store";
 
-const DEFAULT_HOST = process.env.DUMPLBOT_HOST ?? "127.0.0.1";
-const DEFAULT_PORT = Number.parseInt(process.env.DUMPLBOT_PORT ?? "4123", 10);
 const SSE_DELIMITER = "\n\n";
+
+const getLocalServerOrigin = async (): Promise<string> => {
+  const serverConfig = await loadHostServerConfig();
+  const host = serverConfig.host === "::" || serverConfig.host === "::1"
+    ? "[::1]"
+    : "127.0.0.1";
+  return `http://${host}:${serverConfig.port}`;
+};
 
 export type ScheduledJobRunOutcome = {
   completedAt: string;
@@ -38,6 +45,7 @@ export const runScheduledJob = async (
   job: ScheduledJobRecord,
 ): Promise<ScheduledJobRunOutcome> => {
   const startedAt = Date.now();
+  const serverOrigin = await getLocalServerOrigin();
   const payload: { text: string; workspace?: string; skill?: string } = {
     text: job.prompt,
   };
@@ -51,7 +59,7 @@ export const runScheduledJob = async (
   }
 
   try {
-    const response = await fetch(`http://${DEFAULT_HOST}:${DEFAULT_PORT}/api/talk`, {
+    const response = await fetch(`${serverOrigin}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
