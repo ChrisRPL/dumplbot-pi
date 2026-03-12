@@ -829,6 +829,8 @@ const toJobPayload = (job: Awaited<ReturnType<typeof upsertScheduledJob>>) => ({
   last_result: job.lastResult,
   last_duration_ms: job.lastDurationMs,
   last_error: job.lastError,
+  failure_count: job.failureCount,
+  last_success_at: job.lastSuccessAt,
   history: job.history.map((entry) => ({
     completed_at: entry.completedAt,
     result: entry.result,
