@@ -15,6 +15,7 @@ import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
 import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadHostRuntimeConfig, loadHostSandboxConfig } from "./runtime-config";
+import { writeHostRuntimeConfigUpdate } from "./runtime-config-store";
 import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
 import {
   deleteScheduledJob,
@@ -68,6 +69,9 @@ type DumplUpdateWorkspaceConfigRequest = {
 
 type DumplUpdateConfigRequest = {
   runtime?: {
+    default_workspace?: string;
+    default_skill?: string;
+    safety_mode?: "strict" | "balanced" | "permissive";
     active_workspace?: string | null;
     active_skill?: string | null;
   };
@@ -622,6 +626,7 @@ const getConfigResponsePayload = async (): Promise<Record<string, unknown>> => {
     runtime: {
       default_workspace: runtimeConfig.defaultWorkspace,
       default_skill: runtimeConfig.defaultSkill,
+      safety_mode: runtimeConfig.permissionMode,
       active_workspace: runtimeState.activeWorkspace ?? null,
       active_skill: runtimeState.activeSkill ?? null,
     },
@@ -1172,33 +1177,82 @@ const handleConfigUpdate = async (
     return;
   }
 
-  if (!body.runtime || !("active_workspace" in body.runtime)) {
-    const hasActiveSkill = "active_skill" in (body.runtime ?? {});
-
-    if (!hasActiveSkill) {
-      sendJson(response, 400, { error: "runtime.active_workspace or runtime.active_skill is required" });
-      return;
-    }
-  }
-
   if (!body.runtime) {
-    sendJson(response, 400, { error: "runtime.active_workspace or runtime.active_skill is required" });
+    sendJson(response, 400, { error: "one runtime config field is required" });
     return;
   }
 
+  const hasDefaultWorkspace = "default_workspace" in body.runtime;
+  const hasDefaultSkill = "default_skill" in body.runtime;
+  const hasSafetyMode = "safety_mode" in body.runtime;
   const hasActiveWorkspace = "active_workspace" in body.runtime;
   const hasActiveSkill = "active_skill" in body.runtime;
 
-  if (!hasActiveWorkspace && !hasActiveSkill) {
-    sendJson(response, 400, { error: "runtime.active_workspace or runtime.active_skill is required" });
+  if (!hasDefaultWorkspace && !hasDefaultSkill && !hasSafetyMode && !hasActiveWorkspace && !hasActiveSkill) {
+    sendJson(response, 400, { error: "one runtime config field is required" });
     return;
   }
 
+  const currentRuntimeConfig = await loadHostRuntimeConfig();
+  const nextRuntimeConfig = {
+    defaultWorkspace: currentRuntimeConfig.defaultWorkspace,
+    defaultSkill: currentRuntimeConfig.defaultSkill,
+    permissionMode: currentRuntimeConfig.permissionMode,
+  };
   const currentRuntimeState = await loadHostRuntimeState();
   const nextRuntimeState = {
     activeWorkspace: currentRuntimeState.activeWorkspace,
     activeSkill: currentRuntimeState.activeSkill,
   };
+
+  if (hasDefaultWorkspace) {
+    const defaultWorkspace = body.runtime.default_workspace;
+
+    if (typeof defaultWorkspace !== "string") {
+      sendJson(response, 400, { error: "runtime.default_workspace must be string" });
+      return;
+    }
+
+    try {
+      const workspaceId = normalizeWorkspaceId(defaultWorkspace);
+      await getExistingWorkspacePath(workspaceId);
+      nextRuntimeConfig.defaultWorkspace = workspaceId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "default workspace update failed";
+      sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+      return;
+    }
+  }
+
+  if (hasDefaultSkill) {
+    const defaultSkill = body.runtime.default_skill;
+
+    if (typeof defaultSkill !== "string") {
+      sendJson(response, 400, { error: "runtime.default_skill must be string" });
+      return;
+    }
+
+    try {
+      const skillId = normalizeSkillId(defaultSkill);
+      await loadSkill(skillId);
+      nextRuntimeConfig.defaultSkill = skillId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "default skill update failed";
+      sendJson(response, getSkillErrorStatus(message), { error: message });
+      return;
+    }
+  }
+
+  if (hasSafetyMode) {
+    const safetyMode = body.runtime.safety_mode;
+
+    if (safetyMode !== "strict" && safetyMode !== "balanced" && safetyMode !== "permissive") {
+      sendJson(response, 400, { error: "runtime.safety_mode must be strict, balanced, or permissive" });
+      return;
+    }
+
+    nextRuntimeConfig.permissionMode = safetyMode;
+  }
 
   if (hasActiveWorkspace) {
     const activeWorkspace = body.runtime.active_workspace;
@@ -1246,6 +1300,11 @@ const handleConfigUpdate = async (
     }
   }
 
+  await writeHostRuntimeConfigUpdate({
+    defaultWorkspace: nextRuntimeConfig.defaultWorkspace,
+    defaultSkill: nextRuntimeConfig.defaultSkill,
+    permissionMode: nextRuntimeConfig.permissionMode,
+  });
   await writeHostRuntimeState(nextRuntimeState);
   sendJson(response, 200, await getConfigResponsePayload());
 };

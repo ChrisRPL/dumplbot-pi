@@ -1,8 +1,11 @@
 import { readFile } from "node:fs/promises";
 
+import type { PermissionMode } from "../../../packages/core/src";
+
 export type HostRuntimeConfig = {
   defaultWorkspace: string;
   defaultSkill: string;
+  permissionMode: PermissionMode;
   maxRunSeconds: number;
 };
 
@@ -20,6 +23,7 @@ export type HostSchedulerConfig = {
 const DEFAULT_CONFIG_PATH = "/etc/dumplbot/config.yaml";
 const DEFAULT_WORKSPACE = "default";
 const DEFAULT_SKILL = "coding";
+const DEFAULT_PERMISSION_MODE: PermissionMode = "balanced";
 const DEFAULT_MAX_RUN_SECONDS = 180;
 const DEFAULT_SCHEDULER_POLL_SECONDS = 15;
 const DEFAULT_SANDBOX_CONFIG: HostSandboxConfig = {
@@ -61,6 +65,11 @@ const applyRuntimeConfigLine = (
     return;
   }
 
+  if (key === "permission_mode" && (value === "strict" || value === "balanced" || value === "permissive")) {
+    config.permissionMode = value;
+    return;
+  }
+
   if (key === "max_run_seconds") {
     config.maxRunSeconds = parsePositiveInt(value, config.maxRunSeconds);
   }
@@ -72,6 +81,7 @@ export const loadHostRuntimeConfig = async (
   const config: HostRuntimeConfig = {
     defaultWorkspace: process.env.DUMPLBOT_DEFAULT_WORKSPACE ?? DEFAULT_WORKSPACE,
     defaultSkill: process.env.DUMPLBOT_DEFAULT_SKILL ?? DEFAULT_SKILL,
+    permissionMode: (process.env.DUMPLBOT_PERMISSION_MODE as PermissionMode | undefined) ?? DEFAULT_PERMISSION_MODE,
     maxRunSeconds: parsePositiveInt(
       process.env.DUMPLBOT_MAX_RUN_SECONDS,
       DEFAULT_MAX_RUN_SECONDS,
