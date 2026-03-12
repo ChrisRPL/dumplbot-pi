@@ -24,6 +24,7 @@ import {
   setScheduledJobEnabled,
   upsertScheduledJob,
 } from "./scheduler-store";
+import { loadSetupSecretStatus } from "./secret-status";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { renderSetupPage } from "./setup-page";
@@ -848,6 +849,18 @@ const handleSkillList = async (response: ServerResponse): Promise<void> => {
 
 const handleConfigGet = async (response: ServerResponse): Promise<void> => {
   sendJson(response, 200, await getConfigResponsePayload());
+};
+
+const handleSetupStatusGet = async (response: ServerResponse): Promise<void> => {
+  const secretStatus = await loadSetupSecretStatus();
+
+  sendJson(response, 200, {
+    secrets: {
+      anthropic_api_key_configured: secretStatus.anthropicApiKeyConfigured,
+      openai_api_key_configured: secretStatus.openaiApiKeyConfigured,
+      secrets_file_present: secretStatus.secretsFilePresent,
+    },
+  });
 };
 
 const toJobPayload = (job: Awaited<ReturnType<typeof upsertScheduledJob>>) => ({
@@ -1718,6 +1731,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/config") {
         await handleConfigGet(response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/setup/status") {
+        await handleSetupStatusGet(response);
         return;
       }
 
