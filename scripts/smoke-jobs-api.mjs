@@ -126,6 +126,27 @@ const runSmoke = async () => {
     assert(Array.isArray(jobsFilePayload.jobs), "expected jobs file to contain jobs array");
     assert(jobsFilePayload.jobs.length === 1, "expected one persisted job");
 
+    const patchJobResponse = await fetch(`${baseUrl}/api/jobs/daily-status`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "summarize repo state via patch",
+        schedule: "45 * * * *",
+      }),
+    });
+    assert(patchJobResponse.status === 200, "expected PATCH /api/jobs/:id to return 200");
+    const patchJobPayload = await patchJobResponse.json();
+    assert(patchJobPayload.prompt === "summarize repo state via patch", "expected patched prompt");
+    assert(patchJobPayload.schedule === "45 * * * *", "expected patched schedule");
+    assert(patchJobPayload.workspace === "default", "expected patch to preserve workspace");
+
+    const emptyPatchResponse = await fetch(`${baseUrl}/api/jobs/daily-status`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert(emptyPatchResponse.status === 400, "expected empty PATCH /api/jobs/:id to return 400");
+
     const hourlyJobResponse = await fetch(`${baseUrl}/api/jobs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
