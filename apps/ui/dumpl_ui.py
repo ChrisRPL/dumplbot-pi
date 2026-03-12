@@ -296,6 +296,25 @@ def request_json(
         raise RuntimeError(detail or f"{method} {path} failed with HTTP {error.code}") from error
 
 
+def parse_non_negative_int(value: str, field_name: str) -> int:
+    try:
+        parsed_value = int(value)
+    except ValueError as error:
+        raise RuntimeError(f"{field_name} must be a non-negative integer") from error
+
+    if parsed_value < 0:
+        raise RuntimeError(f"{field_name} must be a non-negative integer")
+
+    return parsed_value
+
+
+def parse_non_negative_int_arg(value: str) -> int:
+    try:
+        return parse_non_negative_int(value, "history offset")
+    except RuntimeError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
 def list_workspace_entries(base_url: str) -> list[dict[str, Any]]:
     payload = request_json(base_url, "/api/workspaces")
     workspaces = payload.get("workspaces")
@@ -515,11 +534,22 @@ def get_job_history(
     base_url: str,
     job_id: str,
     limit: Optional[int] = None,
+    offset: int = 0,
 ) -> dict[str, Any]:
     path = f"/api/jobs/{job_id.strip().lower()}/history"
+    query_parts: list[str] = []
 
     if isinstance(limit, int) and limit > 0:
-        path = f"{path}?limit={limit}"
+        query_parts.append(f"limit={limit}")
+
+    if offset < 0:
+        raise RuntimeError("job history offset is invalid")
+
+    if offset > 0:
+        query_parts.append(f"offset={offset}")
+
+    if query_parts:
+        path = f"{path}?{'&'.join(query_parts)}"
 
     payload = request_json(base_url, path)
 
@@ -629,6 +659,22 @@ def format_job_run_state(job: dict[str, Any]) -> str:
     return run_state
 
 
+def describe_history_window(
+    total: Any,
+    returned: Any,
+    offset: int,
+) -> str:
+    total_runs = total if isinstance(total, int) and total >= 0 else 0
+    returned_runs = returned if isinstance(returned, int) and returned >= 0 else 0
+
+    if total_runs == 0 or returned_runs == 0:
+        return f"0/{total_runs} runs"
+
+    end_run = max(0, total_runs - offset)
+    start_run = max(1, end_run - returned_runs + 1)
+    return f"{start_run}-{end_run}/{total_runs} runs"
+
+
 def handle_jobs_command(
     base_url: str,
     command: str,
@@ -661,14 +707,20 @@ def handle_jobs_command(
         return
 
     if tokens and tokens[0] == "history":
-        if len(tokens) != 2:
-            renderer.render_notice("Usage: :jobs history <id>")
+        if len(tokens) not in {2, 3}:
+            renderer.render_notice("Usage: :jobs history <id> [offset]")
             return
+
+        history_offset = 0
+
+        if len(tokens) == 3:
+            history_offset = parse_non_negative_int(tokens[2], "history offset")
 
         history_payload = get_job_history(
             base_url,
             tokens[1],
             limit=JOB_HISTORY_COMMAND_LIMIT,
+            offset=history_offset,
         )
         history = history_payload.get("history")
         total = history_payload.get("total")
@@ -697,9 +749,9 @@ def handle_jobs_command(
             summary = str(result) if isinstance(result, str) and result else "(no result)"
             print(f"- {completed_at} [{status}] {summary}")
 
-        total_runs = total if isinstance(total, int) else len(history)
-        shown_runs = returned if isinstance(returned, int) else len(history)
-        renderer.render_notice(f"History: {job_id or tokens[1]} ({shown_runs}/{total_runs} runs)")
+        renderer.render_notice(
+            f"History: {job_id or tokens[1]} ({describe_history_window(total, returned, history_offset)})",
+        )
         return
 
     if tokens and tokens[0] in {"on", "off"}:
@@ -774,7 +826,10 @@ def build_jobs_screen_state(jobs: list[dict[str, Any]]) -> ScreenState:
     )
 
 
-def build_job_history_screen_state(history_payload: dict[str, Any]) -> ScreenState:
+def build_job_history_screen_state(
+    history_payload: dict[str, Any],
+    history_offset: int = 0,
+) -> ScreenState:
     job_id = history_payload.get("job_id")
     history = history_payload.get("history")
     total = history_payload.get("total")
@@ -815,7 +870,7 @@ def build_job_history_screen_state(history_payload: dict[str, Any]) -> ScreenSta
 
     return ScreenState(
         phase="Jobs",
-        status=f"{job_id} history ({returned if isinstance(returned, int) else len(history)}/{total if isinstance(total, int) else len(history)} runs)",
+        status=f"{job_id} history ({describe_history_window(total, returned, history_offset)})",
         prompt=job_id,
         answer="\n".join(lines) if lines else "No valid history entries.",
     )
@@ -824,6 +879,7 @@ def build_job_history_screen_state(history_payload: dict[str, Any]) -> ScreenSta
 def build_job_detail_screen_state(
     job: dict[str, Any],
     history_payload: dict[str, Any],
+    history_offset: int = 0,
 ) -> ScreenState:
     job_id = job.get("id")
     schedule = job.get("schedule")
@@ -831,6 +887,8 @@ def build_job_detail_screen_state(
     workspace = job.get("workspace")
     skill = job.get("skill")
     history = history_payload.get("history")
+    total = history_payload.get("total")
+    returned = history_payload.get("returned")
 
     if not isinstance(job_id, str) or not isinstance(schedule, str):
         raise RuntimeError("job response is invalid")
@@ -869,6 +927,7 @@ def build_job_detail_screen_state(
         answer="\n".join([
             f"workspace: {workspace if isinstance(workspace, str) and workspace else '(none)'}",
             f"skill: {skill if isinstance(skill, str) and skill else '(none)'}",
+            f"history: {describe_history_window(total, returned, history_offset)}",
             f"last run: {last_run_summary}",
             *history_lines,
         ]),
@@ -905,6 +964,7 @@ def run_job_history_screen(
     job_id: str,
     renderer: "ConsoleRenderer",
     refresh_seconds: float,
+    history_offset: int = 0,
 ) -> int:
     if refresh_seconds <= 0:
         renderer.render_notice("Jobs refresh must be greater than zero")
@@ -916,8 +976,9 @@ def run_job_history_screen(
                 base_url,
                 job_id,
                 limit=JOB_HISTORY_SCREEN_LIMIT,
+                offset=history_offset,
             )
-            renderer.render(build_job_history_screen_state(history_payload))
+            renderer.render(build_job_history_screen_state(history_payload, history_offset))
         except (RuntimeError, urllib.error.URLError) as error:
             renderer.render(
                 ScreenState(
@@ -936,6 +997,7 @@ def run_job_detail_screen(
     job_id: str,
     renderer: "ConsoleRenderer",
     refresh_seconds: float,
+    history_offset: int = 0,
     initial_action: Optional[str] = None,
     patched_prompt: Optional[str] = None,
     patched_schedule: Optional[str] = None,
@@ -1003,8 +1065,9 @@ def run_job_detail_screen(
                 base_url,
                 job_id,
                 limit=JOB_DETAIL_HISTORY_LIMIT,
+                offset=history_offset,
             )
-            renderer.render(build_job_detail_screen_state(job, history_payload))
+            renderer.render(build_job_detail_screen_state(job, history_payload, history_offset))
         except (RuntimeError, urllib.error.URLError) as error:
             renderer.render(
                 ScreenState(
@@ -1016,6 +1079,39 @@ def run_job_detail_screen(
             )
 
         time.sleep(refresh_seconds)
+
+
+def run_scheduler_screen(
+    base_url: str,
+    screen_mode: str,
+    scheduler_job: Optional[str],
+    history_offset: int,
+    renderer: "ConsoleRenderer",
+    refresh_seconds: float,
+) -> int:
+    if screen_mode == "summary":
+        return run_jobs_screen(base_url, renderer, refresh_seconds)
+
+    if scheduler_job is None:
+        renderer.render_notice("--scheduler-job is required for scheduler detail/history screens")
+        return 1
+
+    if screen_mode == "history":
+        return run_job_history_screen(
+            base_url,
+            scheduler_job,
+            renderer,
+            refresh_seconds,
+            history_offset=history_offset,
+        )
+
+    return run_job_detail_screen(
+        base_url,
+        scheduler_job,
+        renderer,
+        refresh_seconds,
+        history_offset=history_offset,
+    )
 
 
 def stream_audio_talk(
@@ -1820,6 +1916,21 @@ def parse_args() -> argparse.Namespace:
         help="Show scheduler jobs on the renderer and refresh continuously",
     )
     parser.add_argument(
+        "--scheduler-screen",
+        choices=["summary", "detail", "history"],
+        help="Show the scheduler summary/detail/history renderer screen",
+    )
+    parser.add_argument(
+        "--scheduler-job",
+        help="Job id used by --scheduler-screen detail/history",
+    )
+    parser.add_argument(
+        "--scheduler-history-offset",
+        type=parse_non_negative_int_arg,
+        default=0,
+        help="History offset used by --scheduler-screen detail/history",
+    )
+    parser.add_argument(
         "--jobs-refresh-seconds",
         type=float,
         default=5.0,
@@ -1830,8 +1941,20 @@ def parse_args() -> argparse.Namespace:
         help="Show one scheduler job history on the renderer and refresh continuously",
     )
     parser.add_argument(
+        "--job-history-offset",
+        type=parse_non_negative_int_arg,
+        default=0,
+        help="History offset used by --job-history",
+    )
+    parser.add_argument(
         "--job-detail",
         help="Show one scheduler job detail screen on the renderer and refresh continuously",
+    )
+    parser.add_argument(
+        "--job-detail-history-offset",
+        type=parse_non_negative_int_arg,
+        default=0,
+        help="History offset used by --job-detail",
     )
     parser.add_argument(
         "--job-detail-action",
@@ -1908,6 +2031,14 @@ def main() -> int:
             renderer.render_notice("Use --job-detail-action or direct job action flags, not both")
             return 1
 
+        if args.job_history_offset and args.job_history is None:
+            renderer.render_notice("--job-history-offset requires --job-history")
+            return 1
+
+        if args.job_detail_history_offset and args.job_detail is None:
+            renderer.render_notice("--job-detail-history-offset requires --job-detail")
+            return 1
+
         has_job_detail_patch_arg = any(
             value is not None
             for value in (
@@ -1924,6 +2055,41 @@ def main() -> int:
 
         if args.job_detail_action is not None and has_job_detail_patch_arg:
             renderer.render_notice("Use detail action or detail edit fields, not both")
+            return 1
+
+        if args.scheduler_screen is not None and (args.jobs_screen or args.job_history is not None or args.job_detail is not None):
+            renderer.render_notice("Use --scheduler-screen or legacy scheduler screen flags, not both")
+            return 1
+
+        if args.scheduler_screen is not None and (has_job_upsert_arg or selected_job_actions):
+            renderer.render_notice("Use scheduler view flags or direct scheduler mutation flags, not both")
+            return 1
+
+        if args.scheduler_screen is not None and (
+            args.job_detail_action is not None
+            or has_job_detail_patch_arg
+        ):
+            renderer.render_notice("Use focused --job-detail actions/edits or --scheduler-screen, not both")
+            return 1
+
+        if args.scheduler_screen == "summary" and args.scheduler_job is not None:
+            renderer.render_notice("--scheduler-job only applies to detail/history scheduler screens")
+            return 1
+
+        if args.scheduler_screen == "summary" and args.scheduler_history_offset:
+            renderer.render_notice("--scheduler-history-offset only applies to detail/history scheduler screens")
+            return 1
+
+        if args.scheduler_screen is None and args.scheduler_job is not None:
+            renderer.render_notice("--scheduler-job requires --scheduler-screen")
+            return 1
+
+        if args.scheduler_screen is None and args.scheduler_history_offset:
+            renderer.render_notice("--scheduler-history-offset requires --scheduler-screen")
+            return 1
+
+        if args.scheduler_screen in {"detail", "history"} and args.scheduler_job is None:
+            renderer.render_notice("--scheduler-screen detail/history requires --scheduler-job")
             return 1
 
         if has_job_upsert_arg:
@@ -1951,6 +2117,16 @@ def main() -> int:
                 renderer,
             )
 
+        if args.scheduler_screen is not None:
+            return run_scheduler_screen(
+                args.host_url,
+                args.scheduler_screen,
+                args.scheduler_job,
+                args.scheduler_history_offset,
+                renderer,
+                args.jobs_refresh_seconds,
+            )
+
         if args.jobs_screen:
             return run_jobs_screen(
                 args.host_url,
@@ -1964,6 +2140,7 @@ def main() -> int:
                 args.job_history,
                 renderer,
                 args.jobs_refresh_seconds,
+                history_offset=args.job_history_offset,
             )
 
         if args.job_detail is not None:
@@ -1972,6 +2149,7 @@ def main() -> int:
                 args.job_detail,
                 renderer,
                 args.jobs_refresh_seconds,
+                args.job_detail_history_offset,
                 args.job_detail_action,
                 args.job_detail_prompt,
                 args.job_detail_schedule,
