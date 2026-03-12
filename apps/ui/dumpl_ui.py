@@ -652,6 +652,16 @@ def list_skill_entries(base_url: str) -> list[dict[str, Any]]:
     return [skill for skill in skills if isinstance(skill, dict)]
 
 
+def get_skill_entry(base_url: str, skill_id: str) -> dict[str, Any]:
+    normalized_skill_id = skill_id.strip().lower()
+
+    for skill in list_skill_entries(base_url):
+        if skill.get("id") == normalized_skill_id:
+            return skill
+
+    raise RuntimeError("skill not found")
+
+
 def update_active_skill(
     base_url: str,
     skill: Optional[str],
@@ -781,6 +791,38 @@ def build_skill_screen_state(skills: list[dict[str, Any]]) -> ScreenState:
     )
 
 
+def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
+    skill_id = skill.get("id")
+    permission_mode = skill.get("permission_mode")
+    tool_allowlist = skill.get("tool_allowlist")
+    bash_prefix_allowlist = skill.get("bash_prefix_allowlist")
+    is_active = skill.get("is_active")
+
+    if not isinstance(skill_id, str):
+        raise RuntimeError("skill response is invalid")
+
+    tool_summary = ", ".join(
+        tool_name
+        for tool_name in tool_allowlist
+        if isinstance(tool_name, str)
+    ) if isinstance(tool_allowlist, list) else ""
+    bash_summary = ", ".join(
+        prefix
+        for prefix in bash_prefix_allowlist
+        if isinstance(prefix, str)
+    ) if isinstance(bash_prefix_allowlist, list) else ""
+
+    return ScreenState(
+        phase="Skills",
+        status=f"{skill_id} [{'active' if is_active else 'idle'}]",
+        answer="\n".join([
+            f"permission: {permission_mode if isinstance(permission_mode, str) and permission_mode else '(none)'}",
+            f"tools: {tool_summary or '(none)'}",
+            f"bash: {bash_summary or '(none)'}",
+        ]),
+    )
+
+
 def run_skill_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -803,6 +845,26 @@ def run_skill_screen(
             )
 
         time.sleep(refresh_seconds)
+
+
+def run_skill_detail(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    skill_id: str,
+) -> int:
+    try:
+        renderer.render(build_skill_detail_screen_state(get_skill_entry(base_url, skill_id)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Skill detail failed",
+                prompt=skill_id,
+                error=str(error),
+            )
+        )
+        return 1
 
 
 def run_skill_action(
@@ -2327,6 +2389,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace-cycle", action="store_true", help="Cycle to the next workspace and exit")
     parser.add_argument("--workspace-clear", action="store_true", help="Clear the active workspace and exit")
     parser.add_argument("--skill-screen", action="store_true", help="Show the skill selector screen")
+    parser.add_argument("--skill-detail", help="Show one skill detail screen and exit")
     parser.add_argument("--skill-select", help="Select one active skill and exit")
     parser.add_argument("--skill-cycle", action="store_true", help="Cycle to the next skill and exit")
     parser.add_argument("--skill-clear", action="store_true", help="Clear the active skill and exit")
@@ -2469,6 +2532,7 @@ def main() -> int:
             1
             for value in (
                 args.skill_screen,
+                args.skill_detail is not None,
                 args.skill_cycle,
                 args.skill_clear,
                 args.skill_select is not None,
@@ -2590,6 +2654,13 @@ def main() -> int:
                 args.host_url,
                 renderer,
                 args.selection_refresh_seconds,
+            )
+
+        if args.skill_detail is not None:
+            return run_skill_detail(
+                args.host_url,
+                renderer,
+                args.skill_detail,
             )
 
         if args.skill_cycle:
