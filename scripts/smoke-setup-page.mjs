@@ -37,7 +37,7 @@ const waitForServerReady = (childProcess) =>
     });
   });
 
-const startHostServer = async (tmpRoot, workspaceRoot, configPath) => {
+const startHostServer = async (tmpRoot, workspaceRoot, configPath, secretsPath) => {
   const childProcess = spawn(
     process.execPath,
     ["dist/apps/host/src/main.js"],
@@ -50,6 +50,7 @@ const startHostServer = async (tmpRoot, workspaceRoot, configPath) => {
         DUMPLBOT_TMP_ROOT: tmpRoot,
         DUMPLBOT_WORKSPACES_ROOT: workspaceRoot,
         DUMPLBOT_CONFIG_PATH: configPath,
+        DUMPLBOT_SECRETS_PATH: secretsPath,
         DUMPLBOT_SANDBOX_ENABLED: "false",
       },
     },
@@ -75,6 +76,7 @@ const runSmoke = async () => {
   const tmpRoot = await mkdtemp(join(tmpdir(), "dumplbot-setup-page-smoke-"));
   const workspaceRoot = join(tmpRoot, "workspaces");
   const configPath = join(tmpRoot, "config.yaml");
+  const secretsPath = join(tmpRoot, "secrets.env");
   const defaultWorkspacePath = join(workspaceRoot, "default");
   const alphaWorkspacePath = join(workspaceRoot, "alpha");
 
@@ -97,8 +99,16 @@ const runSmoke = async () => {
     ].join("\n"),
     "utf8",
   );
+  await writeFile(
+    secretsPath,
+    [
+      "OPENAI_API_KEY=test-openai-key",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
 
-  const hostServer = await startHostServer(tmpRoot, workspaceRoot, configPath);
+  const hostServer = await startHostServer(tmpRoot, workspaceRoot, configPath, secretsPath);
   const baseUrl = `http://${HOST}:${HOST_PORT}`;
 
   try {
@@ -114,6 +124,15 @@ const runSmoke = async () => {
     assert(setupPageHtml.includes("default-skill"), "expected setup skill field");
     assert(setupPageHtml.includes("safety-mode"), "expected setup safety field");
     assert(setupPageHtml.includes("/api/config"), "expected setup page to use config api");
+    assert(setupPageHtml.includes("/api/setup/status"), "expected setup page to use setup status api");
+    assert(setupPageHtml.includes("OpenAI key"), "expected setup page to show OpenAI key status");
+
+    const setupStatusResponse = await fetch(`${baseUrl}/api/setup/status`);
+    assert(setupStatusResponse.status === 200, "expected GET /api/setup/status to return 200");
+    const setupStatusPayload = await setupStatusResponse.json();
+    assert(setupStatusPayload.secrets.secrets_file_present === true, "expected setup secrets file presence");
+    assert(setupStatusPayload.secrets.openai_api_key_configured === true, "expected OpenAI key presence");
+    assert(setupStatusPayload.secrets.anthropic_api_key_configured === false, "expected Anthropic key absence");
 
     const initialConfigResponse = await fetch(`${baseUrl}/api/config`);
     assert(initialConfigResponse.status === 200, "expected GET /api/config to return 200");
