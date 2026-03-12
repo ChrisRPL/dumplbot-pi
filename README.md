@@ -151,7 +151,7 @@ Status as of March 12, 2026:
 * `partial` workspaces + repo attach. Workspace APIs/state, repo attach, mock UI switching, and renderer workspace selector/detail/create flows landed; broader workspace-local history/project storage polish is still pending.
 * `partial` skill packs + optional integrations. Skill schema/loading/policy landed, plus per-workspace defaults, focused job skill editing, and renderer skill selector/detail flows; richer integrations are still pending.
 * `partial` scheduler + job UI. File-backed jobs API, single-job detail/patch/history routes, schedule presets, natural-language phrases, capped run history, run diagnostics, failure counters, mock actions, paged history windows, and on-device summary/detail/history/action/edit flows landed; hardware button-driven scheduler navigation polish is still pending.
-* `partial` local setup page (LAN only). Host-served setup shell plus default workspace/default skill/safety save flow landed; secrets, import/export, and wider phone-first polish are still pending.
+* `partial` local setup page (LAN only). Host-served setup shell plus default workspace/default skill/safety save flow landed, and it now shows whether the local secrets file and provider keys are configured without exposing values; config import/export, LAN guards, and wider phone-first polish are still pending.
 
 ---
 

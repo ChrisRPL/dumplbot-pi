@@ -369,9 +369,27 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `GET /setup`
 
 - Return the LAN-only setup shell for phone/browser appliance setup.
-- The current shell reads `/api/config`, `/api/workspaces`, and `/api/skills`, then saves non-secret runtime config back through `POST /api/config`.
+- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, and `/api/setup/status`, then saves non-secret runtime config back through `POST /api/config`.
 - Status codes:
   - `200` with `text/html`.
+
+### `GET /api/setup/status`
+
+- Return setup-only secret presence signals without exposing secret values.
+- Current response shape:
+
+```json
+{
+  "secrets": {
+    "anthropic_api_key_configured": false,
+    "openai_api_key_configured": true,
+    "secrets_file_present": true
+  }
+}
+```
+
+- `secrets_file_present` only reports whether the configured secrets file exists.
+- Provider booleans only report whether a non-empty key is present in that file.
 
 ### `POST /api/config`
 
