@@ -23,6 +23,7 @@ Design for the tiny screen first. Fast feedback beats density.
 
 - Keep a stable status bar for battery, Wi-Fi, and time.
 - Use wrapped text with predictable paging.
+- Keep scheduler history/diagnostics in small paged windows, not one long dump.
 - Stream tokens into a scrolling buffer.
 - Show short tool banners when a tool runs.
 - Add stop/cancel affordance early.

@@ -84,8 +84,8 @@ python apps/ui/dumpl_ui.py --mock
 ```
 
 Type into `Dumpl>` and watch streamed output.
-Use `:workspace`, `:workspace <id>`, `:skill`, `:skill <id>`, `:jobs`, `:jobs history <id>`, `:jobs on|off|delete <id>`, `:jobs add <id> "<schedule>" "<prompt>" [workspace|-] [skill|-] [on|off]`, and `:jobs edit ...` inside mock mode to inspect active selections and scheduler jobs. Schedule input now accepts cron, presets like `daily 09:15`, and tiny natural phrases like `every day at 09:15`. Job history keeps the newest 20 runs per job.
-For the device renderer path, use `python apps/ui/dumpl_ui.py --jobs-screen` to show a live scheduler status view, `python apps/ui/dumpl_ui.py --job-detail daily-status` for one focused job screen with last-run diagnostics plus failure counters and last-success time, `python apps/ui/dumpl_ui.py --job-detail daily-status --job-detail-action disable` for a focused action flow, `python apps/ui/dumpl_ui.py --job-detail daily-status --job-detail-prompt "summarize repo state" --job-detail-schedule "every monday at 08:30" --job-detail-workspace default --job-detail-skill coding` for focused edits through the detail flow, `python apps/ui/dumpl_ui.py --job-history daily-status` to pin trimmed history on-screen, `python apps/ui/dumpl_ui.py --job-enable daily-status` or `--job-disable daily-status` or `--job-delete daily-status` for direct actions, or `python apps/ui/dumpl_ui.py --job-id daily-status --job-schedule "every monday at 08:30" --job-prompt "summarize repo state"` to save one scheduler job through the renderer flow.
+Use `:workspace`, `:workspace <id>`, `:skill`, `:skill <id>`, `:jobs`, `:jobs history <id> [offset]`, `:jobs on|off|delete <id>`, `:jobs add <id> "<schedule>" "<prompt>" [workspace|-] [skill|-] [on|off]`, and `:jobs edit ...` inside mock mode to inspect active selections and scheduler jobs. Schedule input now accepts cron, presets like `daily 09:15`, and tiny natural phrases like `every day at 09:15`. Job history keeps the newest 20 runs per job and can be paged with the optional history offset.
+For the device renderer path, use `python apps/ui/dumpl_ui.py --scheduler-screen summary` for the scheduler home screen, `python apps/ui/dumpl_ui.py --scheduler-screen detail --scheduler-job daily-status` for a focused job screen with last-run diagnostics plus failure counters and last-success time, and `python apps/ui/dumpl_ui.py --scheduler-screen history --scheduler-job daily-status --scheduler-history-offset 4` for older run windows. Focused action/edit flows still use `python apps/ui/dumpl_ui.py --job-detail daily-status --job-detail-action disable`, `python apps/ui/dumpl_ui.py --job-detail daily-status --job-detail-prompt "summarize repo state" --job-detail-schedule "every monday at 08:30" --job-detail-workspace default --job-detail-skill coding`, `python apps/ui/dumpl_ui.py --job-history daily-status --job-history-offset 4`, `python apps/ui/dumpl_ui.py --job-enable daily-status` or `--job-disable daily-status` or `--job-delete daily-status`, or `python apps/ui/dumpl_ui.py --job-id daily-status --job-schedule "every monday at 08:30" --job-prompt "summarize repo state"` to save one scheduler job through the renderer flow.
 
 ---
 
@@ -141,14 +141,14 @@ DumplBot is built to be powerful **without becoming a pocket root shell**:
 
 ## Roadmap
 
-Status as of March 8, 2026:
+Status as of March 12, 2026:
 
 * `done` Push-to-talk WAV capture. Software path landed; Pi hardware validation still pending.
 * `done` Whisper API STT integration.
 * `done` `bwrap` sandbox + policy gates. Linux/Pi runtime validation still pending.
-* `partial` workspaces + repo attach. Workspace APIs/state, repo attach, and mock UI switching landed; hardware-first switcher polish still pending.
-* `partial` skill packs + optional integrations. Skill schema/loading/policy landed; richer integrations still pending.
-* `partial` scheduler + job UI. File-backed jobs API, single-job detail/patch/history routes, schedule presets, natural-language phrases, capped run history, run diagnostics, failure counters, mock actions, and on-device status/save/detail/history/action/edit flows landed; richer on-device editing still pending.
+* `partial` workspaces + repo attach. Workspace APIs/state, repo attach, and mock UI switching landed; dedicated hardware-first workspace switching polish is still pending.
+* `partial` skill packs + optional integrations. Skill schema/loading/policy landed, plus per-workspace defaults and focused job skill editing; dedicated hardware-first skill switching polish and richer integrations are still pending.
+* `partial` scheduler + job UI. File-backed jobs API, single-job detail/patch/history routes, schedule presets, natural-language phrases, capped run history, run diagnostics, failure counters, mock actions, paged history windows, and on-device summary/detail/history/action/edit flows landed; hardware button-driven scheduler navigation polish is still pending.
 * `todo` local setup page (LAN only).
 
 ---
