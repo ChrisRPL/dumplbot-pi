@@ -238,6 +238,29 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `404` when the job does not exist.
   - `400` when the job id is invalid.
 
+### `GET /api/jobs/:jobId/history`
+
+- Return retained run-history entries for one scheduler job.
+- Optional query params:
+  - `limit=<positive-int>` returns only the newest `N` retained entries.
+- Response shape:
+
+```json
+{
+  "job_id":"daily-status",
+  "total":12,
+  "returned":5,
+  "history":[
+    {"completed_at":"2026-03-12T10:00:00.000Z","status":"success","result":"Run finished"}
+  ]
+}
+```
+
+- Status codes:
+  - `200` when found.
+  - `404` when the job does not exist.
+  - `400` when the job id or `limit` is invalid.
+
 ### `POST /api/jobs`
 
 - Create or update a scheduler job.
