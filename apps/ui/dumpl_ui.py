@@ -580,6 +580,8 @@ def format_job_run_state(job: dict[str, Any]) -> str:
     last_result = job.get("last_result")
     last_duration_ms = job.get("last_duration_ms")
     last_error = job.get("last_error")
+    failure_count = job.get("failure_count")
+    last_success_at = job.get("last_success_at")
     run_state = "never"
 
     if isinstance(last_run_at, str) and last_run_at:
@@ -596,6 +598,12 @@ def format_job_run_state(job: dict[str, Any]) -> str:
 
     if isinstance(last_error, str) and last_error:
         run_state = f"{run_state}\nerror: {last_error}"
+
+    if isinstance(failure_count, int):
+        run_state = f"{run_state}\nfailures: {failure_count}"
+
+    if isinstance(last_success_at, str) and last_success_at:
+        run_state = f"{run_state}\nlast ok: {last_success_at}"
 
     return run_state
 
