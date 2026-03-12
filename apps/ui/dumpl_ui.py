@@ -541,6 +541,19 @@ def upsert_job_entry(
     )
 
 
+def patch_job_entry(
+    base_url: str,
+    job_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return request_json(
+        base_url,
+        f"/api/jobs/{job_id}",
+        method="PATCH",
+        payload=payload,
+    )
+
+
 def set_job_enabled(
     base_url: str,
     job_id: str,
@@ -871,6 +884,8 @@ def run_job_detail_screen(
     renderer: "ConsoleRenderer",
     refresh_seconds: float,
     initial_action: Optional[str] = None,
+    patched_prompt: Optional[str] = None,
+    patched_schedule: Optional[str] = None,
 ) -> int:
     if refresh_seconds <= 0:
         renderer.render_notice("Jobs refresh must be greater than zero")
@@ -884,6 +899,36 @@ def run_job_detail_screen(
 
         if initial_action == "delete":
             return 0
+
+    if patched_prompt is not None or patched_schedule is not None:
+        patch_payload: dict[str, Any] = {}
+
+        if patched_prompt is not None:
+            patch_payload["prompt"] = patched_prompt
+
+        if patched_schedule is not None:
+            patch_payload["schedule"] = patched_schedule
+
+        renderer.render(
+            ScreenState(
+                phase="Jobs",
+                status="Updating scheduler job",
+                prompt=job_id,
+            )
+        )
+
+        try:
+            patch_job_entry(base_url, job_id, patch_payload)
+        except (RuntimeError, urllib.error.URLError) as error:
+            renderer.render(
+                ScreenState(
+                    phase="Error",
+                    status="Job update failed",
+                    prompt=job_id,
+                    error=str(error),
+                )
+            )
+            return 1
 
     while True:
         try:
@@ -1722,6 +1767,8 @@ def parse_args() -> argparse.Namespace:
         choices=["enable", "disable", "delete"],
         help="Apply one action before entering --job-detail",
     )
+    parser.add_argument("--job-detail-prompt", help="Patch prompt before entering --job-detail")
+    parser.add_argument("--job-detail-schedule", help="Patch schedule before entering --job-detail")
     parser.add_argument("--job-id", help="Create or update one scheduler job and exit")
     parser.add_argument("--job-schedule", help="Schedule or preset for --job-id")
     parser.add_argument("--job-prompt", help="Prompt for --job-id")
@@ -1788,6 +1835,19 @@ def main() -> int:
             renderer.render_notice("Use --job-detail-action or direct job action flags, not both")
             return 1
 
+        has_job_detail_patch_arg = any(
+            value is not None
+            for value in (args.job_detail_prompt, args.job_detail_schedule)
+        )
+
+        if has_job_detail_patch_arg and args.job_detail is None:
+            renderer.render_notice("--job-detail-prompt/--job-detail-schedule require --job-detail")
+            return 1
+
+        if args.job_detail_action is not None and has_job_detail_patch_arg:
+            renderer.render_notice("Use detail action or detail edit fields, not both")
+            return 1
+
         if has_job_upsert_arg:
             if not args.job_id or not args.job_schedule or not args.job_prompt:
                 renderer.render_notice("--job-id, --job-schedule, and --job-prompt are required together")
@@ -1835,6 +1895,8 @@ def main() -> int:
                 renderer,
                 args.jobs_refresh_seconds,
                 args.job_detail_action,
+                args.job_detail_prompt,
+                args.job_detail_schedule,
             )
 
         if args.prompt is not None:
