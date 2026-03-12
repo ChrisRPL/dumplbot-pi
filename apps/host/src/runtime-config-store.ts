@@ -11,7 +11,103 @@ type HostRuntimeConfigUpdate = {
   permissionMode?: PermissionMode;
 };
 
+export type ImportedHostRuntimeConfig = {
+  defaultWorkspace: string;
+  defaultSkill: string;
+  permissionMode: PermissionMode;
+  maxRunSeconds: number | null;
+};
+
 const RUNTIME_SECTION_NAME = "runtime";
+
+const parseFlatYamlSection = (
+  rawConfig: string,
+  sectionName: string,
+): Map<string, string> => {
+  const entries = new Map<string, string>();
+  let inSection = false;
+
+  for (const rawLine of rawConfig.split(/\r?\n/u)) {
+    const trimmedLine = rawLine.trim();
+
+    if (!trimmedLine || trimmedLine.startsWith("#")) {
+      continue;
+    }
+
+    if (!rawLine.startsWith(" ")) {
+      inSection = trimmedLine === `${sectionName}:`;
+      continue;
+    }
+
+    if (!inSection || !rawLine.startsWith("  ")) {
+      continue;
+    }
+
+    const separatorIndex = trimmedLine.indexOf(":");
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = trimmedLine.slice(0, separatorIndex).trim();
+    const value = trimmedLine.slice(separatorIndex + 1).trim().replace(/^"|"$/gu, "");
+    entries.set(key, value);
+  }
+
+  return entries;
+};
+
+const normalizeConfigText = (rawConfig: string): string => (
+  rawConfig.endsWith("\n")
+    ? rawConfig
+    : `${rawConfig}\n`
+);
+
+const parseImportedMaxRunSeconds = (value: string | undefined): number | null => {
+  if (typeof value === "undefined" || value.length === 0) {
+    return null;
+  }
+
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+    throw new Error("runtime.max_run_seconds must be a positive integer");
+  }
+
+  return parsedValue;
+};
+
+export const parseImportedHostRuntimeConfig = (
+  rawConfig: string,
+): ImportedHostRuntimeConfig => {
+  if (rawConfig.trim().length === 0) {
+    throw new Error("config import requires non-empty config");
+  }
+
+  const runtimeEntries = parseFlatYamlSection(rawConfig, RUNTIME_SECTION_NAME);
+  const defaultWorkspace = runtimeEntries.get("default_workspace")?.trim();
+  const defaultSkill = runtimeEntries.get("default_skill")?.trim();
+  const permissionMode = runtimeEntries.get("permission_mode")?.trim();
+
+  if (!defaultWorkspace) {
+    throw new Error("config import requires runtime.default_workspace");
+  }
+
+  if (!defaultSkill) {
+    throw new Error("config import requires runtime.default_skill");
+  }
+
+  if (permissionMode !== "strict" && permissionMode !== "balanced" && permissionMode !== "permissive") {
+    throw new Error("config import requires runtime.permission_mode to be strict, balanced, or permissive");
+  }
+
+  return {
+    defaultWorkspace,
+    defaultSkill,
+    permissionMode,
+    maxRunSeconds: parseImportedMaxRunSeconds(runtimeEntries.get("max_run_seconds")),
+  };
+};
 
 const setFlatYamlSectionKeys = (
   rawConfig: string,
@@ -112,4 +208,33 @@ export const writeHostRuntimeConfigUpdate = async (
   const nextConfig = setFlatYamlSectionKeys(rawConfig, RUNTIME_SECTION_NAME, entries);
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(configPath, nextConfig, "utf8");
+};
+
+export const readHostConfigText = async (
+  configPath = process.env.DUMPLBOT_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
+): Promise<string> => {
+  try {
+    return await readFile(configPath, "utf8");
+  } catch (error) {
+    const isMissingFile =
+      error instanceof Error
+      && "code" in error
+      && error.code === "ENOENT";
+
+    if (isMissingFile) {
+      return "";
+    }
+
+    throw error;
+  }
+};
+
+export const writeImportedHostConfig = async (
+  rawConfig: string,
+  configPath = process.env.DUMPLBOT_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
+): Promise<ImportedHostRuntimeConfig> => {
+  const importedConfig = parseImportedHostRuntimeConfig(rawConfig);
+  await mkdir(dirname(configPath), { recursive: true });
+  await writeFile(configPath, normalizeConfigText(rawConfig), "utf8");
+  return importedConfig;
 };

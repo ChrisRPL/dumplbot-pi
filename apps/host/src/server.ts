@@ -15,7 +15,12 @@ import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
 import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import { loadHostRuntimeConfig, loadHostSandboxConfig } from "./runtime-config";
-import { writeHostRuntimeConfigUpdate } from "./runtime-config-store";
+import {
+  parseImportedHostRuntimeConfig,
+  readHostConfigText,
+  writeHostRuntimeConfigUpdate,
+  writeImportedHostConfig,
+} from "./runtime-config-store";
 import { loadHostRuntimeState, writeHostRuntimeState } from "./runtime-state-store";
 import {
   deleteScheduledJob,
@@ -77,6 +82,10 @@ type DumplUpdateConfigRequest = {
     active_workspace?: string | null;
     active_skill?: string | null;
   };
+};
+
+type DumplImportConfigRequest = {
+  config: string;
 };
 
 type DumplUpsertJobRequest = {
@@ -851,6 +860,12 @@ const handleConfigGet = async (response: ServerResponse): Promise<void> => {
   sendJson(response, 200, await getConfigResponsePayload());
 };
 
+const handleConfigExport = async (response: ServerResponse): Promise<void> => {
+  sendJson(response, 200, {
+    config: await readHostConfigText(),
+  });
+};
+
 const handleSetupStatusGet = async (response: ServerResponse): Promise<void> => {
   const secretStatus = await loadSetupSecretStatus();
 
@@ -860,6 +875,68 @@ const handleSetupStatusGet = async (response: ServerResponse): Promise<void> => 
       openai_api_key_configured: secretStatus.openaiApiKeyConfigured,
       secrets_file_present: secretStatus.secretsFilePresent,
     },
+  });
+};
+
+const handleConfigImport = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplImportConfigRequest;
+
+  try {
+    body = await readJson<DumplImportConfigRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  if (typeof body.config !== "string") {
+    sendJson(response, 400, { error: "config must be string" });
+    return;
+  }
+
+  let importedRuntimeConfig;
+
+  try {
+    importedRuntimeConfig = parseImportedHostRuntimeConfig(body.config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "config import validation failed";
+    sendJson(response, 400, { error: message });
+    return;
+  }
+
+  try {
+    const workspaceId = normalizeWorkspaceId(importedRuntimeConfig.defaultWorkspace);
+    await getExistingWorkspacePath(workspaceId);
+    importedRuntimeConfig.defaultWorkspace = workspaceId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "config import workspace validation failed";
+    sendJson(response, getWorkspaceErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    const skillId = normalizeSkillId(importedRuntimeConfig.defaultSkill);
+    await loadSkill(skillId);
+    importedRuntimeConfig.defaultSkill = skillId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "config import skill validation failed";
+    sendJson(response, getSkillErrorStatus(message), { error: message });
+    return;
+  }
+
+  try {
+    await writeImportedHostConfig(body.config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "config import failed";
+    sendJson(response, 400, { error: message });
+    return;
+  }
+
+  sendJson(response, 200, {
+    config: await readHostConfigText(),
+    ...(await getConfigResponsePayload()),
   });
 };
 
@@ -1734,8 +1811,18 @@ export const createHostServer = (): Server =>
         return;
       }
 
+      if (request.method === "GET" && pathname === "/api/config/export") {
+        await handleConfigExport(response);
+        return;
+      }
+
       if (request.method === "GET" && pathname === "/api/setup/status") {
         await handleSetupStatusGet(response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/config/import") {
+        await handleConfigImport(request, response);
         return;
       }
 
