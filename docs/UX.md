@@ -24,6 +24,7 @@ Design for the tiny screen first. Fast feedback beats density.
 - Keep a stable status bar for battery, Wi-Fi, and time.
 - Use wrapped text with predictable paging.
 - Keep workspace and skill selectors short enough that the active entry is obvious at a glance.
+- Keep workspace and skill detail views to concise summaries, not raw full-file dumps.
 - Keep scheduler history/diagnostics in small paged windows, not one long dump.
 - Stream tokens into a scrolling buffer.
 - Show short tool banners when a tool runs.
