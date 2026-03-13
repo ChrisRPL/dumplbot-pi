@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { PermissionMode } from "../../../packages/core/src";
+import { isSupportedServerHost, type HostServerConfig } from "./runtime-config";
 
 const DEFAULT_CONFIG_PATH = "/etc/dumplbot/config.yaml";
 
@@ -18,7 +19,13 @@ export type ImportedHostRuntimeConfig = {
   maxRunSeconds: number | null;
 };
 
+export type ImportedHostConfig = {
+  runtime: ImportedHostRuntimeConfig;
+  server: HostServerConfig | null;
+};
+
 const RUNTIME_SECTION_NAME = "runtime";
+const SERVER_SECTION_NAME = "server";
 
 const parseFlatYamlSection = (
   rawConfig: string,
@@ -108,6 +115,49 @@ export const parseImportedHostRuntimeConfig = (
     maxRunSeconds: parseImportedMaxRunSeconds(runtimeEntries.get("max_run_seconds")),
   };
 };
+
+export const parseImportedHostServerConfig = (
+  rawConfig: string,
+): HostServerConfig | null => {
+  const serverEntries = parseFlatYamlSection(rawConfig, SERVER_SECTION_NAME);
+
+  if (serverEntries.size === 0) {
+    return null;
+  }
+
+  const host = serverEntries.get("host")?.trim();
+  const rawPort = serverEntries.get("port")?.trim();
+
+  if (!host) {
+    throw new Error("config import requires server.host when server section is present");
+  }
+
+  if (!isSupportedServerHost(host)) {
+    throw new Error("config import requires server.host to be 127.0.0.1, 0.0.0.0, ::1, or ::");
+  }
+
+  if (!rawPort) {
+    throw new Error("config import requires server.port when server section is present");
+  }
+
+  const parsedPort = Number.parseInt(rawPort, 10);
+
+  if (!Number.isInteger(parsedPort) || parsedPort <= 0) {
+    throw new Error("config import requires server.port to be a positive integer");
+  }
+
+  return {
+    host,
+    port: parsedPort,
+  };
+};
+
+export const parseImportedHostConfig = (
+  rawConfig: string,
+): ImportedHostConfig => ({
+  runtime: parseImportedHostRuntimeConfig(rawConfig),
+  server: parseImportedHostServerConfig(rawConfig),
+});
 
 const setFlatYamlSectionKeys = (
   rawConfig: string,
@@ -232,8 +282,8 @@ export const readHostConfigText = async (
 export const writeImportedHostConfig = async (
   rawConfig: string,
   configPath = process.env.DUMPLBOT_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
-): Promise<ImportedHostRuntimeConfig> => {
-  const importedConfig = parseImportedHostRuntimeConfig(rawConfig);
+): Promise<ImportedHostConfig> => {
+  const importedConfig = parseImportedHostConfig(rawConfig);
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(configPath, normalizeConfigText(rawConfig), "utf8");
   return importedConfig;

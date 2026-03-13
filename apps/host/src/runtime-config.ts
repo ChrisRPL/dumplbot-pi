@@ -57,8 +57,15 @@ const parsePositiveInt = (value: string | undefined, fallback: number): number =
   return parsed;
 };
 
+export const isSupportedServerHost = (value: string): boolean => (
+  value === "127.0.0.1"
+  || value === "0.0.0.0"
+  || value === "::1"
+  || value === "::"
+);
+
 const normalizeServerHost = (value: string, fallback: string): string => {
-  if (value === "127.0.0.1" || value === "0.0.0.0" || value === "::1" || value === "::") {
+  if (isSupportedServerHost(value)) {
     return value;
   }
 
@@ -82,10 +89,17 @@ const applyServerConfigLine = (
 
 export const loadHostServerConfig = async (
   configPath = process.env.DUMPLBOT_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
+  {
+    applyEnvOverrides = true,
+  }: {
+    applyEnvOverrides?: boolean;
+  } = {},
 ): Promise<HostServerConfig> => {
   const config: HostServerConfig = {
-    host: DEFAULT_SERVER_HOST,
-    port: parsePositiveInt(process.env.DUMPLBOT_PORT, DEFAULT_SERVER_PORT),
+    host: applyEnvOverrides ? DEFAULT_SERVER_HOST : "127.0.0.1",
+    port: applyEnvOverrides
+      ? parsePositiveInt(process.env.DUMPLBOT_PORT, DEFAULT_SERVER_PORT)
+      : DEFAULT_SERVER_PORT,
   };
 
   try {
