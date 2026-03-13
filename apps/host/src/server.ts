@@ -1031,6 +1031,10 @@ const handleSkillList = async (response: ServerResponse): Promise<void> => {
       permission_mode: skill.permissionMode,
       tool_allowlist: skill.toolAllowlist,
       bash_prefix_allowlist: skill.bashCommandPrefixAllowlist,
+      prompt_prelude_summary: skill.promptPreludeSummary,
+      model: {
+        reasoning: skill.modelReasoning,
+      },
       is_active: skill.id === activeSkillId,
     })),
   });
