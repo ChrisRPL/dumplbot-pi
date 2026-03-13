@@ -41,6 +41,18 @@ const parseReasoningLevel = (value: string): "low" | "medium" | "high" => {
   return normalized as "low" | "medium" | "high";
 };
 
+const summarizePromptPrelude = (promptPrelude: string): string => {
+  for (const line of promptPrelude.split(/\r?\n/u)) {
+    const trimmedLine = line.trim();
+
+    if (trimmedLine.length > 0) {
+      return trimmedLine;
+    }
+  }
+
+  return "";
+};
+
 const parseSkillFile = (rawSkill: string): DumplSkill => {
   let parsedId: string | null = null;
   let permissionMode: PermissionMode = "balanced";
@@ -213,6 +225,8 @@ export type SkillSummary = {
   permissionMode: PermissionMode;
   toolAllowlist: string[];
   bashCommandPrefixAllowlist: string[];
+  promptPreludeSummary: string;
+  modelReasoning: DumplSkill["model"]["reasoning"];
 };
 
 export const loadSkill = async (skillId: string): Promise<DumplSkill> => {
@@ -283,6 +297,8 @@ export const listSkills = async (): Promise<SkillSummary[]> => {
       permissionMode: skill.permissionMode,
       toolAllowlist: [...skill.toolAllowlist],
       bashCommandPrefixAllowlist: [...skill.bashCommandPrefixAllowlist],
+      promptPreludeSummary: summarizePromptPrelude(skill.promptPrelude),
+      modelReasoning: skill.model.reasoning,
     });
   }
 
