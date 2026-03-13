@@ -178,6 +178,8 @@ export const renderSetupPage = (): string => `<!doctype html>
           <p>STT ready: <span id="stt-ready">-</span></p>
           <p>STT model: <span id="stt-model">-</span></p>
           <p>Setup health: <span id="setup-health-message">-</span></p>
+          <p>Skill integrations:</p>
+          <pre id="skill-integrations">-</pre>
           <p>Next step: <span id="system-action-label">-</span></p>
           <pre id="system-action-instructions">-</pre>
         </div>
@@ -246,6 +248,7 @@ export const renderSetupPage = (): string => `<!doctype html>
       const sttReadyNode = document.querySelector("#stt-ready");
       const sttModelNode = document.querySelector("#stt-model");
       const setupHealthMessageNode = document.querySelector("#setup-health-message");
+      const skillIntegrationsNode = document.querySelector("#skill-integrations");
       const systemActionLabelNode = document.querySelector("#system-action-label");
       const systemActionInstructionsNode = document.querySelector("#system-action-instructions");
       const formNode = document.querySelector("#setup-form");
@@ -284,6 +287,26 @@ export const renderSetupPage = (): string => `<!doctype html>
       const formatRestartStatus = (restartRequired) => restartRequired ? "yes" : "no";
       const formatEnabledStatus = (enabled) => enabled ? "enabled" : "disabled";
       const formatHealthyStatus = (healthy) => healthy ? "healthy" : "unhealthy";
+
+      const renderSkillIntegrations = (skills) => {
+        const lines = skills
+          .filter((skill) => skill && typeof skill.id === "string")
+          .map((skill) => {
+            const integrations = Array.isArray(skill.integrations)
+              ? skill.integrations
+                  .filter((integration) => integration && typeof integration.provider === "string")
+                  .map((integration) =>
+                    integration.provider + "[" + (integration.configured ? "ready" : "missing") + "]"
+                  )
+              : [];
+
+            return skill.id + ": " + (integrations.length > 0 ? integrations.join(", ") : "(none)");
+          });
+
+        skillIntegrationsNode.textContent = lines.length > 0
+          ? lines.join("\\n")
+          : "No skills loaded";
+      };
 
       const loadConfigExport = async () => {
         const configExportPayload = await fetchJson("/api/config/export");
@@ -353,6 +376,7 @@ export const renderSetupPage = (): string => `<!doctype html>
           })),
           configPayload.runtime.default_skill,
         );
+        renderSkillIntegrations(skillPayload.skills);
 
         safetySelect.value = configPayload.runtime.safety_mode;
         activeWorkspaceNode.textContent = configPayload.runtime.active_workspace || "default fallback";
@@ -419,6 +443,8 @@ export const renderSetupPage = (): string => `<!doctype html>
           openAiApiKeyNode.value = "";
           anthropicApiKeyNode.value = "";
           await loadSetupStatus();
+          const skillPayload = await fetchJson("/api/skills");
+          renderSkillIntegrations(skillPayload.skills);
           statusNode.textContent = "Keys saved";
         } catch (error) {
           statusNode.textContent = error instanceof Error ? error.message : "key save failed";
