@@ -18,6 +18,7 @@ import { streamRunnerEvents } from "./runner";
 import {
   loadHostRuntimeConfig,
   loadHostSandboxConfig,
+  loadHostSchedulerConfig,
   loadHostServerConfig,
 } from "./runtime-config";
 import {
@@ -37,6 +38,7 @@ import {
 } from "./scheduler-store";
 import { writeSetupSecretUpdate } from "./secret-store";
 import { loadSetupSecretStatus } from "./secret-status";
+import { buildSetupHealthStatus } from "./setup-health-status";
 import { buildSetupSystemStatus } from "./setup-system-status";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
@@ -888,6 +890,14 @@ const handleSetupStatusGet = async (response: ServerResponse): Promise<void> => 
       secrets_file_present: secretStatus.secretsFilePresent,
     },
   });
+};
+
+const handleSetupHealthGet = async (response: ServerResponse): Promise<void> => {
+  const [schedulerConfig, sttConfig] = await Promise.all([
+    loadHostSchedulerConfig(),
+    loadSttRuntimeConfig(),
+  ]);
+  sendJson(response, 200, buildSetupHealthStatus(schedulerConfig, sttConfig));
 };
 
 const handleSetupSystemGet = async (response: ServerResponse): Promise<void> => {
@@ -1889,6 +1899,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/setup/status") {
         await handleSetupStatusGet(response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/setup/health") {
+        await handleSetupHealthGet(response);
         return;
       }
 
