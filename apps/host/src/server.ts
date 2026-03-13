@@ -51,6 +51,7 @@ import {
   listWorkspaces,
   normalizeWorkspaceId,
 } from "./workspace-store";
+import { listWorkspaceFiles, readWorkspaceFile, writeWorkspaceFile } from "./workspace-file-store";
 import { loadWorkspaceHistory, recordWorkspaceRun } from "./workspace-history-store";
 import {
   ensureWorkspaceRepoAttachment,
@@ -83,6 +84,11 @@ type DumplAttachWorkspaceRepoRequest = {
 
 type DumplUpdateWorkspaceConfigRequest = {
   default_skill?: string | null;
+};
+
+type DumplWriteWorkspaceFileRequest = {
+  path: string;
+  content: string;
 };
 
 type DumplUpdateConfigRequest = {
@@ -137,6 +143,7 @@ type WorkspaceConfigRoute = {
 };
 
 type WorkspaceHistoryRoute = WorkspaceRepoRoute;
+type WorkspaceFilesRoute = WorkspaceRepoRoute;
 
 type JobAction = "enable" | "disable";
 
@@ -251,6 +258,22 @@ const matchWorkspaceHistoryRoute = (pathname: string): WorkspaceHistoryRoute | n
   }
 
   if (segments[0] !== "api" || segments[1] !== "workspaces" || segments[3] !== "history") {
+    return null;
+  }
+
+  return {
+    workspaceId: segments[2],
+  };
+};
+
+const matchWorkspaceFilesRoute = (pathname: string): WorkspaceFilesRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "workspaces" || segments[3] !== "files") {
     return null;
   }
 
@@ -908,6 +931,88 @@ const handleWorkspaceHistoryGet = async (
   }
 };
 
+const handleWorkspaceFilesGet = async (
+  request: IncomingMessage,
+  workspaceId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  try {
+    const workspacePath = await getExistingWorkspacePath(workspaceId);
+    const filePath = parseOptionalWorkspaceFilePath(request);
+
+    if (typeof filePath === "string" && filePath.trim().length > 0) {
+      const file = await readWorkspaceFile(workspacePath, filePath);
+      sendJson(response, 200, {
+        workspace_id: normalizeWorkspaceId(workspaceId),
+        path: file.path,
+        content: file.content,
+        size: file.size,
+        updated_at: file.updatedAt,
+      });
+      return;
+    }
+
+    const files = await listWorkspaceFiles(workspacePath);
+    sendJson(response, 200, {
+      workspace_id: normalizeWorkspaceId(workspaceId),
+      files: files.map(toWorkspaceFileSummaryPayload),
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace files lookup failed";
+    const statusCode = message === "workspace not found"
+      ? 404
+      : getWorkspaceFileErrorStatus(message);
+    sendJson(response, statusCode, { error: message });
+    return;
+  }
+};
+
+const handleWorkspaceFileWrite = async (
+  request: IncomingMessage,
+  workspaceId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplWriteWorkspaceFileRequest;
+
+  try {
+    body = await readJson<DumplWriteWorkspaceFileRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  if (typeof body.path !== "string") {
+    sendJson(response, 400, { error: "path must be string" });
+    return;
+  }
+
+  if (typeof body.content !== "string") {
+    sendJson(response, 400, { error: "content must be string" });
+    return;
+  }
+
+  try {
+    const workspacePath = await getExistingWorkspacePath(workspaceId);
+    const file = await writeWorkspaceFile(workspacePath, body.path, body.content);
+    sendJson(response, 200, {
+      workspace_id: normalizeWorkspaceId(workspaceId),
+      path: file.path,
+      content: file.content,
+      size: file.size,
+      updated_at: file.updatedAt,
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace file write failed";
+    const statusCode = message === "workspace not found"
+      ? 404
+      : getWorkspaceFileErrorStatus(message);
+    sendJson(response, statusCode, { error: message });
+    return;
+  }
+};
+
 const handleSkillList = async (response: ServerResponse): Promise<void> => {
   const skills = await listSkills();
   const selection = await loadSkillSelection();
@@ -1096,6 +1201,12 @@ const toWorkspaceHistoryEntryPayload = (entry: Awaited<ReturnType<typeof loadWor
   summary: entry.summary,
 });
 
+const toWorkspaceFileSummaryPayload = (entry: Awaited<ReturnType<typeof listWorkspaceFiles>>[number]) => ({
+  path: entry.path,
+  size: entry.size,
+  updated_at: entry.updatedAt,
+});
+
 const parseOptionalPositiveIntSearchParam = (
   request: IncomingMessage,
   key: string,
@@ -1127,6 +1238,9 @@ const parseWorkspaceHistoryWindow = (request: IncomingMessage): { limit: number 
   offset: parseOptionalPositiveIntSearchParam(request, "offset", { allowZero: true }) ?? 0,
 });
 
+const parseOptionalWorkspaceFilePath = (request: IncomingMessage): string | null =>
+  new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get("path");
+
 const sliceJobHistory = (
   history: Awaited<ReturnType<typeof upsertScheduledJob>>["history"],
   { limit, offset }: { limit: number | null; offset: number },
@@ -1149,6 +1263,21 @@ const sliceWorkspaceHistory = (
     : Math.max(0, endIndex - limit);
 
   return history.slice(startIndex, endIndex);
+};
+
+const getWorkspaceFileErrorStatus = (message: string): number => {
+  if (message === "workspace file not found") {
+    return 404;
+  }
+
+  if (
+    message === "workspace file path is invalid"
+    || message === "workspace file path is required"
+  ) {
+    return 400;
+  }
+
+  return 500;
 };
 
 const handleJobList = async (response: ServerResponse): Promise<void> => {
@@ -1937,6 +2066,9 @@ export const createHostServer = (): Server =>
       const workspaceHistoryRoute = request.method === "GET"
         ? matchWorkspaceHistoryRoute(pathname)
         : null;
+      const workspaceFilesRoute = request.method === "GET" || request.method === "POST"
+        ? matchWorkspaceFilesRoute(pathname)
+        : null;
       const jobHistoryRoute = request.method === "GET"
         ? matchJobHistoryRoute(pathname)
         : null;
@@ -1994,6 +2126,16 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && workspaceHistoryRoute) {
         await handleWorkspaceHistoryGet(request, workspaceHistoryRoute.workspaceId, response);
+        return;
+      }
+
+      if (request.method === "GET" && workspaceFilesRoute) {
+        await handleWorkspaceFilesGet(request, workspaceFilesRoute.workspaceId, response);
+        return;
+      }
+
+      if (request.method === "POST" && workspaceFilesRoute) {
+        await handleWorkspaceFileWrite(request, workspaceFilesRoute.workspaceId, response);
         return;
       }
 
