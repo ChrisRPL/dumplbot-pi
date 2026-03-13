@@ -725,6 +725,17 @@ const runSmoke = async () => {
       "expected UI skill detail bash prefix output",
     );
 
+    const skillSummaryResult = runUiCommand(baseUrl, "--skill-summary");
+    assert(skillSummaryResult.status === 0, "expected UI skill summary to return 0");
+    assert(
+      skillSummaryResult.stdout.includes("* coding [balanced]"),
+      "expected UI skill summary active skill output",
+    );
+    assert(
+      skillSummaryResult.stdout.includes("high | tools:4 | ready:1/2"),
+      "expected UI skill summary compact metadata output",
+    );
+
     const talkAfterClearResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },

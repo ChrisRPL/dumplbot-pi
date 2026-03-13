@@ -3,7 +3,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const HOST = "127.0.0.1";
 const HOST_PORT = 4136;
@@ -70,6 +70,25 @@ const stopHostServer = async (childProcess) => {
     childProcess.once("exit", resolve);
     setTimeout(() => resolve(), 3000);
   });
+};
+
+const runUiCommand = (baseUrl, ...args) => {
+  const result = spawnSync(
+    "python3",
+    ["apps/ui/dumpl_ui.py", "--mock", "--host-url", baseUrl, ...args],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 8000,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return result;
 };
 
 const runSmoke = async () => {
@@ -272,6 +291,34 @@ const runSmoke = async () => {
     assert(detailJobPayload.last_error === null, "expected empty job detail error");
     assert(detailJobPayload.failure_count === 0, "expected empty job detail failure count");
     assert(detailJobPayload.last_success_at === null, "expected empty job detail last success");
+
+    const schedulerNavScreenResult = runUiCommand(
+      baseUrl,
+      "--scheduler-nav-mode",
+      "summary",
+      "--scheduler-nav-action",
+      "next-screen",
+    );
+    assert(schedulerNavScreenResult.status === 0, "expected scheduler nav next-screen to return 0");
+    assert(
+      schedulerNavScreenResult.stdout.includes("daily-status [off]"),
+      "expected scheduler nav next-screen to show first job detail",
+    );
+
+    const schedulerNavJobResult = runUiCommand(
+      baseUrl,
+      "--scheduler-nav-mode",
+      "detail",
+      "--scheduler-nav-job",
+      "daily-status",
+      "--scheduler-nav-action",
+      "next-job",
+    );
+    assert(schedulerNavJobResult.status === 0, "expected scheduler nav next-job to return 0");
+    assert(
+      schedulerNavJobResult.stdout.includes("hourly-status [on]"),
+      "expected scheduler nav next-job to cycle to the next job",
+    );
 
     const emptyHistoryResponse = await fetch(`${baseUrl}/api/jobs/daily-status/history`);
     assert(emptyHistoryResponse.status === 200, "expected empty job history to return 200");

@@ -132,6 +132,8 @@ const runSmoke = async () => {
     assert(setupPageHtml.includes("/api/setup/status"), "expected setup page to use setup status api");
     assert(setupPageHtml.includes("/api/setup/system"), "expected setup page to use setup system api");
     assert(setupPageHtml.includes("OpenAI key"), "expected setup page to show OpenAI key status");
+    assert(setupPageHtml.includes("Skill integrations"), "expected setup page to show skill integration summary");
+    assert(setupPageHtml.includes("skill-integrations"), "expected setup page skill integration node");
     assert(setupPageHtml.includes("Active bind"), "expected setup page to show setup system diagnostics");
     assert(setupPageHtml.includes("Daemon health"), "expected setup page to show setup health diagnostics");
     assert(setupPageHtml.includes("Next step"), "expected setup page to show next-step instructions");
@@ -166,6 +168,13 @@ const runSmoke = async () => {
     assert(setupStatusPayload.secrets.openai_api_key_configured === true, "expected OpenAI key presence");
     assert(setupStatusPayload.secrets.anthropic_api_key_configured === false, "expected Anthropic key absence");
 
+    const initialSkillListResponse = await fetch(`${baseUrl}/api/skills`);
+    assert(initialSkillListResponse.status === 200, "expected GET /api/skills to return 200");
+    const initialSkillListPayload = await initialSkillListResponse.json();
+    const initialCodingSkill = initialSkillListPayload.skills.find((skill) => skill.id === "coding");
+    assert(initialCodingSkill?.integrations?.find((entry) => entry.provider === "openai")?.configured === true, "expected initial openai skill readiness");
+    assert(initialCodingSkill?.integrations?.find((entry) => entry.provider === "anthropic")?.configured === false, "expected initial anthropic skill readiness");
+
     const setupSecretsUpdateResponse = await fetch(`${baseUrl}/api/setup/secrets`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -177,6 +186,12 @@ const runSmoke = async () => {
     const setupSecretsUpdatePayload = await setupSecretsUpdateResponse.json();
     assert(setupSecretsUpdatePayload.secrets.openai_api_key_configured === true, "expected OpenAI key status to remain configured");
     assert(setupSecretsUpdatePayload.secrets.anthropic_api_key_configured === true, "expected Anthropic key status to become configured");
+
+    const updatedSkillListResponse = await fetch(`${baseUrl}/api/skills`);
+    assert(updatedSkillListResponse.status === 200, "expected GET /api/skills after secret update");
+    const updatedSkillListPayload = await updatedSkillListResponse.json();
+    const updatedCodingSkill = updatedSkillListPayload.skills.find((skill) => skill.id === "coding");
+    assert(updatedCodingSkill?.integrations?.find((entry) => entry.provider === "anthropic")?.configured === true, "expected anthropic skill readiness after secret update");
 
     const writtenSecrets = await readFile(secretsPath, "utf8");
     assert(writtenSecrets.includes("OPENAI_API_KEY=test-openai-key"), "expected written OpenAI key");
