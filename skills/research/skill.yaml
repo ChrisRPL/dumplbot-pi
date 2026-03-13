@@ -5,6 +5,11 @@ tool_allowlist:
   - read_file
   - web_search
   - web_fetch
+integrations:
+  - provider: openai
+    purpose: remote model backend
+  - provider: anthropic
+    purpose: remote model backend
 permission_mode: strict
 model:
   reasoning: medium

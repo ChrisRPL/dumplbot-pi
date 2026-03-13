@@ -13,6 +13,11 @@ bash_prefix_allowlist:
   - npm run
   - ls
   - cat
+integrations:
+  - provider: openai
+    purpose: remote model backend
+  - provider: anthropic
+    purpose: remote model backend
 permission_mode: balanced
 model:
   reasoning: high

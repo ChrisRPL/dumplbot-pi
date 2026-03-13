@@ -1,12 +1,18 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import type { DumplSkill, PermissionMode } from "../../../packages/core/src";
+import type {
+  DumplSkill,
+  DumplSkillIntegrationConfig,
+  DumplSkillIntegrationProvider,
+  PermissionMode,
+} from "../../../packages/core/src";
 
 const SKILLS_ROOT = process.env.DUMPLBOT_SKILLS_ROOT ?? resolve(process.cwd(), "skills");
 const SKILL_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
 const PERMISSION_MODES = new Set<PermissionMode>(["strict", "balanced", "permissive"]);
 const REASONING_LEVELS = new Set(["low", "medium", "high"]);
+const INTEGRATION_PROVIDERS = new Set<DumplSkillIntegrationProvider>(["openai", "anthropic"]);
 
 const normalizeScalar = (value: string): string =>
   value.trim().replace(/^['"]|['"]$/gu, "");
@@ -53,6 +59,16 @@ const summarizePromptPrelude = (promptPrelude: string): string => {
   return "";
 };
 
+const parseIntegrationProvider = (value: string): DumplSkillIntegrationProvider => {
+  const normalized = normalizeScalar(value);
+
+  if (!INTEGRATION_PROVIDERS.has(normalized as DumplSkillIntegrationProvider)) {
+    throw new Error("skill integrations provider is invalid");
+  }
+
+  return normalized as DumplSkillIntegrationProvider;
+};
+
 const parseSkillFile = (rawSkill: string): DumplSkill => {
   let parsedId: string | null = null;
   let permissionMode: PermissionMode = "balanced";
@@ -62,11 +78,36 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
     | "prompt_prelude"
     | "tool_allowlist"
     | "bash_prefix_allowlist"
+    | "integrations"
     | "model"
     = "none";
   const promptPreludeLines: string[] = [];
   const toolAllowlist: string[] = [];
   const bashCommandPrefixAllowlist: string[] = [];
+  const integrations: DumplSkillIntegrationConfig[] = [];
+  let currentIntegration: Partial<DumplSkillIntegrationConfig> | null = null;
+
+  const flushCurrentIntegration = (): void => {
+    if (!currentIntegration) {
+      return;
+    }
+
+    const pendingIntegration = currentIntegration;
+
+    if (!pendingIntegration.provider) {
+      throw new Error("skill integrations provider is required");
+    }
+
+    if (integrations.some((entry) => entry.provider === pendingIntegration.provider)) {
+      throw new Error("skill integrations provider must be unique");
+    }
+
+    integrations.push({
+      provider: pendingIntegration.provider,
+      purpose: pendingIntegration.purpose?.trim() ?? "",
+    });
+    currentIntegration = null;
+  };
 
   for (const rawLine of rawSkill.split(/\r?\n/u)) {
     const trimmedLine = rawLine.trim();
@@ -115,6 +156,67 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
         continue;
       }
 
+      state = "none";
+    }
+
+    if (state === "integrations") {
+      if (rawLine.startsWith("  - ")) {
+        flushCurrentIntegration();
+        currentIntegration = {};
+        const inlineEntry = rawLine.slice(4).trim();
+
+        if (inlineEntry.length > 0) {
+          const separatorIndex = inlineEntry.indexOf(":");
+
+          if (separatorIndex <= 0) {
+            throw new Error("skill integrations entry is invalid");
+          }
+
+          const key = inlineEntry.slice(0, separatorIndex).trim();
+          const value = inlineEntry.slice(separatorIndex + 1).trim();
+
+          if (key === "provider") {
+            currentIntegration.provider = parseIntegrationProvider(value);
+          } else if (key === "purpose") {
+            currentIntegration.purpose = normalizeScalar(value);
+          }
+        }
+
+        continue;
+      }
+
+      if (rawLine.startsWith("    ")) {
+        if (!currentIntegration) {
+          throw new Error("skill integrations entry is invalid");
+        }
+
+        if (trimmedLine.length === 0 || trimmedLine.startsWith("#")) {
+          continue;
+        }
+
+        const separatorIndex = trimmedLine.indexOf(":");
+
+        if (separatorIndex <= 0) {
+          throw new Error("skill integrations entry is invalid");
+        }
+
+        const key = trimmedLine.slice(0, separatorIndex).trim();
+        const value = trimmedLine.slice(separatorIndex + 1).trim();
+
+        if (key === "provider") {
+          currentIntegration.provider = parseIntegrationProvider(value);
+        } else if (key === "purpose") {
+          currentIntegration.purpose = normalizeScalar(value);
+        }
+
+        continue;
+      }
+
+      if (trimmedLine.length === 0 || trimmedLine.startsWith("#")) {
+        continue;
+      }
+
+      flushCurrentIntegration();
       state = "none";
     }
 
@@ -184,6 +286,11 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
       continue;
     }
 
+    if (key === "integrations") {
+      state = "integrations";
+      continue;
+    }
+
     if (key === "permission_mode") {
       permissionMode = parsePermissionMode(value);
       continue;
@@ -192,6 +299,10 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
     if (key === "model") {
       state = "model";
     }
+  }
+
+  if (state === "integrations") {
+    flushCurrentIntegration();
   }
 
   if (!parsedId) {
@@ -214,6 +325,7 @@ const parseSkillFile = (rawSkill: string): DumplSkill => {
     model: {
       reasoning: modelReasoning,
     },
+    integrations,
   };
 };
 
@@ -227,6 +339,7 @@ export type SkillSummary = {
   bashCommandPrefixAllowlist: string[];
   promptPreludeSummary: string;
   modelReasoning: DumplSkill["model"]["reasoning"];
+  integrations: DumplSkill["integrations"];
 };
 
 export const loadSkill = async (skillId: string): Promise<DumplSkill> => {
@@ -299,6 +412,10 @@ export const listSkills = async (): Promise<SkillSummary[]> => {
       bashCommandPrefixAllowlist: [...skill.bashCommandPrefixAllowlist],
       promptPreludeSummary: summarizePromptPrelude(skill.promptPrelude),
       modelReasoning: skill.model.reasoning,
+      integrations: skill.integrations.map((integration) => ({
+        provider: integration.provider,
+        purpose: integration.purpose,
+      })),
     });
   }
 
