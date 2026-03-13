@@ -104,7 +104,7 @@ bash scripts/install_pi.sh
 * `/etc/dumplbot/secrets.env`
 * `/etc/dumplbot/config.yaml`
 
-Fresh installs now default `server.host` to `0.0.0.0`, so the setup shell at `/setup` is reachable from the same Wi-Fi and can save default workspace/default skill/safety plus provider keys.
+Fresh installs now default `server.host` to `0.0.0.0`, so the setup shell at `/setup` is reachable from the same Wi-Fi and can save default workspace/default skill/safety plus provider keys. The setup page now also shows the live bind, configured bind, and whether a daemon restart is still needed after a config import.
 
 5. Start services:
 
@@ -151,7 +151,7 @@ Status as of March 12, 2026:
 * `partial` workspaces + repo attach. Workspace APIs/state, repo attach, mock UI switching, and renderer workspace selector/detail/create flows landed; broader workspace-local history/project storage polish is still pending.
 * `partial` skill packs + optional integrations. Skill schema/loading/policy landed, plus per-workspace defaults, focused job skill editing, and renderer skill selector/detail flows; richer integrations are still pending.
 * `partial` scheduler + job UI. File-backed jobs API, single-job detail/patch/history routes, schedule presets, natural-language phrases, capped run history, run diagnostics, failure counters, mock actions, paged history windows, and on-device summary/detail/history/action/edit flows landed; hardware button-driven scheduler navigation polish is still pending.
-* `done` local setup page (LAN only). Fresh installs now bind for same-Wi-Fi setup, the setup shell saves default workspace/default skill/safety plus provider keys, shows secret presence without exposing values, exports/imports `config.yaml`, and limits setup routes to localhost/private-LAN clients. Existing loopback-only installs need one host-config update plus restart to gain the same reachability.
+* `done` local setup page (LAN only). Fresh installs now bind for same-Wi-Fi setup, the setup shell saves default workspace/default skill/safety plus provider keys, shows secret presence without exposing values, exports/imports `config.yaml`, surfaces live-vs-configured bind diagnostics with restart-needed hints, and limits setup routes to localhost/private-LAN clients. Existing loopback-only installs still need one host-config update plus restart to gain the same reachability.
 
 ---
 

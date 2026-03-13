@@ -369,7 +369,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `GET /setup`
 
 - Return the LAN-only setup shell for phone/browser appliance setup.
-- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config`, setup keys through `POST /api/setup/secrets`, and raw config imports through `POST /api/config/import`.
+- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, `/api/setup/system`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config`, setup keys through `POST /api/setup/secrets`, and raw config imports through `POST /api/config/import`.
 - Status codes:
   - `200` with `text/html`.
   - `403` when the client is outside localhost or a private LAN range.
@@ -415,6 +415,38 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `400` invalid JSON or missing non-empty secret fields.
   - `403` when the client is outside localhost or a private LAN range.
 
+### `GET /api/setup/system`
+
+- Return setup diagnostics for bind reachability and restart-required hints.
+- Current response shape:
+
+```json
+{
+  "system": {
+    "active_server": {
+      "bind": "127.0.0.1:4123",
+      "host": "127.0.0.1",
+      "port": 4123
+    },
+    "configured_server": {
+      "bind": "0.0.0.0:4123",
+      "host": "0.0.0.0",
+      "port": 4123
+    },
+    "lan_setup_ready": false,
+    "restart_required": true,
+    "status_message": "Restart dumplbotd to apply configured bind 0.0.0.0:4123."
+  }
+}
+```
+
+- `active_server` reflects the current daemon listener.
+- `configured_server` reflects the current `config.yaml` server section.
+- `restart_required` is true when the live listener and config file differ.
+- Status codes:
+  - `200` when requested from localhost or a private LAN range.
+  - `403` otherwise.
+
 ### `GET /api/config/export`
 
 - Return the current host config file contents for setup export/import editing.
@@ -446,6 +478,9 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `runtime.default_skill` must resolve to an existing skill id.
 - `runtime.permission_mode` must be one of `strict`, `balanced`, or `permissive`.
 - `runtime.max_run_seconds`, when present, must be a positive integer.
+- If a `server` section is present, it must include both `host` and `port`.
+- `server.host`, when present, must be one of `127.0.0.1`, `0.0.0.0`, `::1`, or `::`.
+- `server.port`, when present, must be a positive integer.
 - Status codes:
   - `200` import applied.
   - `400` invalid JSON or invalid imported config.
