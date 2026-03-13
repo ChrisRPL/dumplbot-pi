@@ -77,6 +77,7 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `error`: `{"code":"<policy-code>","message":"<policy-message>"}`
 - Host enforces `runtime.max_run_seconds` per run.
   - Timeout is streamed as terminal SSE `error`: `{"message":"runner timed out after <N>s"}`
+- Successful and terminal runner outcomes append workspace-local run history under `workspaces/<id>/.dumplbot-history.json`.
 - Current policy denial codes:
   - `policy_tools_denied`
   - `policy_tools_invalid`
@@ -99,6 +100,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"skill not found"}` when skill selection is invalid.
 - `POST /api/audio/:audioId/talk` uses the same policy-denial SSE mapping as `/api/talk`.
 - `POST /api/audio/:audioId/talk` uses the same timeout SSE mapping as `/api/talk`.
+- Successful and terminal runner outcomes append workspace-local run history under `workspaces/<id>/.dumplbot-history.json`.
 
 ### `GET /api/skills`
 
@@ -201,6 +203,38 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `200` when updated.
   - `404` when workspace or skill does not exist.
   - `400` for invalid JSON or invalid field type.
+
+### `GET /api/workspaces/:workspaceId/history`
+
+- Return retained run-history entries for one workspace.
+- Supports `?limit=<n>` and `?offset=<n>` like the scheduler history route.
+- Current response shape:
+
+```json
+{
+  "workspace_id":"default",
+  "total":2,
+  "returned":1,
+  "history":[
+    {
+      "completed_at":"2026-03-13T12:00:00.000Z",
+      "prompt":"ping",
+      "transcript":null,
+      "skill":"coding",
+      "source":"text",
+      "status":"success",
+      "summary":"Runner scaffold completed."
+    }
+  ]
+}
+```
+
+- `source` is `text` for `/api/talk` runs and `audio` for `/api/audio/:audioId/talk` runs.
+- `history` currently retains the newest 20 run entries per workspace.
+- Status codes:
+  - `200` when the workspace exists.
+  - `404` when the workspace does not exist.
+  - `400` for invalid `limit` or `offset` values.
 
 ### `GET /api/jobs`
 
