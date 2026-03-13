@@ -24,6 +24,7 @@
     "smoke:server-bind-config": "npm run build && node scripts/smoke-server-bind-config.mjs",
     "smoke:setup-lan-guard": "npm run build && node scripts/smoke-setup-lan-guard.mjs",
     "smoke:setup-page": "npm run build && node scripts/smoke-setup-page.mjs",
+    "smoke:setup-secrets-runtime": "npm run build && node scripts/smoke-setup-secrets-runtime.mjs",
     "smoke:workspace-config": "npm run build && node scripts/smoke-workspace-config.mjs",
     "start:agent-runner": "node dist/apps/agent-runner/src/main.js",
     "start:host": "node dist/apps/host/src/main.js",
