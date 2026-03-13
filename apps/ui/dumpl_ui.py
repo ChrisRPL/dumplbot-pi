@@ -24,6 +24,8 @@ WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
 BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
+WORKSPACE_HISTORY_COMMAND_LIMIT = 8
+WORKSPACE_HISTORY_SCREEN_LIMIT = 4
 JOB_HISTORY_COMMAND_LIMIT = 8
 JOB_HISTORY_SCREEN_LIMIT = 4
 JOB_DETAIL_HISTORY_LIMIT = 3
@@ -337,6 +339,35 @@ def get_workspace_entry(base_url: str, workspace_id: str) -> dict[str, Any]:
     raise RuntimeError("workspace not found")
 
 
+def get_workspace_history(
+    base_url: str,
+    workspace_id: str,
+    limit: Optional[int] = None,
+    offset: int = 0,
+) -> dict[str, Any]:
+    path = f"/api/workspaces/{workspace_id.strip().lower()}/history"
+    query_parts: list[str] = []
+
+    if isinstance(limit, int) and limit > 0:
+        query_parts.append(f"limit={limit}")
+
+    if offset < 0:
+        raise RuntimeError("workspace history offset is invalid")
+
+    if offset > 0:
+        query_parts.append(f"offset={offset}")
+
+    if query_parts:
+        path = f"{path}?{'&'.join(query_parts)}"
+
+    payload = request_json(base_url, path)
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("workspace_id"), str):
+        raise RuntimeError("workspace history response is invalid")
+
+    return payload
+
+
 def create_workspace_entry(
     base_url: str,
     workspace_id: str,
@@ -413,9 +444,9 @@ def handle_workspace_command(
     renderer: "ConsoleRenderer",
 ) -> Optional[str]:
     _, _, argument = command.partition(" ")
-    selection = argument.strip()
+    tokens = shlex.split(argument)
 
-    if not selection:
+    if not tokens:
         workspaces = list_workspace_entries(base_url)
         print("Workspaces:")
 
@@ -429,6 +460,55 @@ def handle_workspace_command(
             print(f"{marker} {workspace_id}")
 
         return None
+
+    if tokens[0] == "history":
+        if len(tokens) not in {2, 3}:
+            renderer.render_notice("Usage: :workspace history <id> [offset]")
+            return None
+
+        history_offset = 0
+
+        if len(tokens) == 3:
+            history_offset = parse_non_negative_int(tokens[2], "history offset")
+
+        history_payload = get_workspace_history(
+            base_url,
+            tokens[1],
+            limit=WORKSPACE_HISTORY_COMMAND_LIMIT,
+            offset=history_offset,
+        )
+        history = history_payload.get("history")
+        total = history_payload.get("total")
+        returned = history_payload.get("returned")
+        workspace_id = history_payload.get("workspace_id")
+
+        print(f"Workspace history: {workspace_id or tokens[1]}")
+
+        if not isinstance(history, list) or len(history) == 0:
+            print("- no runs yet")
+            renderer.render_notice(f"History: {workspace_id or tokens[1]} (0 runs)")
+            return None
+
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+
+            completed_at = entry.get("completed_at")
+            status = entry.get("status")
+            summary = entry.get("summary")
+
+            if not isinstance(completed_at, str) or not isinstance(status, str):
+                continue
+
+            detail = str(summary) if isinstance(summary, str) and summary else "(no summary)"
+            print(f"- {completed_at} [{status}] {detail}")
+
+        renderer.render_notice(
+            f"History: {workspace_id or tokens[1]} ({describe_history_window(total, returned, history_offset)})",
+        )
+        return None
+
+    selection = tokens[0]
 
     if selection == "next":
         next_workspace = cycle_workspace(base_url)
@@ -528,6 +608,65 @@ def build_workspace_detail_screen_state(workspace: dict[str, Any]) -> ScreenStat
     )
 
 
+def build_workspace_history_screen_state(
+    history_payload: dict[str, Any],
+    history_offset: int = 0,
+) -> ScreenState:
+    workspace_id = history_payload.get("workspace_id")
+    history = history_payload.get("history")
+    total = history_payload.get("total")
+    returned = history_payload.get("returned")
+
+    if not isinstance(workspace_id, str):
+        raise RuntimeError("workspace history response is invalid")
+
+    if not isinstance(history, list) or not history:
+        return ScreenState(
+            phase="Workspaces",
+            status=f"{workspace_id} has no history",
+            prompt=workspace_id,
+            answer="No workspace runs recorded.",
+        )
+
+    lines: list[str] = []
+
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+
+        completed_at = entry.get("completed_at")
+        status = entry.get("status")
+        skill = entry.get("skill")
+        source = entry.get("source")
+        summary = entry.get("summary")
+
+        if not isinstance(completed_at, str) or not isinstance(status, str):
+            continue
+
+        entry_lines = [completed_at]
+        detail = status
+
+        if isinstance(skill, str) and skill:
+            detail = f"{detail} [{skill}]"
+
+        if isinstance(source, str) and source:
+            detail = f"{detail} {source}"
+
+        entry_lines.append(detail)
+
+        if isinstance(summary, str) and summary:
+            entry_lines.append(summary)
+
+        lines.append("\n".join(entry_lines))
+
+    return ScreenState(
+        phase="Workspaces",
+        status=f"{workspace_id} history ({describe_history_window(total, returned, history_offset)})",
+        prompt=workspace_id,
+        answer="\n".join(lines) if lines else "No valid history entries.",
+    )
+
+
 def run_workspace_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -611,6 +750,39 @@ def run_workspace_detail(
             )
         )
         return 1
+
+
+def run_workspace_history_screen(
+    base_url: str,
+    workspace_id: str,
+    renderer: "ConsoleRenderer",
+    refresh_seconds: float,
+    history_offset: int = 0,
+) -> int:
+    if refresh_seconds <= 0:
+        renderer.render_notice("Selection refresh must be greater than zero")
+        return 1
+
+    while True:
+        try:
+            history_payload = get_workspace_history(
+                base_url,
+                workspace_id,
+                limit=WORKSPACE_HISTORY_SCREEN_LIMIT,
+                offset=history_offset,
+            )
+            renderer.render(build_workspace_history_screen_state(history_payload, history_offset))
+        except (RuntimeError, urllib.error.URLError) as error:
+            renderer.render(
+                ScreenState(
+                    phase="Error",
+                    status="Workspace history failed",
+                    prompt=workspace_id,
+                    error=str(error),
+                )
+            )
+
+        time.sleep(refresh_seconds)
 
 
 def run_workspace_create(
@@ -2382,6 +2554,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-disable", help="Disable one scheduler job and exit")
     parser.add_argument("--job-delete", help="Delete one scheduler job and exit")
     parser.add_argument("--workspace-screen", action="store_true", help="Show the workspace selector screen")
+    parser.add_argument(
+        "--workspace-history",
+        help="Show one workspace history screen on the renderer and refresh continuously",
+    )
+    parser.add_argument(
+        "--workspace-history-offset",
+        type=parse_non_negative_int_arg,
+        default=0,
+        help="History offset used by --workspace-history",
+    )
     parser.add_argument("--workspace-detail", help="Show one workspace detail screen and exit")
     parser.add_argument("--workspace-create", help="Create one workspace and show its detail screen")
     parser.add_argument("--workspace-instructions", help="Instructions used by --workspace-create")
@@ -2450,6 +2632,10 @@ def main() -> int:
             renderer.render_notice("--job-history-offset requires --job-history")
             return 1
 
+        if args.workspace_history_offset and args.workspace_history is None:
+            renderer.render_notice("--workspace-history-offset requires --workspace-history")
+            return 1
+
         if args.job_detail_history_offset and args.job_detail is None:
             renderer.render_notice("--job-detail-history-offset requires --job-detail")
             return 1
@@ -2511,6 +2697,7 @@ def main() -> int:
             1
             for value in (
                 args.workspace_screen,
+                args.workspace_history is not None,
                 args.workspace_detail is not None,
                 args.workspace_create is not None,
                 args.workspace_cycle,
@@ -2610,6 +2797,15 @@ def main() -> int:
                 args.host_url,
                 renderer,
                 args.selection_refresh_seconds,
+            )
+
+        if args.workspace_history is not None:
+            return run_workspace_history_screen(
+                args.host_url,
+                args.workspace_history,
+                renderer,
+                args.selection_refresh_seconds,
+                history_offset=args.workspace_history_offset,
             )
 
         if args.workspace_detail is not None:
