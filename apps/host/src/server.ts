@@ -51,6 +51,7 @@ import {
   listWorkspaces,
   normalizeWorkspaceId,
 } from "./workspace-store";
+import { loadWorkspaceHistory } from "./workspace-history-store";
 import {
   ensureWorkspaceRepoAttachment,
   loadWorkspaceConfig,
@@ -134,6 +135,8 @@ type WorkspaceRepoRoute = {
 type WorkspaceConfigRoute = {
   workspaceId: string;
 };
+
+type WorkspaceHistoryRoute = WorkspaceRepoRoute;
 
 type JobAction = "enable" | "disable";
 
@@ -232,6 +235,22 @@ const matchWorkspaceConfigRoute = (pathname: string): WorkspaceConfigRoute | nul
   }
 
   if (segments[0] !== "api" || segments[1] !== "workspaces" || segments[3] !== "config") {
+    return null;
+  }
+
+  return {
+    workspaceId: segments[2],
+  };
+};
+
+const matchWorkspaceHistoryRoute = (pathname: string): WorkspaceHistoryRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "workspaces" || segments[3] !== "history") {
     return null;
   }
 
@@ -847,6 +866,34 @@ const handleWorkspaceConfigUpdate = async (
   });
 };
 
+const handleWorkspaceHistoryGet = async (
+  request: IncomingMessage,
+  workspaceId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  try {
+    const workspacePath = await getExistingWorkspacePath(workspaceId);
+    const history = await loadWorkspaceHistory(workspacePath);
+    const historyWindow = parseWorkspaceHistoryWindow(request);
+    const returnedHistory = sliceWorkspaceHistory(history, historyWindow);
+
+    sendJson(response, 200, {
+      workspace_id: normalizeWorkspaceId(workspaceId),
+      total: history.length,
+      returned: returnedHistory.length,
+      history: returnedHistory.map(toWorkspaceHistoryEntryPayload),
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "workspace history lookup failed";
+    const statusCode = message === "workspace not found"
+      ? 404
+      : 400;
+    sendJson(response, statusCode, { error: message });
+    return;
+  }
+};
+
 const handleSkillList = async (response: ServerResponse): Promise<void> => {
   const skills = await listSkills();
   const selection = await loadSkillSelection();
@@ -1025,6 +1072,16 @@ const toJobHistoryEntryPayload = (entry: Awaited<ReturnType<typeof upsertSchedul
   status: entry.status,
 });
 
+const toWorkspaceHistoryEntryPayload = (entry: Awaited<ReturnType<typeof loadWorkspaceHistory>>[number]) => ({
+  completed_at: entry.completedAt,
+  prompt: entry.prompt,
+  transcript: entry.transcript,
+  skill: entry.skill,
+  source: entry.source,
+  status: entry.status,
+  summary: entry.summary,
+});
+
 const parseOptionalPositiveIntSearchParam = (
   request: IncomingMessage,
   key: string,
@@ -1051,8 +1108,25 @@ const parseJobHistoryWindow = (request: IncomingMessage): { limit: number | null
   offset: parseOptionalPositiveIntSearchParam(request, "offset", { allowZero: true }) ?? 0,
 });
 
+const parseWorkspaceHistoryWindow = (request: IncomingMessage): { limit: number | null; offset: number } => ({
+  limit: parseOptionalPositiveIntSearchParam(request, "limit"),
+  offset: parseOptionalPositiveIntSearchParam(request, "offset", { allowZero: true }) ?? 0,
+});
+
 const sliceJobHistory = (
   history: Awaited<ReturnType<typeof upsertScheduledJob>>["history"],
+  { limit, offset }: { limit: number | null; offset: number },
+) => {
+  const endIndex = Math.max(0, history.length - offset);
+  const startIndex = limit === null
+    ? 0
+    : Math.max(0, endIndex - limit);
+
+  return history.slice(startIndex, endIndex);
+};
+
+const sliceWorkspaceHistory = (
+  history: Awaited<ReturnType<typeof loadWorkspaceHistory>>,
   { limit, offset }: { limit: number | null; offset: number },
 ) => {
   const endIndex = Math.max(0, history.length - offset);
@@ -1792,6 +1866,9 @@ export const createHostServer = (): Server =>
       const workspaceConfigRoute = request.method === "POST"
         ? matchWorkspaceConfigRoute(pathname)
         : null;
+      const workspaceHistoryRoute = request.method === "GET"
+        ? matchWorkspaceHistoryRoute(pathname)
+        : null;
       const jobHistoryRoute = request.method === "GET"
         ? matchJobHistoryRoute(pathname)
         : null;
@@ -1844,6 +1921,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && workspaceConfigRoute) {
         await handleWorkspaceConfigUpdate(request, workspaceConfigRoute.workspaceId, response);
+        return;
+      }
+
+      if (request.method === "GET" && workspaceHistoryRoute) {
+        await handleWorkspaceHistoryGet(request, workspaceHistoryRoute.workspaceId, response);
         return;
       }
 
