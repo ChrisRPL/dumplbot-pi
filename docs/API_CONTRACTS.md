@@ -236,6 +236,56 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `404` when the workspace does not exist.
   - `400` for invalid `limit` or `offset` values.
 
+### `GET /api/workspaces/:workspaceId/files`
+
+- Return workspace-local project files, or one file when `?path=<relative-path>` is provided.
+- Current list response shape:
+
+```json
+{
+  "workspace_id":"default",
+  "files":[
+    {"path":"notes/today.md","size":42,"updated_at":"2026-03-13T12:05:00.000Z"}
+  ]
+}
+```
+
+- Current single-file response shape:
+
+```json
+{
+  "workspace_id":"default",
+  "path":"notes/today.md",
+  "content":"# Notes\n",
+  "size":8,
+  "updated_at":"2026-03-13T12:05:00.000Z"
+}
+```
+
+- Paths stay relative to the workspace root.
+- Internal daemon files under `.dumplbot-*` and attached repo mounts under `repos/` are hidden from the list/read surface.
+- Status codes:
+  - `200` when the workspace exists and the requested file exists, or when listing files.
+  - `404` when the workspace does not exist, or when the requested file does not exist.
+  - `400` for invalid relative paths.
+
+### `POST /api/workspaces/:workspaceId/files`
+
+- Create or update one workspace-local project file.
+- Request body:
+
+```json
+{"path":"notes/today.md","content":"# Notes\n"}
+```
+
+- Success response echoes the stored file payload from `GET /api/workspaces/:workspaceId/files?path=...`.
+- Paths stay relative to the workspace root.
+- Internal daemon files under `.dumplbot-*` and attached repo mounts under `repos/` cannot be written through this route.
+- Status codes:
+  - `200` when the file is written.
+  - `404` when the workspace does not exist.
+  - `400` for invalid JSON, invalid field types, or invalid relative paths.
+
 ### `GET /api/jobs`
 
 - Return scheduler job list plus latest run status.
