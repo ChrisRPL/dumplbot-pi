@@ -420,6 +420,71 @@ const runSmoke = async () => {
     assert(updatedAlphaHistoryFile.length === 2, "workspace history file should contain two alpha entries");
     assert(updatedAlphaHistoryFile[1]?.prompt === "pong", "workspace history file latest entry mismatch");
 
+    const writeWorkspaceFileResponse = await fetch(`${baseUrl}/api/workspaces/alpha/files`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        path: "notes/today.md",
+        content: "# Alpha Notes\n\n- shipped workspace files\n",
+      }),
+    });
+    assert(writeWorkspaceFileResponse.status === 200, "expected workspace file write to return 200");
+    const writeWorkspaceFilePayload = await writeWorkspaceFileResponse.json();
+    assert(writeWorkspaceFilePayload.workspace_id === "alpha", "workspace file write id mismatch");
+    assert(writeWorkspaceFilePayload.path === "notes/today.md", "workspace file write path mismatch");
+    assert(
+      writeWorkspaceFilePayload.content.includes("workspace files"),
+      "workspace file write content mismatch",
+    );
+
+    const workspaceFileContents = await readFile(join(alphaWorkspacePath, "notes", "today.md"), "utf8");
+    assert(
+      workspaceFileContents.includes("workspace files"),
+      "workspace file should be stored under workspace root",
+    );
+
+    const workspaceFilesListResponse = await fetch(`${baseUrl}/api/workspaces/alpha/files`);
+    assert(workspaceFilesListResponse.status === 200, "expected workspace files list to return 200");
+    const workspaceFilesListPayload = await workspaceFilesListResponse.json();
+    assert(workspaceFilesListPayload.workspace_id === "alpha", "workspace files list id mismatch");
+    assert(Array.isArray(workspaceFilesListPayload.files), "workspace files list payload is invalid");
+    assert(
+      workspaceFilesListPayload.files.some((entry) => entry.path === "notes/today.md"),
+      "workspace files list should include saved project file",
+    );
+    assert(
+      !workspaceFilesListPayload.files.some((entry) => entry.path === ".dumplbot-history.json"),
+      "workspace files list should hide internal history file",
+    );
+    assert(
+      !workspaceFilesListPayload.files.some((entry) => entry.path === "repos/notes/README.md"),
+      "workspace files list should hide attached repo contents",
+    );
+
+    const workspaceFileReadResponse = await fetch(
+      `${baseUrl}/api/workspaces/alpha/files?path=notes%2Ftoday.md`,
+    );
+    assert(workspaceFileReadResponse.status === 200, "expected workspace file read to return 200");
+    const workspaceFileReadPayload = await workspaceFileReadResponse.json();
+    assert(workspaceFileReadPayload.path === "notes/today.md", "workspace file read path mismatch");
+    assert(
+      workspaceFileReadPayload.content.includes("workspace files"),
+      "workspace file read content mismatch",
+    );
+
+    const invalidWorkspaceFileResponse = await fetch(`${baseUrl}/api/workspaces/alpha/files`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        path: "../escape.md",
+        content: "nope",
+      }),
+    });
+    assert(
+      invalidWorkspaceFileResponse.status === 400,
+      "expected invalid workspace file path to return 400",
+    );
+
     const deniedToolTalkResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -596,6 +661,26 @@ const runSmoke = async () => {
     assert(
       workspaceDetailResult.stdout.includes("default skill: research"),
       "expected UI workspace detail default skill output",
+    );
+
+    const workspaceFilesResult = runUiCommand(baseUrl, "--workspace-files", "alpha");
+    assert(workspaceFilesResult.status === 0, "expected UI workspace files to return 0");
+    assert(
+      workspaceFilesResult.stdout.includes("notes/today.md"),
+      "expected UI workspace files output",
+    );
+
+    const workspaceFileResult = runUiCommand(
+      baseUrl,
+      "--workspace-file",
+      "alpha",
+      "--workspace-file-path",
+      "notes/today.md",
+    );
+    assert(workspaceFileResult.status === 0, "expected UI workspace file read to return 0");
+    assert(
+      workspaceFileResult.stdout.includes("workspace files"),
+      "expected UI workspace file content output",
     );
 
     const skillDetailResult = runUiCommand(baseUrl, "--skill-detail", "coding");
