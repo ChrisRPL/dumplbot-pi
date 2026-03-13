@@ -134,6 +134,29 @@ const runSmoke = async () => {
     assert(setupStatusPayload.secrets.openai_api_key_configured === true, "expected OpenAI key presence");
     assert(setupStatusPayload.secrets.anthropic_api_key_configured === false, "expected Anthropic key absence");
 
+    const setupSecretsUpdateResponse = await fetch(`${baseUrl}/api/setup/secrets`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        anthropic_api_key: "test-anthropic-key",
+      }),
+    });
+    assert(setupSecretsUpdateResponse.status === 200, "expected setup secret update to return 200");
+    const setupSecretsUpdatePayload = await setupSecretsUpdateResponse.json();
+    assert(setupSecretsUpdatePayload.secrets.openai_api_key_configured === true, "expected OpenAI key status to remain configured");
+    assert(setupSecretsUpdatePayload.secrets.anthropic_api_key_configured === true, "expected Anthropic key status to become configured");
+
+    const writtenSecrets = await readFile(secretsPath, "utf8");
+    assert(writtenSecrets.includes("OPENAI_API_KEY=test-openai-key"), "expected written OpenAI key");
+    assert(writtenSecrets.includes("ANTHROPIC_API_KEY=test-anthropic-key"), "expected written Anthropic key");
+
+    const invalidSecretsUpdateResponse = await fetch(`${baseUrl}/api/setup/secrets`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert(invalidSecretsUpdateResponse.status === 400, "expected empty setup secret update to return 400");
+
     const initialConfigResponse = await fetch(`${baseUrl}/api/config`);
     assert(initialConfigResponse.status === 200, "expected GET /api/config to return 200");
     const initialConfigPayload = await initialConfigResponse.json();
