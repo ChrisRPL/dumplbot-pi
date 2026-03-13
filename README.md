@@ -149,7 +149,7 @@ Status as of March 12, 2026:
 * `done` Whisper API STT integration.
 * `done` `bwrap` sandbox + policy gates. Linux/Pi runtime validation still pending.
 * `done` workspaces + repo attach. Workspace APIs/state, repo attach, workspace-local history, workspace-local project file storage, mock UI switching, and renderer workspace selector/detail/create/history/file flows landed.
-* `partial` skill packs + optional integrations. Skill schema/loading/policy landed, plus per-workspace defaults, focused job skill editing, and renderer skill selector/detail flows; richer integrations are still pending.
+* `partial` skill packs + optional integrations. Skill schema/loading/policy landed, plus per-workspace defaults, focused job skill editing, renderer skill selector/detail flows, and provider integration-readiness metadata from setup secrets; richer run-time integrations are still pending.
 * `partial` scheduler + job UI. File-backed jobs API, single-job detail/patch/history routes, schedule presets, natural-language phrases, capped run history, run diagnostics, failure counters, mock actions, paged history windows, and on-device summary/detail/history/action/edit flows landed; hardware button-driven scheduler navigation polish is still pending.
 * `done` local setup page (LAN only). Fresh installs now bind for same-Wi-Fi setup, the setup shell saves default workspace/default skill/safety plus provider keys, shows secret presence without exposing values, exports/imports `config.yaml`, surfaces live-vs-configured bind diagnostics plus daemon/scheduler/STT readiness, gives explicit next-step commands for old loopback-only installs, and limits setup routes to localhost/private-LAN clients.
 

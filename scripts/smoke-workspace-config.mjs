@@ -59,7 +59,7 @@ const waitForServerReady = (childProcess) =>
     });
   });
 
-const startHostServer = async (tmpRoot, workspaceRoot, configPath) => {
+const startHostServer = async (tmpRoot, workspaceRoot, configPath, secretsPath) => {
   const childProcess = spawn(
     process.execPath,
     ["dist/apps/host/src/main.js"],
@@ -72,6 +72,7 @@ const startHostServer = async (tmpRoot, workspaceRoot, configPath) => {
         DUMPLBOT_TMP_ROOT: tmpRoot,
         DUMPLBOT_WORKSPACES_ROOT: workspaceRoot,
         DUMPLBOT_CONFIG_PATH: configPath,
+        DUMPLBOT_SECRETS_PATH: secretsPath,
         DUMPLBOT_SANDBOX_ENABLED: "false",
       },
     },
@@ -121,6 +122,7 @@ const runSmoke = async () => {
   const alphaWorkspacePath = join(workspaceRoot, "alpha");
   const attachedReposRoot = join(tmpRoot, "attached-repos");
   const notesRepoPath = join(attachedReposRoot, "notes");
+  const secretsPath = join(tmpRoot, "secrets.env");
 
   await mkdir(defaultWorkspacePath, { recursive: true });
   await mkdir(alphaWorkspacePath, { recursive: true });
@@ -128,6 +130,7 @@ const runSmoke = async () => {
   await writeFile(join(defaultWorkspacePath, "CLAUDE.md"), "# default\n", "utf8");
   await writeFile(join(alphaWorkspacePath, "CLAUDE.md"), "# alpha\n", "utf8");
   await writeFile(join(notesRepoPath, "README.md"), "# notes\n", "utf8");
+  await writeFile(secretsPath, "OPENAI_API_KEY=test-openai\n", "utf8");
   const normalizedNotesRepoPath = await realpath(notesRepoPath);
   await writeFile(
     configPath,
@@ -135,7 +138,7 @@ const runSmoke = async () => {
     "utf8",
   );
 
-  const hostServer = await startHostServer(tmpRoot, workspaceRoot, configPath);
+  const hostServer = await startHostServer(tmpRoot, workspaceRoot, configPath, secretsPath);
   const baseUrl = `http://${HOST}:${HOST_PORT}`;
 
   try {
@@ -179,6 +182,14 @@ const runSmoke = async () => {
       codingSkill.model?.reasoning === "high",
       "expected coding skill model reasoning metadata",
     );
+    const codingOpenAiIntegration = codingSkill.integrations?.find(
+      (integration) => integration.provider === "openai",
+    );
+    const codingAnthropicIntegration = codingSkill.integrations?.find(
+      (integration) => integration.provider === "anthropic",
+    );
+    assert(codingOpenAiIntegration?.configured === true, "expected openai skill integration readiness");
+    assert(codingAnthropicIntegration?.configured === false, "expected anthropic skill integration readiness");
 
     const initialListResponse = await fetch(`${baseUrl}/api/workspaces`);
     assert(initialListResponse.status === 200, "expected GET /api/workspaces to return 200");
@@ -704,6 +715,10 @@ const runSmoke = async () => {
     assert(
       skillDetailResult.stdout.includes("prelude: You are in coding mode."),
       "expected UI skill detail prelude output",
+    );
+    assert(
+      skillDetailResult.stdout.includes("integrations: openai[ready], anthropic[missing]"),
+      "expected UI skill detail integration readiness output",
     );
     assert(
       skillDetailResult.stdout.includes("bash: git status"),
