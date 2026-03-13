@@ -82,6 +82,12 @@ export const renderSetupPage = (): string => `<!doctype html>
         background: white;
         resize: vertical;
       }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: "SFMono-Regular", "Menlo", monospace;
+      }
 
       button {
         background: var(--accent);
@@ -167,6 +173,13 @@ export const renderSetupPage = (): string => `<!doctype html>
           <p>Same-Wi-Fi setup: <span id="lan-setup-ready">-</span></p>
           <p>Restart required: <span id="restart-required">-</span></p>
           <p>System hint: <span id="system-status-message">-</span></p>
+          <p>Daemon health: <span id="daemon-health">-</span></p>
+          <p>Scheduler: <span id="scheduler-enabled">-</span></p>
+          <p>STT ready: <span id="stt-ready">-</span></p>
+          <p>STT model: <span id="stt-model">-</span></p>
+          <p>Setup health: <span id="setup-health-message">-</span></p>
+          <p>Next step: <span id="system-action-label">-</span></p>
+          <pre id="system-action-instructions">-</pre>
         </div>
 
         <form id="secrets-form">
@@ -228,6 +241,13 @@ export const renderSetupPage = (): string => `<!doctype html>
       const lanSetupReadyNode = document.querySelector("#lan-setup-ready");
       const restartRequiredNode = document.querySelector("#restart-required");
       const systemStatusMessageNode = document.querySelector("#system-status-message");
+      const daemonHealthNode = document.querySelector("#daemon-health");
+      const schedulerEnabledNode = document.querySelector("#scheduler-enabled");
+      const sttReadyNode = document.querySelector("#stt-ready");
+      const sttModelNode = document.querySelector("#stt-model");
+      const setupHealthMessageNode = document.querySelector("#setup-health-message");
+      const systemActionLabelNode = document.querySelector("#system-action-label");
+      const systemActionInstructionsNode = document.querySelector("#system-action-instructions");
       const formNode = document.querySelector("#setup-form");
       const secretsFormNode = document.querySelector("#secrets-form");
       const openAiApiKeyNode = document.querySelector("#openai-api-key");
@@ -262,6 +282,8 @@ export const renderSetupPage = (): string => `<!doctype html>
       const formatConfiguredStatus = (isConfigured) => isConfigured ? "configured" : "missing";
       const formatReadyStatus = (isReady) => isReady ? "ready" : "not ready";
       const formatRestartStatus = (restartRequired) => restartRequired ? "yes" : "no";
+      const formatEnabledStatus = (enabled) => enabled ? "enabled" : "disabled";
+      const formatHealthyStatus = (healthy) => healthy ? "healthy" : "unhealthy";
 
       const loadConfigExport = async () => {
         const configExportPayload = await fetchJson("/api/config/export");
@@ -288,6 +310,22 @@ export const renderSetupPage = (): string => `<!doctype html>
         lanSetupReadyNode.textContent = formatReadyStatus(setupSystemPayload.system.lan_setup_ready);
         restartRequiredNode.textContent = formatRestartStatus(setupSystemPayload.system.restart_required);
         systemStatusMessageNode.textContent = setupSystemPayload.system.status_message;
+        systemActionLabelNode.textContent = setupSystemPayload.system.action_label || "none";
+        systemActionInstructionsNode.textContent = setupSystemPayload.system.action_instructions.length > 0
+          ? setupSystemPayload.system.action_instructions.join("\n")
+          : "No action needed";
+      };
+
+      const loadSetupHealth = async () => {
+        const setupHealthPayload = await fetchJson("/api/setup/health");
+        daemonHealthNode.textContent = formatHealthyStatus(setupHealthPayload.health.daemon_healthy);
+        schedulerEnabledNode.textContent = formatEnabledStatus(setupHealthPayload.health.scheduler_enabled);
+        sttReadyNode.textContent = formatReadyStatus(setupHealthPayload.health.stt_ready);
+        sttModelNode.textContent = setupHealthPayload.health.stt_model
+          + " ("
+          + setupHealthPayload.health.stt_language
+          + ")";
+        setupHealthMessageNode.textContent = setupHealthPayload.health.status_message;
       };
 
       const loadSetup = async () => {
@@ -320,6 +358,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         activeWorkspaceNode.textContent = configPayload.runtime.active_workspace || "default fallback";
         activeSkillNode.textContent = configPayload.runtime.active_skill || "default fallback";
         await loadSetupStatus();
+        await loadSetupHealth();
         await loadSetupSystem();
         await loadConfigExport();
         statusNode.textContent = "Setup loaded";
