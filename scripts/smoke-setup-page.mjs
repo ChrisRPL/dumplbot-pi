@@ -128,10 +128,22 @@ const runSmoke = async () => {
     assert(setupPageHtml.includes("default-skill"), "expected setup skill field");
     assert(setupPageHtml.includes("safety-mode"), "expected setup safety field");
     assert(setupPageHtml.includes("/api/config"), "expected setup page to use config api");
+    assert(setupPageHtml.includes("/api/setup/health"), "expected setup page to use setup health api");
     assert(setupPageHtml.includes("/api/setup/status"), "expected setup page to use setup status api");
     assert(setupPageHtml.includes("/api/setup/system"), "expected setup page to use setup system api");
     assert(setupPageHtml.includes("OpenAI key"), "expected setup page to show OpenAI key status");
     assert(setupPageHtml.includes("Active bind"), "expected setup page to show setup system diagnostics");
+    assert(setupPageHtml.includes("Daemon health"), "expected setup page to show setup health diagnostics");
+    assert(setupPageHtml.includes("Next step"), "expected setup page to show next-step instructions");
+
+    const setupHealthResponse = await fetch(`${baseUrl}/api/setup/health`);
+    assert(setupHealthResponse.status === 200, "expected GET /api/setup/health to return 200");
+    const setupHealthPayload = await setupHealthResponse.json();
+    assert(setupHealthPayload.health.daemon_healthy === true, "expected daemon health to be true");
+    assert(setupHealthPayload.health.scheduler_enabled === false, "expected scheduler to default disabled");
+    assert(setupHealthPayload.health.stt_ready === true, "expected setup health STT readiness");
+    assert(setupHealthPayload.health.stt_model === "whisper-1", "expected setup health STT model");
+    assert(setupHealthPayload.health.stt_language === "auto", "expected setup health STT language");
 
     const setupSystemResponse = await fetch(`${baseUrl}/api/setup/system`);
     assert(setupSystemResponse.status === 200, "expected GET /api/setup/system to return 200");
@@ -140,6 +152,12 @@ const runSmoke = async () => {
     assert(setupSystemPayload.system.configured_server.bind === `${HOST}:${HOST_PORT}`, "expected configured server bind");
     assert(setupSystemPayload.system.lan_setup_ready === false, "expected initial LAN setup readiness to be false");
     assert(setupSystemPayload.system.restart_required === false, "expected initial restart_required to be false");
+    assert(setupSystemPayload.system.action_required === true, "expected initial setup action to be required");
+    assert(setupSystemPayload.system.action_label === "Enable same-Wi-Fi setup", "expected initial action label");
+    assert(
+      setupSystemPayload.system.action_instructions.includes("Edit /etc/dumplbot/config.yaml and set server.host to 0.0.0.0"),
+      "expected initial action instructions",
+    );
 
     const setupStatusResponse = await fetch(`${baseUrl}/api/setup/status`);
     assert(setupStatusResponse.status === 200, "expected GET /api/setup/status to return 200");
@@ -258,6 +276,12 @@ const runSmoke = async () => {
     assert(restartNeededSystemPayload.system.configured_server.bind === `0.0.0.0:${HOST_PORT}`, "expected configured bind to reflect imported host");
     assert(restartNeededSystemPayload.system.restart_required === true, "expected imported bind change to require restart");
     assert(restartNeededSystemPayload.system.lan_setup_ready === false, "expected lan_setup_ready to remain false before restart");
+    assert(restartNeededSystemPayload.system.action_required === true, "expected restart action to be required");
+    assert(restartNeededSystemPayload.system.action_label === "Restart dumplbotd", "expected restart action label");
+    assert(
+      restartNeededSystemPayload.system.action_instructions.includes("sudo systemctl restart dumplbotd.service"),
+      "expected restart action instructions",
+    );
 
     const invalidImportResponse = await fetch(`${baseUrl}/api/config/import`, {
       method: "POST",
