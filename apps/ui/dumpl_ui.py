@@ -1153,6 +1153,7 @@ def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
     tool_allowlist = skill.get("tool_allowlist")
     bash_prefix_allowlist = skill.get("bash_prefix_allowlist")
     prompt_prelude_summary = skill.get("prompt_prelude_summary")
+    integrations = skill.get("integrations")
     model = skill.get("model")
     is_active = skill.get("is_active")
 
@@ -1169,6 +1170,13 @@ def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
         for prefix in bash_prefix_allowlist
         if isinstance(prefix, str)
     ) if isinstance(bash_prefix_allowlist, list) else ""
+    integration_summary = ", ".join(
+        f"{provider}[{'ready' if configured else 'missing'}]"
+        for entry in integrations
+        if isinstance(entry, dict)
+        for provider, configured in [(entry.get("provider"), entry.get("configured"))]
+        if isinstance(provider, str) and isinstance(configured, bool)
+    ) if isinstance(integrations, list) else ""
     reasoning = model.get("reasoning") if isinstance(model, dict) else None
 
     return ScreenState(
@@ -1178,6 +1186,7 @@ def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
             f"permission: {permission_mode if isinstance(permission_mode, str) and permission_mode else '(none)'}",
             f"reasoning: {reasoning if isinstance(reasoning, str) and reasoning else '(none)'}",
             f"prelude: {prompt_prelude_summary if isinstance(prompt_prelude_summary, str) and prompt_prelude_summary else '(none)'}",
+            f"integrations: {integration_summary or '(none)'}",
             f"tools: {tool_summary or '(none)'}",
             f"bash: {bash_summary or '(none)'}",
         ]),
