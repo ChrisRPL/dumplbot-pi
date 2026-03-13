@@ -13,6 +13,7 @@ import textwrap
 import time
 from typing import Any, Iterator, Optional
 import urllib.error
+import urllib.parse
 import urllib.request
 
 SCREEN_WIDTH = 48
@@ -368,6 +369,35 @@ def get_workspace_history(
     return payload
 
 
+def list_workspace_files(
+    base_url: str,
+    workspace_id: str,
+) -> dict[str, Any]:
+    payload = request_json(base_url, f"/api/workspaces/{workspace_id.strip().lower()}/files")
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("workspace_id"), str):
+        raise RuntimeError("workspace files response is invalid")
+
+    return payload
+
+
+def get_workspace_file(
+    base_url: str,
+    workspace_id: str,
+    file_path: str,
+) -> dict[str, Any]:
+    encoded_path = urllib.parse.quote(file_path, safe="/._-")
+    payload = request_json(
+        base_url,
+        f"/api/workspaces/{workspace_id.strip().lower()}/files?path={encoded_path}",
+    )
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("workspace_id"), str):
+        raise RuntimeError("workspace file response is invalid")
+
+    return payload
+
+
 def create_workspace_entry(
     base_url: str,
     workspace_id: str,
@@ -506,6 +536,54 @@ def handle_workspace_command(
         renderer.render_notice(
             f"History: {workspace_id or tokens[1]} ({describe_history_window(total, returned, history_offset)})",
         )
+        return None
+
+    if tokens[0] == "files":
+        if len(tokens) != 2:
+            renderer.render_notice("Usage: :workspace files <id>")
+            return None
+
+        files_payload = list_workspace_files(base_url, tokens[1])
+        files = files_payload.get("files")
+        workspace_id = files_payload.get("workspace_id")
+
+        print(f"Workspace files: {workspace_id or tokens[1]}")
+
+        if not isinstance(files, list) or len(files) == 0:
+            print("- no files yet")
+            renderer.render_notice(f"Files: {workspace_id or tokens[1]} (0 files)")
+            return None
+
+        for entry in files:
+            if not isinstance(entry, dict):
+                continue
+
+            path = entry.get("path")
+            size = entry.get("size")
+
+            if not isinstance(path, str):
+                continue
+
+            suffix = f" ({size} B)" if isinstance(size, int) else ""
+            print(f"- {path}{suffix}")
+
+        renderer.render_notice(f"Files: {workspace_id or tokens[1]} ({len(files)} files)")
+        return None
+
+    if tokens[0] == "read":
+        if len(tokens) != 3:
+            renderer.render_notice("Usage: :workspace read <id> <path>")
+            return None
+
+        file_payload = get_workspace_file(base_url, tokens[1], tokens[2])
+        workspace_id = file_payload.get("workspace_id")
+        path = file_payload.get("path")
+        content = file_payload.get("content")
+
+        print(f"Workspace file: {workspace_id or tokens[1]}")
+        print(path if isinstance(path, str) else tokens[2])
+        print(content if isinstance(content, str) and content else "(empty file)")
+        renderer.render_notice(f"Read file: {path if isinstance(path, str) else tokens[2]}")
         return None
 
     selection = tokens[0]
@@ -667,6 +745,71 @@ def build_workspace_history_screen_state(
     )
 
 
+def build_workspace_files_screen_state(
+    files_payload: dict[str, Any],
+) -> ScreenState:
+    workspace_id = files_payload.get("workspace_id")
+    files = files_payload.get("files")
+
+    if not isinstance(workspace_id, str):
+        raise RuntimeError("workspace files response is invalid")
+
+    if not isinstance(files, list) or not files:
+        return ScreenState(
+            phase="Workspaces",
+            status=f"{workspace_id} has no files",
+            prompt=workspace_id,
+            answer="No workspace project files recorded.",
+        )
+
+    lines: list[str] = []
+
+    for entry in files[:5]:
+        if not isinstance(entry, dict):
+            continue
+
+        path = entry.get("path")
+        size = entry.get("size")
+
+        if not isinstance(path, str):
+            continue
+
+        summary = path
+
+        if isinstance(size, int):
+            summary = f"{summary}\n{size} B"
+
+        lines.append(summary)
+
+    if len(files) > 5:
+        lines.append(f"+{len(files) - 5} more")
+
+    return ScreenState(
+        phase="Workspaces",
+        status=f"{workspace_id} files ({len(files)})",
+        prompt=workspace_id,
+        answer="\n".join(lines) if lines else "No valid file entries.",
+    )
+
+
+def build_workspace_file_screen_state(
+    file_payload: dict[str, Any],
+) -> ScreenState:
+    workspace_id = file_payload.get("workspace_id")
+    path = file_payload.get("path")
+    content = file_payload.get("content")
+
+    if not isinstance(workspace_id, str) or not isinstance(path, str):
+        raise RuntimeError("workspace file response is invalid")
+
+    return ScreenState(
+        phase="Workspaces",
+        status=f"{workspace_id} file",
+        prompt=path,
+        answer=content if isinstance(content, str) and content else "(empty file)",
+    )
+
+
 def run_workspace_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -783,6 +926,47 @@ def run_workspace_history_screen(
             )
 
         time.sleep(refresh_seconds)
+
+
+def run_workspace_files(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    workspace_id: str,
+) -> int:
+    try:
+        renderer.render(build_workspace_files_screen_state(list_workspace_files(base_url, workspace_id)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Workspace files failed",
+                prompt=workspace_id,
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_workspace_file(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    workspace_id: str,
+    file_path: str,
+) -> int:
+    try:
+        renderer.render(build_workspace_file_screen_state(get_workspace_file(base_url, workspace_id, file_path)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Workspace file failed",
+                prompt=file_path,
+                error=str(error),
+            )
+        )
+        return 1
 
 
 def run_workspace_create(
@@ -2554,6 +2738,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--job-disable", help="Disable one scheduler job and exit")
     parser.add_argument("--job-delete", help="Delete one scheduler job and exit")
     parser.add_argument("--workspace-screen", action="store_true", help="Show the workspace selector screen")
+    parser.add_argument("--workspace-files", help="Show one workspace file list screen and exit")
+    parser.add_argument("--workspace-file", help="Show one workspace file on the renderer and exit")
+    parser.add_argument("--workspace-file-path", help="Workspace file path used by --workspace-file")
     parser.add_argument(
         "--workspace-history",
         help="Show one workspace history screen on the renderer and refresh continuously",
@@ -2636,6 +2823,14 @@ def main() -> int:
             renderer.render_notice("--workspace-history-offset requires --workspace-history")
             return 1
 
+        if args.workspace_file_path is not None and args.workspace_file is None:
+            renderer.render_notice("--workspace-file-path requires --workspace-file")
+            return 1
+
+        if args.workspace_file is not None and args.workspace_file_path is None:
+            renderer.render_notice("--workspace-file requires --workspace-file-path")
+            return 1
+
         if args.job_detail_history_offset and args.job_detail is None:
             renderer.render_notice("--job-detail-history-offset requires --job-detail")
             return 1
@@ -2697,6 +2892,8 @@ def main() -> int:
             1
             for value in (
                 args.workspace_screen,
+                args.workspace_files is not None,
+                args.workspace_file is not None,
                 args.workspace_history is not None,
                 args.workspace_detail is not None,
                 args.workspace_create is not None,
@@ -2797,6 +2994,21 @@ def main() -> int:
                 args.host_url,
                 renderer,
                 args.selection_refresh_seconds,
+            )
+
+        if args.workspace_files is not None:
+            return run_workspace_files(
+                args.host_url,
+                renderer,
+                args.workspace_files,
+            )
+
+        if args.workspace_file is not None:
+            return run_workspace_file(
+                args.host_url,
+                renderer,
+                args.workspace_file,
+                args.workspace_file_path,
             )
 
         if args.workspace_history is not None:
