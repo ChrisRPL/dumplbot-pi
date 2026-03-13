@@ -5,6 +5,7 @@ const SETUP_ONLY_PATHS = new Set<string>([
   "/api/config/import",
   "/api/setup/secrets",
   "/api/setup/status",
+  "/api/setup/system",
 ]);
 
 const parseIpv4Octets = (address: string): number[] | null => {

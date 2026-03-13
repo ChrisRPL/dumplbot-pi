@@ -21,6 +21,7 @@ import {
   loadHostServerConfig,
 } from "./runtime-config";
 import {
+  parseImportedHostConfig,
   parseImportedHostRuntimeConfig,
   readHostConfigText,
   writeHostRuntimeConfigUpdate,
@@ -36,6 +37,7 @@ import {
 } from "./scheduler-store";
 import { writeSetupSecretUpdate } from "./secret-store";
 import { loadSetupSecretStatus } from "./secret-status";
+import { buildSetupSystemStatus } from "./setup-system-status";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { renderSetupPage } from "./setup-page";
@@ -144,6 +146,7 @@ type JobActionRoute = JobRoute & {
 };
 
 const AUDIO_ACTIONS = new Set<AudioAction>(["talk", "transcribe"]);
+let activeServerConfig: Awaited<ReturnType<typeof loadHostServerConfig>> | null = null;
 
 const sendJson = (
   response: ServerResponse,
@@ -887,6 +890,14 @@ const handleSetupStatusGet = async (response: ServerResponse): Promise<void> => 
   });
 };
 
+const handleSetupSystemGet = async (response: ServerResponse): Promise<void> => {
+  const configuredServerConfig = await loadHostServerConfig(undefined, {
+    applyEnvOverrides: false,
+  });
+  const currentActiveServerConfig = activeServerConfig ?? configuredServerConfig;
+  sendJson(response, 200, buildSetupSystemStatus(currentActiveServerConfig, configuredServerConfig));
+};
+
 const handleSetupSecretsUpdate = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -933,10 +944,10 @@ const handleConfigImport = async (
     return;
   }
 
-  let importedRuntimeConfig;
+  let importedConfig;
 
   try {
-    importedRuntimeConfig = parseImportedHostRuntimeConfig(body.config);
+    importedConfig = parseImportedHostConfig(body.config);
   } catch (error) {
     const message = error instanceof Error ? error.message : "config import validation failed";
     sendJson(response, 400, { error: message });
@@ -944,9 +955,9 @@ const handleConfigImport = async (
   }
 
   try {
-    const workspaceId = normalizeWorkspaceId(importedRuntimeConfig.defaultWorkspace);
+    const workspaceId = normalizeWorkspaceId(importedConfig.runtime.defaultWorkspace);
     await getExistingWorkspacePath(workspaceId);
-    importedRuntimeConfig.defaultWorkspace = workspaceId;
+    importedConfig.runtime.defaultWorkspace = workspaceId;
   } catch (error) {
     const message = error instanceof Error ? error.message : "config import workspace validation failed";
     sendJson(response, getWorkspaceErrorStatus(message), { error: message });
@@ -954,9 +965,9 @@ const handleConfigImport = async (
   }
 
   try {
-    const skillId = normalizeSkillId(importedRuntimeConfig.defaultSkill);
+    const skillId = normalizeSkillId(importedConfig.runtime.defaultSkill);
     await loadSkill(skillId);
-    importedRuntimeConfig.defaultSkill = skillId;
+    importedConfig.runtime.defaultSkill = skillId;
   } catch (error) {
     const message = error instanceof Error ? error.message : "config import skill validation failed";
     sendJson(response, getSkillErrorStatus(message), { error: message });
@@ -1881,6 +1892,11 @@ export const createHostServer = (): Server =>
         return;
       }
 
+      if (request.method === "GET" && pathname === "/api/setup/system") {
+        await handleSetupSystemGet(response);
+        return;
+      }
+
       if (request.method === "POST" && pathname === "/api/setup/secrets") {
         await handleSetupSecretsUpdate(request, response);
         return;
@@ -1921,6 +1937,7 @@ const formatServerBindHost = (host: string): string => (
 
 export const startHostServer = async (): Promise<Server> => {
   const serverConfig = await loadHostServerConfig();
+  activeServerConfig = serverConfig;
   const server = createHostServer();
 
   server.listen(serverConfig.port, serverConfig.host, () => {
