@@ -369,7 +369,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `GET /setup`
 
 - Return the LAN-only setup shell for phone/browser appliance setup.
-- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, `/api/setup/system`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config`, setup keys through `POST /api/setup/secrets`, and raw config imports through `POST /api/config/import`.
+- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, `/api/setup/health`, `/api/setup/system`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config`, setup keys through `POST /api/setup/secrets`, and raw config imports through `POST /api/config/import`.
 - Status codes:
   - `200` with `text/html`.
   - `403` when the client is outside localhost or a private LAN range.
@@ -443,6 +443,31 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `active_server` reflects the current daemon listener.
 - `configured_server` reflects the current `config.yaml` server section.
 - `restart_required` is true when the live listener and config file differ.
+- `action_instructions` give safe next steps for old loopback-only installs or pending bind restarts.
+- Status codes:
+  - `200` when requested from localhost or a private LAN range.
+  - `403` otherwise.
+
+### `GET /api/setup/health`
+
+- Return setup-focused readiness summary for the current daemon.
+- Current response shape:
+
+```json
+{
+  "health": {
+    "daemon_healthy": true,
+    "scheduler_enabled": false,
+    "scheduler_poll_interval_seconds": 15,
+    "stt_ready": true,
+    "stt_model": "whisper-1",
+    "stt_language": "auto",
+    "status_message": "Daemon is healthy. Scheduler is disabled in config."
+  }
+}
+```
+
+- `stt_ready` reflects whether the current secrets/config allow transcription calls.
 - Status codes:
   - `200` when requested from localhost or a private LAN range.
   - `403` otherwise.
