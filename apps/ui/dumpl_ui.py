@@ -1116,10 +1116,12 @@ def build_skill_screen_state(skills: list[dict[str, Any]]) -> ScreenState:
 
     lines: list[str] = []
 
-    for skill in skills[:5]:
+    for skill in skills[:4]:
         skill_id = skill.get("id")
         permission_mode = skill.get("permission_mode")
         tool_allowlist = skill.get("tool_allowlist")
+        integrations = skill.get("integrations")
+        model = skill.get("model")
 
         if not isinstance(skill_id, str):
             continue
@@ -1130,15 +1132,42 @@ def build_skill_screen_state(skills: list[dict[str, Any]]) -> ScreenState:
         if isinstance(permission_mode, str) and permission_mode:
             summary = f"{summary} [{permission_mode}]"
 
+        reasoning = model.get("reasoning") if isinstance(model, dict) else None
         tool_count = len(tool_allowlist) if isinstance(tool_allowlist, list) else 0
+        integration_total = 0
+        integration_ready = 0
+
+        if isinstance(integrations, list):
+            for integration in integrations:
+                if not isinstance(integration, dict):
+                    continue
+
+                if not isinstance(integration.get("provider"), str):
+                    continue
+
+                integration_total += 1
+
+                if integration.get("configured") is True:
+                    integration_ready += 1
+
+        detail = []
+
+        if isinstance(reasoning, str) and reasoning:
+            detail.append(reasoning)
 
         if tool_count > 0:
-            summary = f"{summary} tools:{tool_count}"
+            detail.append(f"tools:{tool_count}")
+
+        if integration_total > 0:
+            detail.append(f"ready:{integration_ready}/{integration_total}")
+
+        if detail:
+            summary = f"{summary}\n{' | '.join(detail)}"
 
         lines.append(summary)
 
-    if len(skills) > 5:
-        lines.append(f"+{len(skills) - 5} more")
+    if len(skills) > 4:
+        lines.append(f"+{len(skills) - 4} more")
 
     return ScreenState(
         phase="Skills",
@@ -1215,6 +1244,24 @@ def run_skill_screen(
             )
 
         time.sleep(refresh_seconds)
+
+
+def run_skill_summary(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    try:
+        renderer.render(build_skill_screen_state(list_skill_entries(base_url)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Skill summary failed",
+                error=str(error),
+            )
+        )
+        return 1
 
 
 def run_skill_detail(
@@ -2772,6 +2819,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace-cycle", action="store_true", help="Cycle to the next workspace and exit")
     parser.add_argument("--workspace-clear", action="store_true", help="Clear the active workspace and exit")
     parser.add_argument("--skill-screen", action="store_true", help="Show the skill selector screen")
+    parser.add_argument("--skill-summary", action="store_true", help="Show one skill summary screen and exit")
     parser.add_argument("--skill-detail", help="Show one skill detail screen and exit")
     parser.add_argument("--skill-select", help="Select one active skill and exit")
     parser.add_argument("--skill-cycle", action="store_true", help="Cycle to the next skill and exit")
@@ -2930,6 +2978,7 @@ def main() -> int:
             1
             for value in (
                 args.skill_screen,
+                args.skill_summary,
                 args.skill_detail is not None,
                 args.skill_cycle,
                 args.skill_clear,
@@ -3076,6 +3125,12 @@ def main() -> int:
                 args.host_url,
                 renderer,
                 args.selection_refresh_seconds,
+            )
+
+        if args.skill_summary:
+            return run_skill_summary(
+                args.host_url,
+                renderer,
             )
 
         if args.skill_detail is not None:
