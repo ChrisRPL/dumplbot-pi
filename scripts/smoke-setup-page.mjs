@@ -87,6 +87,10 @@ const runSmoke = async () => {
   await writeFile(
     configPath,
     [
+      "server:",
+      `  host: ${HOST}`,
+      `  port: ${HOST_PORT}`,
+      "",
       "runtime:",
       "  default_workspace: default",
       "  default_skill: coding",
@@ -125,7 +129,17 @@ const runSmoke = async () => {
     assert(setupPageHtml.includes("safety-mode"), "expected setup safety field");
     assert(setupPageHtml.includes("/api/config"), "expected setup page to use config api");
     assert(setupPageHtml.includes("/api/setup/status"), "expected setup page to use setup status api");
+    assert(setupPageHtml.includes("/api/setup/system"), "expected setup page to use setup system api");
     assert(setupPageHtml.includes("OpenAI key"), "expected setup page to show OpenAI key status");
+    assert(setupPageHtml.includes("Active bind"), "expected setup page to show setup system diagnostics");
+
+    const setupSystemResponse = await fetch(`${baseUrl}/api/setup/system`);
+    assert(setupSystemResponse.status === 200, "expected GET /api/setup/system to return 200");
+    const setupSystemPayload = await setupSystemResponse.json();
+    assert(setupSystemPayload.system.active_server.bind === `${HOST}:${HOST_PORT}`, "expected active server bind");
+    assert(setupSystemPayload.system.configured_server.bind === `${HOST}:${HOST_PORT}`, "expected configured server bind");
+    assert(setupSystemPayload.system.lan_setup_ready === false, "expected initial LAN setup readiness to be false");
+    assert(setupSystemPayload.system.restart_required === false, "expected initial restart_required to be false");
 
     const setupStatusResponse = await fetch(`${baseUrl}/api/setup/status`);
     assert(setupStatusResponse.status === 200, "expected GET /api/setup/status to return 200");
@@ -208,6 +222,10 @@ const runSmoke = async () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         config: [
+          "server:",
+          "  host: 0.0.0.0",
+          `  port: ${HOST_PORT}`,
+          "",
           "runtime:",
           "  default_workspace: default",
           "  default_skill: research",
@@ -231,6 +249,15 @@ const runSmoke = async () => {
     assert(importedConfig.includes("default_skill: research"), "expected imported config default skill");
     assert(importedConfig.includes("permission_mode: permissive"), "expected imported config safety mode");
     assert(importedConfig.includes("max_run_seconds: 240"), "expected imported config max run seconds");
+    assert(importedConfig.includes("host: 0.0.0.0"), "expected imported config server host");
+
+    const restartNeededSystemResponse = await fetch(`${baseUrl}/api/setup/system`);
+    assert(restartNeededSystemResponse.status === 200, "expected setup system reload to return 200");
+    const restartNeededSystemPayload = await restartNeededSystemResponse.json();
+    assert(restartNeededSystemPayload.system.active_server.bind === `${HOST}:${HOST_PORT}`, "expected active bind to stay unchanged before restart");
+    assert(restartNeededSystemPayload.system.configured_server.bind === `0.0.0.0:${HOST_PORT}`, "expected configured bind to reflect imported host");
+    assert(restartNeededSystemPayload.system.restart_required === true, "expected imported bind change to require restart");
+    assert(restartNeededSystemPayload.system.lan_setup_ready === false, "expected lan_setup_ready to remain false before restart");
 
     const invalidImportResponse = await fetch(`${baseUrl}/api/config/import`, {
       method: "POST",
@@ -246,6 +273,25 @@ const runSmoke = async () => {
       }),
     });
     assert(invalidImportResponse.status === 400, "expected invalid config import to return 400");
+
+    const invalidServerImportResponse = await fetch(`${baseUrl}/api/config/import`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        config: [
+          "server:",
+          "  host: example.com",
+          `  port: ${HOST_PORT}`,
+          "",
+          "runtime:",
+          "  default_workspace: default",
+          "  default_skill: research",
+          "  permission_mode: balanced",
+          "",
+        ].join("\n"),
+      }),
+    });
+    assert(invalidServerImportResponse.status === 400, "expected invalid server bind import to return 400");
 
     console.log("setup page smoke ok");
   } finally {
