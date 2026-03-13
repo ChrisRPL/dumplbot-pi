@@ -48,6 +48,7 @@ assert(isLanOnlySetupPath("/setup") === true, "expected /setup to be LAN-only");
 assert(isLanOnlySetupPath("/api/config") === true, "expected /api/config to be LAN-only");
 assert(isLanOnlySetupPath("/api/config/export") === true, "expected /api/config/export to be LAN-only");
 assert(isLanOnlySetupPath("/api/config/import") === true, "expected /api/config/import to be LAN-only");
+assert(isLanOnlySetupPath("/api/setup/health") === true, "expected /api/setup/health to be LAN-only");
 assert(isLanOnlySetupPath("/api/setup/status") === true, "expected /api/setup/status to be LAN-only");
 assert(isLanOnlySetupPath("/api/workspaces") === false, "expected /api/workspaces to remain outside setup-only guard");
 
