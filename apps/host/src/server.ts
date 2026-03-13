@@ -1013,8 +1013,26 @@ const handleWorkspaceFileWrite = async (
   }
 };
 
+const isSkillIntegrationConfigured = (
+  provider: string,
+  secretStatus: Awaited<ReturnType<typeof loadSetupSecretStatus>>,
+): boolean => {
+  if (provider === "openai") {
+    return secretStatus.openaiApiKeyConfigured;
+  }
+
+  if (provider === "anthropic") {
+    return secretStatus.anthropicApiKeyConfigured;
+  }
+
+  return false;
+};
+
 const handleSkillList = async (response: ServerResponse): Promise<void> => {
-  const skills = await listSkills();
+  const [skills, secretStatus] = await Promise.all([
+    listSkills(),
+    loadSetupSecretStatus(),
+  ]);
   const selection = await loadSkillSelection();
   let activeSkillId: string | null = null;
 
@@ -1035,6 +1053,11 @@ const handleSkillList = async (response: ServerResponse): Promise<void> => {
       model: {
         reasoning: skill.modelReasoning,
       },
+      integrations: skill.integrations.map((integration) => ({
+        provider: integration.provider,
+        purpose: integration.purpose,
+        configured: isSkillIntegrationConfigured(integration.provider, secretStatus),
+      })),
       is_active: skill.id === activeSkillId,
     })),
   });
