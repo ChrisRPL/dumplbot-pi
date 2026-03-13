@@ -369,7 +369,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 ### `GET /setup`
 
 - Return the LAN-only setup shell for phone/browser appliance setup.
-- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config` and raw config imports through `POST /api/config/import`.
+- The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config`, setup keys through `POST /api/setup/secrets`, and raw config imports through `POST /api/config/import`.
 - Status codes:
   - `200` with `text/html`.
   - `403` when the client is outside localhost or a private LAN range.
@@ -394,6 +394,26 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Status codes:
   - `200` when requested from localhost or a private LAN range.
   - `403` otherwise.
+
+### `POST /api/setup/secrets`
+
+- Update one or more setup-managed provider keys without returning the secret values.
+- Current request shape:
+
+```json
+{
+  "openai_api_key": "sk-...",
+  "anthropic_api_key": "sk-ant-..."
+}
+```
+
+- Omit a field to leave the current value unchanged.
+- Empty or blank-only payloads are rejected.
+- Success response reuses the `GET /api/setup/status` shape.
+- Status codes:
+  - `200` update applied.
+  - `400` invalid JSON or missing non-empty secret fields.
+  - `403` when the client is outside localhost or a private LAN range.
 
 ### `GET /api/config/export`
 
