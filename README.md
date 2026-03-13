@@ -12,7 +12,7 @@ Push-to-talk → transcribe → agent uses real tools (files/shell/web) → resp
 
 A **portable, always-with-you agent** that can **talk, code, run tools, and schedule jobs**—without needing a desktop “agent box”.
 
-Current repo status: text + voice flow, sandbox/policy baseline, and workspace/skill foundations are committed; scheduler, repo attach, and setup UX are still in progress.
+Current repo status: text + voice flow, sandbox/policy baseline, workspace/skill foundations, and LAN setup UX are committed; scheduler polish and broader repo-attach follow-on work remain.
 
 ---
 
@@ -151,7 +151,7 @@ Status as of March 12, 2026:
 * `partial` workspaces + repo attach. Workspace APIs/state, repo attach, mock UI switching, and renderer workspace selector/detail/create flows landed; broader workspace-local history/project storage polish is still pending.
 * `partial` skill packs + optional integrations. Skill schema/loading/policy landed, plus per-workspace defaults, focused job skill editing, and renderer skill selector/detail flows; richer integrations are still pending.
 * `partial` scheduler + job UI. File-backed jobs API, single-job detail/patch/history routes, schedule presets, natural-language phrases, capped run history, run diagnostics, failure counters, mock actions, paged history windows, and on-device summary/detail/history/action/edit flows landed; hardware button-driven scheduler navigation polish is still pending.
-* `partial` local setup page (LAN only). Host-served setup shell can now save default workspace/default skill/safety plus provider keys, shows whether the local secrets file and provider keys are configured without exposing values, exports/imports `config.yaml`, and limits setup routes to localhost/private-LAN clients; broader phone-first polish is still pending.
+* `done` local setup page (LAN only). Fresh installs now bind for same-Wi-Fi setup, the setup shell saves default workspace/default skill/safety plus provider keys, shows secret presence without exposing values, exports/imports `config.yaml`, and limits setup routes to localhost/private-LAN clients. Existing loopback-only installs need one host-config update plus restart to gain the same reachability.
 
 ---
 
