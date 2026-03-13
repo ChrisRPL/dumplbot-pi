@@ -25,6 +25,7 @@ WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
 BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
+SCHEDULER_SCREEN_SEQUENCE = ("summary", "detail", "history")
 WORKSPACE_HISTORY_COMMAND_LIMIT = 8
 WORKSPACE_HISTORY_SCREEN_LIMIT = 4
 JOB_HISTORY_COMMAND_LIMIT = 8
@@ -61,6 +62,13 @@ class UiRuntimeConfig:
     audio_capture_cmd: str = "arecord"
     ptt_wav_path: str = "/tmp/dumplbot/ptt.wav"
     button_debug: bool = False
+
+
+@dataclass(frozen=True)
+class SchedulerNavigationState:
+    screen_mode: str = "summary"
+    job_id: Optional[str] = None
+    history_offset: int = 0
 
 
 def parse_bool(value: str) -> bool:
@@ -1928,6 +1936,183 @@ def run_scheduler_screen(
     )
 
 
+def list_scheduler_job_ids(jobs: list[dict[str, Any]]) -> list[str]:
+    job_ids: list[str] = []
+
+    for job in jobs:
+        job_id = job.get("id")
+
+        if isinstance(job_id, str) and job_id:
+            job_ids.append(job_id)
+
+    return job_ids
+
+
+def cycle_scheduler_navigation_state(
+    jobs: list[dict[str, Any]],
+    state: SchedulerNavigationState,
+    action: str,
+) -> SchedulerNavigationState:
+    job_ids = list_scheduler_job_ids(jobs)
+
+    if action == "next-screen":
+        current_index = SCHEDULER_SCREEN_SEQUENCE.index(state.screen_mode)
+        next_mode = SCHEDULER_SCREEN_SEQUENCE[(current_index + 1) % len(SCHEDULER_SCREEN_SEQUENCE)]
+
+        if next_mode == "summary" or not job_ids:
+            return SchedulerNavigationState(screen_mode="summary")
+
+        next_job_id = state.job_id if state.job_id in job_ids else job_ids[0]
+        return SchedulerNavigationState(screen_mode=next_mode, job_id=next_job_id)
+
+    if action == "next-job":
+        if not job_ids:
+            return SchedulerNavigationState(screen_mode="summary")
+
+        if state.job_id in job_ids:
+            current_job_index = job_ids.index(state.job_id)
+            next_job_id = job_ids[(current_job_index + 1) % len(job_ids)]
+        else:
+            next_job_id = job_ids[0]
+
+        next_mode = state.screen_mode if state.screen_mode != "summary" else "detail"
+        return SchedulerNavigationState(screen_mode=next_mode, job_id=next_job_id)
+
+    raise RuntimeError("scheduler navigation action is invalid")
+
+
+def render_scheduler_navigation_state(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    state: SchedulerNavigationState,
+) -> None:
+    if state.screen_mode == "summary":
+        renderer.render(build_jobs_screen_state(list_job_entries(base_url)))
+        return
+
+    if not state.job_id:
+        raise RuntimeError("scheduler navigation requires job id")
+
+    if state.screen_mode == "history":
+        history_payload = get_job_history(
+            base_url,
+            state.job_id,
+            limit=JOB_HISTORY_SCREEN_LIMIT,
+            offset=state.history_offset,
+        )
+        renderer.render(build_job_history_screen_state(history_payload, state.history_offset))
+        return
+
+    job = get_job_entry(base_url, state.job_id)
+    history_payload = get_job_history(
+        base_url,
+        state.job_id,
+        limit=JOB_DETAIL_HISTORY_LIMIT,
+        offset=state.history_offset,
+    )
+    renderer.render(build_job_detail_screen_state(job, history_payload, state.history_offset))
+
+
+def run_scheduler_navigation_preview(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    state: SchedulerNavigationState,
+    action: str,
+) -> int:
+    try:
+        next_state = cycle_scheduler_navigation_state(list_job_entries(base_url), state, action)
+        render_scheduler_navigation_state(base_url, renderer, next_state)
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Scheduler navigation failed",
+                prompt=action,
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_scheduler_button_loop(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    state = SchedulerNavigationState()
+    was_pressed = False
+    long_press_sent = False
+    pressed_started_at: Optional[float] = None
+
+    try:
+        render_scheduler_navigation_state(base_url, renderer, state)
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Scheduler navigation failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+    while True:
+        is_pressed = renderer.poll_button_pressed()
+
+        if is_pressed is None:
+            renderer.render_notice("Button polling unavailable")
+            return 1
+
+        now = time.monotonic()
+
+        if is_pressed and not was_pressed:
+            pressed_started_at = now
+            long_press_sent = False
+        elif (
+            is_pressed
+            and was_pressed
+            and not long_press_sent
+            and pressed_started_at is not None
+            and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
+        ):
+            try:
+                state = cycle_scheduler_navigation_state(list_job_entries(base_url), state, "next-job")
+                render_scheduler_navigation_state(base_url, renderer, state)
+            except (RuntimeError, urllib.error.URLError) as error:
+                renderer.render(
+                    ScreenState(
+                        phase="Error",
+                        status="Scheduler navigation failed",
+                        prompt="next-job",
+                        error=str(error),
+                    )
+                )
+                return 1
+
+            long_press_sent = True
+        elif not is_pressed and was_pressed:
+            if not long_press_sent:
+                try:
+                    state = cycle_scheduler_navigation_state(list_job_entries(base_url), state, "next-screen")
+                    render_scheduler_navigation_state(base_url, renderer, state)
+                except (RuntimeError, urllib.error.URLError) as error:
+                    renderer.render(
+                        ScreenState(
+                            phase="Error",
+                            status="Scheduler navigation failed",
+                            prompt="next-screen",
+                            error=str(error),
+                        )
+                    )
+                    return 1
+
+            pressed_started_at = None
+            long_press_sent = False
+
+        was_pressed = is_pressed
+        time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
+
+
 def stream_audio_talk(
     base_url: str,
     audio_id: str,
@@ -2735,6 +2920,25 @@ def parse_args() -> argparse.Namespace:
         help="Show the scheduler summary/detail/history renderer screen",
     )
     parser.add_argument(
+        "--scheduler-button-mode",
+        action="store_true",
+        help="Run button-driven scheduler navigation on the renderer",
+    )
+    parser.add_argument(
+        "--scheduler-nav-mode",
+        choices=["summary", "detail", "history"],
+        help="Current scheduler screen used by --scheduler-nav-action",
+    )
+    parser.add_argument(
+        "--scheduler-nav-job",
+        help="Current scheduler job id used by --scheduler-nav-action",
+    )
+    parser.add_argument(
+        "--scheduler-nav-action",
+        choices=["next-screen", "next-job"],
+        help="Apply one scheduler navigation step and exit",
+    )
+    parser.add_argument(
         "--scheduler-job",
         help="Job id used by --scheduler-screen detail/history",
     )
@@ -2915,15 +3119,47 @@ def main() -> int:
             renderer.render_notice("Use detail action or detail edit fields, not both")
             return 1
 
-        if args.scheduler_screen is not None and (args.jobs_screen or args.job_history is not None or args.job_detail is not None):
-            renderer.render_notice("Use --scheduler-screen or legacy scheduler screen flags, not both")
+        if args.scheduler_screen is not None and (
+            args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+        ):
+            renderer.render_notice("Use one scheduler screen/navigation mode at a time")
             return 1
 
-        if args.scheduler_screen is not None and (has_job_upsert_arg or selected_job_actions):
+        if args.scheduler_button_mode and (
+            args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or args.scheduler_nav_action is not None
+        ):
+            renderer.render_notice("Use --scheduler-button-mode separately from other scheduler views")
+            return 1
+
+        if args.scheduler_nav_action is not None and (
+            args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or args.scheduler_button_mode
+        ):
+            renderer.render_notice("Use --scheduler-nav-action separately from other scheduler views")
+            return 1
+
+        if (
+            args.scheduler_screen is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+        ) and (has_job_upsert_arg or selected_job_actions):
             renderer.render_notice("Use scheduler view flags or direct scheduler mutation flags, not both")
             return 1
 
-        if args.scheduler_screen is not None and (
+        if (
+            args.scheduler_screen is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+        ) and (
             args.job_detail_action is not None
             or has_job_detail_patch_arg
         ):
@@ -2948,6 +3184,14 @@ def main() -> int:
 
         if args.scheduler_screen in {"detail", "history"} and args.scheduler_job is None:
             renderer.render_notice("--scheduler-screen detail/history requires --scheduler-job")
+            return 1
+
+        if args.scheduler_nav_action is not None and args.scheduler_nav_mode is None:
+            renderer.render_notice("--scheduler-nav-action requires --scheduler-nav-mode")
+            return 1
+
+        if args.scheduler_nav_action is None and (args.scheduler_nav_mode is not None or args.scheduler_nav_job is not None):
+            renderer.render_notice("--scheduler-nav-mode/--scheduler-nav-job require --scheduler-nav-action")
             return 1
 
         workspace_selector_count = sum(
@@ -3040,6 +3284,23 @@ def main() -> int:
                 action,
                 job_id,
                 renderer,
+            )
+
+        if args.scheduler_button_mode:
+            return run_scheduler_button_loop(
+                args.host_url,
+                renderer,
+            )
+
+        if args.scheduler_nav_action is not None:
+            return run_scheduler_navigation_preview(
+                args.host_url,
+                renderer,
+                SchedulerNavigationState(
+                    screen_mode=args.scheduler_nav_mode,
+                    job_id=args.scheduler_nav_job,
+                ),
+                args.scheduler_nav_action,
             )
 
         if args.scheduler_screen is not None:
