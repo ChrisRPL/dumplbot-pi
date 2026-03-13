@@ -51,7 +51,7 @@ import {
   listWorkspaces,
   normalizeWorkspaceId,
 } from "./workspace-store";
-import { loadWorkspaceHistory } from "./workspace-history-store";
+import { loadWorkspaceHistory, recordWorkspaceRun } from "./workspace-history-store";
 import {
   ensureWorkspaceRepoAttachment,
   loadWorkspaceConfig,
@@ -646,6 +646,20 @@ const buildSkillPreludeEvents = (skill: SkillPreludeInput): DumplEvent[] => {
   };
 
   return [statusEvent, toolEvent];
+};
+
+type StreamTalkOutcome = {
+  completedAt: string;
+  status: "success" | "error";
+  summary: string;
+};
+
+const logWorkspaceHistoryWriteFailure = (
+  workspaceId: string,
+  error: unknown,
+): void => {
+  const message = error instanceof Error ? error.message : "unknown workspace history write failure";
+  process.stderr.write(`workspace history write failed for ${workspaceId}: ${message}\n`);
 };
 
 const streamPolicyDeniedResponse = (
@@ -1548,7 +1562,7 @@ const streamTalkResponse = async (
   maxRunSeconds: number,
   preludeEvents: DumplEvent[] = [],
   assumeHeadersSent = false,
-): Promise<void> => {
+): Promise<StreamTalkOutcome> => {
   if (!assumeHeadersSent) {
     sendSseHeaders(response);
   }
@@ -1558,10 +1572,25 @@ const streamTalkResponse = async (
   }
 
   let sawTerminalEvent = false;
+  let outcome: StreamTalkOutcome | null = null;
 
   for await (const event of streamRunnerEvents(input, launchOptions, maxRunSeconds)) {
-    if (event.type === "done" || event.type === "error") {
+    if (event.type === "done") {
       sawTerminalEvent = true;
+      outcome = {
+        completedAt: new Date().toISOString(),
+        status: "success",
+        summary: event.summary?.trim() || "Run finished",
+      };
+    }
+
+    if (event.type === "error") {
+      sawTerminalEvent = true;
+      outcome = {
+        completedAt: new Date().toISOString(),
+        status: "error",
+        summary: event.message,
+      };
     }
 
     writeSseEvent(response, event);
@@ -1572,10 +1601,21 @@ const streamTalkResponse = async (
       type: "done",
       summary: "Run finished",
     };
+    const doneSummary = doneEvent.summary ?? "Run finished";
+    outcome = {
+      completedAt: new Date().toISOString(),
+      status: "success",
+      summary: doneSummary,
+    };
     writeSseEvent(response, doneEvent);
   }
 
   response.end();
+  return outcome ?? {
+    completedAt: new Date().toISOString(),
+    status: "success",
+    summary: "Run finished",
+  };
 };
 
 const handleTalk = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -1634,7 +1674,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     loadHostSandboxConfig(),
   ]);
 
-  await streamTalkResponse(response, {
+  const runOutcome = await streamTalkResponse(response, {
     prompt,
     workspace: resolvedWorkspace.id,
     skill: resolvedSkill.id,
@@ -1654,6 +1694,20 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     id: resolvedSkill.id,
     toolAllowlist,
   }));
+
+  try {
+    await recordWorkspaceRun(resolvedWorkspace.path, {
+      completedAt: runOutcome.completedAt,
+      prompt,
+      transcript: null,
+      skill: resolvedSkill.id,
+      source: "text",
+      status: runOutcome.status,
+      summary: runOutcome.summary,
+    });
+  } catch (error) {
+    logWorkspaceHistoryWriteFailure(resolvedWorkspace.id, error);
+  }
 };
 
 const handleAudio = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -1781,7 +1835,7 @@ const handleAudioTalk = async (
   };
   writeSseEvent(response, sttEvent);
 
-  await streamTalkResponse(
+  const runOutcome = await streamTalkResponse(
     response,
     {
       prompt,
@@ -1808,6 +1862,20 @@ const handleAudioTalk = async (
     }),
     true,
   );
+
+  try {
+    await recordWorkspaceRun(resolvedWorkspace.path, {
+      completedAt: runOutcome.completedAt,
+      prompt,
+      transcript: prompt,
+      skill: resolvedSkill.id,
+      source: "audio",
+      status: runOutcome.status,
+      summary: runOutcome.summary,
+    });
+  } catch (error) {
+    logWorkspaceHistoryWriteFailure(resolvedWorkspace.id, error);
+  }
 };
 
 const handleNotFound = (_request: IncomingMessage, response: ServerResponse): void => {
