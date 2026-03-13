@@ -110,10 +110,21 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```json
 {
   "skills": [
-    {"id":"coding","permission_mode":"balanced","tool_allowlist":["read_file","edit_file","bash","web_search"],"bash_prefix_allowlist":["git status","git diff","npm test","npm run","ls","cat"],"is_active":true}
+    {
+      "id":"coding",
+      "permission_mode":"balanced",
+      "tool_allowlist":["read_file","edit_file","bash","web_search"],
+      "bash_prefix_allowlist":["git status","git diff","npm test","npm run","ls","cat"],
+      "prompt_prelude_summary":"You are in coding mode. Prefer file edits, tests, and concise execution updates.",
+      "model":{"reasoning":"high"},
+      "is_active":true
+    }
   ]
 }
 ```
+
+- `prompt_prelude_summary` is the first non-empty line from the skill prelude.
+- `model` currently exposes `reasoning`.
 
 ### `GET /api/workspaces`
 
