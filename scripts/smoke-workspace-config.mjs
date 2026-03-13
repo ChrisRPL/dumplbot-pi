@@ -303,6 +303,28 @@ const runSmoke = async () => {
       "talk did not use workspace default skill",
     );
 
+    const alphaHistoryAfterFirstTalkResponse = await fetch(`${baseUrl}/api/workspaces/alpha/history`);
+    assert(
+      alphaHistoryAfterFirstTalkResponse.status === 200,
+      "expected workspace history route to return 200",
+    );
+    const alphaHistoryAfterFirstTalkPayload = await alphaHistoryAfterFirstTalkResponse.json();
+    assert(alphaHistoryAfterFirstTalkPayload.workspace_id === "alpha", "unexpected workspace history id");
+    assert(alphaHistoryAfterFirstTalkPayload.total === 1, "expected one alpha history entry after first talk");
+    assert(alphaHistoryAfterFirstTalkPayload.returned === 1, "expected one returned alpha history entry");
+    assert(Array.isArray(alphaHistoryAfterFirstTalkPayload.history), "workspace history payload is invalid");
+    assert(alphaHistoryAfterFirstTalkPayload.history[0]?.prompt === "ping", "workspace history prompt mismatch");
+    assert(alphaHistoryAfterFirstTalkPayload.history[0]?.skill === "research", "workspace history skill mismatch");
+    assert(alphaHistoryAfterFirstTalkPayload.history[0]?.source === "text", "workspace history source mismatch");
+    assert(alphaHistoryAfterFirstTalkPayload.history[0]?.status === "success", "workspace history status mismatch");
+
+    const alphaHistoryFile = JSON.parse(
+      await readFile(join(alphaWorkspacePath, ".dumplbot-history.json"), "utf8"),
+    );
+    assert(Array.isArray(alphaHistoryFile), "workspace history file should contain an array");
+    assert(alphaHistoryFile.length === 1, "workspace history file should contain one entry after first talk");
+    assert(alphaHistoryFile[0]?.prompt === "ping", "workspace history file prompt mismatch");
+
     const talkWithOverrideResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -364,7 +386,7 @@ const runSmoke = async () => {
     const talkWithActiveSkillResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "ping" }),
+      body: JSON.stringify({ text: "pong" }),
     });
     assert(
       talkWithActiveSkillResponse.status === 200,
@@ -378,6 +400,25 @@ const runSmoke = async () => {
       activeSkillToolEvent?.data?.detail === "research",
       "talk did not use active skill fallback",
     );
+
+    const alphaHistoryPagedResponse = await fetch(`${baseUrl}/api/workspaces/alpha/history?limit=1`);
+    assert(alphaHistoryPagedResponse.status === 200, "expected paged alpha history route to return 200");
+    const alphaHistoryPagedPayload = await alphaHistoryPagedResponse.json();
+    assert(alphaHistoryPagedPayload.total === 2, "expected two alpha history entries after second talk");
+    assert(alphaHistoryPagedPayload.returned === 1, "expected one paged alpha history entry");
+    assert(alphaHistoryPagedPayload.history[0]?.prompt === "pong", "paged alpha history should return newest entry");
+
+    const alphaHistoryOffsetResponse = await fetch(`${baseUrl}/api/workspaces/alpha/history?limit=1&offset=1`);
+    assert(alphaHistoryOffsetResponse.status === 200, "expected alpha history offset route to return 200");
+    const alphaHistoryOffsetPayload = await alphaHistoryOffsetResponse.json();
+    assert(alphaHistoryOffsetPayload.returned === 1, "expected one offset alpha history entry");
+    assert(alphaHistoryOffsetPayload.history[0]?.prompt === "ping", "offset alpha history should return older entry");
+
+    const updatedAlphaHistoryFile = JSON.parse(
+      await readFile(join(alphaWorkspacePath, ".dumplbot-history.json"), "utf8"),
+    );
+    assert(updatedAlphaHistoryFile.length === 2, "workspace history file should contain two alpha entries");
+    assert(updatedAlphaHistoryFile[1]?.prompt === "pong", "workspace history file latest entry mismatch");
 
     const deniedToolTalkResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
