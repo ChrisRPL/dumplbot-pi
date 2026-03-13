@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 
+import { loadSetupSecrets } from "./secret-store";
+
 export type SttRuntimeConfig = {
   apiKey: string;
   baseUrl: string;
@@ -36,8 +38,9 @@ const applySttConfigLine = (
 export const loadSttRuntimeConfig = async (
   configPath = process.env.DUMPLBOT_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
 ): Promise<SttRuntimeConfig> => {
+  const setupSecrets = await loadSetupSecrets();
   const config: SttRuntimeConfig = {
-    apiKey: process.env.OPENAI_API_KEY ?? "",
+    apiKey: setupSecrets.openaiApiKey || process.env.OPENAI_API_KEY || "",
     baseUrl: process.env.OPENAI_BASE_URL ?? DEFAULT_BASE_URL,
     model: process.env.DUMPLBOT_STT_MODEL ?? DEFAULT_MODEL,
     language: process.env.DUMPLBOT_STT_LANGUAGE ?? DEFAULT_LANGUAGE,

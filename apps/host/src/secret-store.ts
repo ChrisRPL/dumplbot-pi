@@ -8,6 +8,11 @@ export type SetupSecretUpdate = {
   openaiApiKey?: string;
 };
 
+export type SetupSecrets = {
+  anthropicApiKey: string;
+  openaiApiKey: string;
+};
+
 const normalizeSecretsText = (rawSecrets: string): string => (
   rawSecrets.endsWith("\n")
     ? rawSecrets
@@ -80,6 +85,43 @@ const readSecretsText = async (
 
     throw error;
   }
+};
+
+export const loadSetupSecrets = async (
+  secretsPath = process.env.DUMPLBOT_SECRETS_PATH ?? DEFAULT_SECRETS_PATH,
+): Promise<SetupSecrets> => {
+  const rawSecrets = await readSecretsText(secretsPath);
+  const secrets: SetupSecrets = {
+    anthropicApiKey: "",
+    openaiApiKey: "",
+  };
+
+  for (const rawLine of rawSecrets.split(/\r?\n/u)) {
+    const trimmedLine = rawLine.trim();
+
+    if (!trimmedLine || trimmedLine.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmedLine.indexOf("=");
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = trimmedLine.slice(0, separatorIndex).trim();
+    const value = trimmedLine.slice(separatorIndex + 1).trim();
+
+    if (key === "OPENAI_API_KEY" && value.length > 0) {
+      secrets.openaiApiKey = value;
+    }
+
+    if (key === "ANTHROPIC_API_KEY" && value.length > 0) {
+      secrets.anthropicApiKey = value;
+    }
+  }
+
+  return secrets;
 };
 
 export const writeSetupSecretUpdate = async (
