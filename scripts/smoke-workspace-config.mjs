@@ -171,6 +171,14 @@ const runSmoke = async () => {
       Array.isArray(codingSkill.bash_prefix_allowlist) && codingSkill.bash_prefix_allowlist.length > 0,
       "expected coding skill bash_prefix_allowlist metadata",
     );
+    assert(
+      codingSkill.prompt_prelude_summary?.includes("coding mode"),
+      "expected coding skill prompt prelude summary metadata",
+    );
+    assert(
+      codingSkill.model?.reasoning === "high",
+      "expected coding skill model reasoning metadata",
+    );
 
     const initialListResponse = await fetch(`${baseUrl}/api/workspaces`);
     assert(initialListResponse.status === 200, "expected GET /api/workspaces to return 200");
@@ -688,6 +696,14 @@ const runSmoke = async () => {
     assert(
       skillDetailResult.stdout.includes("permission: balanced"),
       "expected UI skill detail permission output",
+    );
+    assert(
+      skillDetailResult.stdout.includes("reasoning: high"),
+      "expected UI skill detail reasoning output",
+    );
+    assert(
+      skillDetailResult.stdout.includes("prelude: You are in coding mode."),
+      "expected UI skill detail prelude output",
     );
     assert(
       skillDetailResult.stdout.includes("bash: git status"),
