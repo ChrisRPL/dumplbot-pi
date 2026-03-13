@@ -162,6 +162,11 @@ export const renderSetupPage = (): string => `<!doctype html>
           <p>Secrets file: <span id="secrets-file-status">-</span></p>
           <p>OpenAI key: <span id="openai-key-status">-</span></p>
           <p>Anthropic key: <span id="anthropic-key-status">-</span></p>
+          <p>Active bind: <span id="active-server-bind">-</span></p>
+          <p>Configured bind: <span id="configured-server-bind">-</span></p>
+          <p>Same-Wi-Fi setup: <span id="lan-setup-ready">-</span></p>
+          <p>Restart required: <span id="restart-required">-</span></p>
+          <p>System hint: <span id="system-status-message">-</span></p>
         </div>
 
         <form id="secrets-form">
@@ -218,6 +223,11 @@ export const renderSetupPage = (): string => `<!doctype html>
       const secretsFileStatusNode = document.querySelector("#secrets-file-status");
       const openAiKeyStatusNode = document.querySelector("#openai-key-status");
       const anthropicKeyStatusNode = document.querySelector("#anthropic-key-status");
+      const activeServerBindNode = document.querySelector("#active-server-bind");
+      const configuredServerBindNode = document.querySelector("#configured-server-bind");
+      const lanSetupReadyNode = document.querySelector("#lan-setup-ready");
+      const restartRequiredNode = document.querySelector("#restart-required");
+      const systemStatusMessageNode = document.querySelector("#system-status-message");
       const formNode = document.querySelector("#setup-form");
       const secretsFormNode = document.querySelector("#secrets-form");
       const openAiApiKeyNode = document.querySelector("#openai-api-key");
@@ -250,6 +260,8 @@ export const renderSetupPage = (): string => `<!doctype html>
       };
 
       const formatConfiguredStatus = (isConfigured) => isConfigured ? "configured" : "missing";
+      const formatReadyStatus = (isReady) => isReady ? "ready" : "not ready";
+      const formatRestartStatus = (restartRequired) => restartRequired ? "yes" : "no";
 
       const loadConfigExport = async () => {
         const configExportPayload = await fetchJson("/api/config/export");
@@ -267,6 +279,15 @@ export const renderSetupPage = (): string => `<!doctype html>
         anthropicKeyStatusNode.textContent = formatConfiguredStatus(
           setupStatusPayload.secrets.anthropic_api_key_configured,
         );
+      };
+
+      const loadSetupSystem = async () => {
+        const setupSystemPayload = await fetchJson("/api/setup/system");
+        activeServerBindNode.textContent = setupSystemPayload.system.active_server.bind;
+        configuredServerBindNode.textContent = setupSystemPayload.system.configured_server.bind;
+        lanSetupReadyNode.textContent = formatReadyStatus(setupSystemPayload.system.lan_setup_ready);
+        restartRequiredNode.textContent = formatRestartStatus(setupSystemPayload.system.restart_required);
+        systemStatusMessageNode.textContent = setupSystemPayload.system.status_message;
       };
 
       const loadSetup = async () => {
@@ -299,6 +320,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         activeWorkspaceNode.textContent = configPayload.runtime.active_workspace || "default fallback";
         activeSkillNode.textContent = configPayload.runtime.active_skill || "default fallback";
         await loadSetupStatus();
+        await loadSetupSystem();
         await loadConfigExport();
         statusNode.textContent = "Setup loaded";
       };
