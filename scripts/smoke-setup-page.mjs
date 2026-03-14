@@ -14,6 +14,16 @@ const assert = (condition, message) => {
   }
 };
 
+const readPngDimensions = async (filePath) => {
+  const pngBytes = await readFile(filePath);
+  assert(pngBytes.length >= 24, "expected png file to contain header");
+  assert(pngBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), "expected png signature");
+  return {
+    width: pngBytes.readUInt32BE(16),
+    height: pngBytes.readUInt32BE(20),
+  };
+};
+
 const waitForServerReady = (childProcess) =>
   new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -339,6 +349,18 @@ const runSmoke = async () => {
       diagnosticsScreenResult.stdout.includes("restart: yes"),
       "expected diagnostics screen restart summary",
     );
+
+    const previewSnapshotPath = join(tmpRoot, "preview-home.png");
+    const previewSnapshotResult = runUiCommand(
+      baseUrl,
+      "--preview-snapshot",
+      previewSnapshotPath,
+      "--home-screen",
+    );
+    assert(previewSnapshotResult.status === 0, "expected preview snapshot to return 0");
+    const previewSnapshotDimensions = await readPngDimensions(previewSnapshotPath);
+    assert(previewSnapshotDimensions.width === 510, "expected preview snapshot width");
+    assert(previewSnapshotDimensions.height === 960, "expected preview snapshot height");
 
     const homeDiagnosticsViewResult = runUiCommand(
       baseUrl,

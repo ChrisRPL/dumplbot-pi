@@ -23,6 +23,7 @@ Design for the tiny screen first. Fast feedback beats density.
 
 - Keep a stable status bar for battery, Wi-Fi, and time.
 - Use wrapped text with predictable paging.
+- Keep desktop preview mode faithful to the real panel aspect ratio; scale up, do not redesign.
 - Keep the home screen compact: current workspace, current skill, scheduler count, and setup readiness should fit in one glance.
 - Keep workspace and skill selectors short enough that the active entry is obvious at a glance.
 - Keep skill summary screens compact but explanatory: permission, reasoning, and integration readiness should fit without entering detail.

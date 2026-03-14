@@ -2992,6 +2992,62 @@ class DesktopPreviewRenderer(ConsoleRenderer):
             pass
 
 
+class SnapshotRenderer(ConsoleRenderer):
+    def __init__(self, snapshot_path: str, scale: int = PREVIEW_DEFAULT_SCALE) -> None:
+        super().__init__("Snapshot")
+        self._snapshot_path = Path(snapshot_path)
+        self._scale = max(1, scale)
+        self._image_module: Any = None
+        self._draw_module: Any = None
+        self._font: Any = None
+        self._fallback_reason = self._connect_snapshot()
+
+        if self._fallback_reason:
+            self.surface_name = "Snapshot (console fallback)"
+
+    def _connect_snapshot(self) -> Optional[str]:
+        pillow = load_pillow()
+
+        if pillow is None:
+            return "Pillow is not installed"
+
+        image_module, draw_module, font_module = pillow
+        self._image_module = image_module
+        self._draw_module = draw_module
+        self._font = font_module.load_default()
+        return None
+
+    def render_notice(self, message: str) -> None:
+        if self._fallback_reason:
+            message = f"{message} ({self._fallback_reason})"
+
+        self.render(ScreenState(status=message))
+
+    def render(self, state: ScreenState) -> None:
+        if self._image_module is None or self._draw_module is None or self._font is None:
+            super().render(state)
+            return
+
+        image, _accent = render_state_image(
+            state,
+            self._image_module,
+            self._draw_module,
+            self._font,
+            width=WHISPLAY_DEFAULT_WIDTH,
+            height=WHISPLAY_DEFAULT_HEIGHT,
+        )
+
+        if self._scale != 1:
+            image = image.resize(
+                (WHISPLAY_DEFAULT_WIDTH * self._scale, WHISPLAY_DEFAULT_HEIGHT * self._scale),
+                self._image_module.Resampling.NEAREST,
+            )
+
+        self._snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(self._snapshot_path, format="PNG")
+        super().render(state)
+
+
 class ArecordRecorder:
     def __init__(self, config: UiRuntimeConfig) -> None:
         self._config = config
@@ -3473,6 +3529,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DumplBot device UI scaffold")
     parser.add_argument("--mock", action="store_true", help="Run the text-only mock client")
     parser.add_argument("--preview", action="store_true", help="Run the desktop preview renderer")
+    parser.add_argument("--preview-snapshot", help="Write one rasterized preview snapshot to PNG")
     parser.add_argument(
         "--preview-scale",
         type=int,
@@ -3640,6 +3697,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.preview and args.preview_snapshot is not None:
+        ConsoleRenderer().render_notice("Use --preview or --preview-snapshot, not both")
+        return 1
+
     if args.mock and args.preview:
         ConsoleRenderer().render_notice("Use --mock or --preview, not both")
         return 1
@@ -3652,6 +3713,8 @@ def main() -> int:
 
     if args.preview:
         renderer = DesktopPreviewRenderer(scale=args.preview_scale)
+    elif args.preview_snapshot is not None:
+        renderer = SnapshotRenderer(args.preview_snapshot, scale=args.preview_scale)
     elif args.mock:
         renderer = ConsoleRenderer()
     else:
