@@ -416,6 +416,29 @@ const runSmoke = async () => {
       "expected voice debug screen error message",
     );
 
+    const clearDebugResponse = await fetch(`${baseUrl}/api/debug/voice/clear`, {
+      method: "POST",
+    });
+    assert(clearDebugResponse.ok, `debug voice clear route failed: ${clearDebugResponse.status}`);
+    const clearDebugJson = await clearDebugResponse.json();
+    assert(clearDebugJson.transcript.present === false, "expected cleared transcript state");
+    assert(clearDebugJson.audio.present === false, "expected cleared audio state");
+    assert(clearDebugJson.error.present === false, "expected cleared error state");
+
+    const clearedTranscriptScreenResult = runUiCommand(baseUrl, "--transcript-screen");
+    assert(clearedTranscriptScreenResult.status === 0, "expected cleared transcript screen to return 0");
+    assert(
+      clearedTranscriptScreenResult.stdout.includes("No transcript captured"),
+      "expected cleared transcript screen empty state",
+    );
+
+    const clearedErrorScreenResult = runUiCommand(baseUrl, "--error-screen");
+    assert(clearedErrorScreenResult.status === 0, "expected cleared error screen to return 0");
+    assert(
+      clearedErrorScreenResult.stdout.includes("No error captured"),
+      "expected cleared error screen empty state",
+    );
+
     console.log("audio route smoke ok");
   } finally {
     await stopHostServer(hostServer);
