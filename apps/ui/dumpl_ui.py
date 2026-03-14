@@ -25,6 +25,7 @@ WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
 BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
+HOME_NAVIGATION_TARGET_SEQUENCE = ("workspace", "skill", "scheduler", "diagnostics")
 SCHEDULER_SCREEN_SEQUENCE = ("summary", "detail", "history")
 WORKSPACE_HISTORY_COMMAND_LIMIT = 8
 WORKSPACE_HISTORY_SCREEN_LIMIT = 4
@@ -71,6 +72,12 @@ class SchedulerNavigationState:
     screen_mode: str = "summary"
     job_id: Optional[str] = None
     history_offset: int = 0
+
+
+@dataclass(frozen=True)
+class HomeNavigationState:
+    screen_mode: str = "home"
+    focused_target: str = HOME_NAVIGATION_TARGET_SEQUENCE[0]
 
 
 def parse_bool(value: str) -> bool:
@@ -357,6 +364,27 @@ def summarize_runtime_selection(
         return f"{default_value} (default)"
 
     return "(none)"
+
+
+def normalize_home_navigation_state(
+    screen_mode: str,
+    focused_target: Optional[str] = None,
+) -> HomeNavigationState:
+    selected_target = focused_target
+
+    if selected_target not in HOME_NAVIGATION_TARGET_SEQUENCE:
+        if screen_mode in HOME_NAVIGATION_TARGET_SEQUENCE:
+            selected_target = screen_mode
+        else:
+            selected_target = HOME_NAVIGATION_TARGET_SEQUENCE[0]
+
+    if screen_mode != "home" and screen_mode not in HOME_NAVIGATION_TARGET_SEQUENCE:
+        raise RuntimeError("home navigation mode is invalid")
+
+    return HomeNavigationState(
+        screen_mode=screen_mode,
+        focused_target=selected_target,
+    )
 
 
 def parse_non_negative_int(value: str, field_name: str) -> int:
@@ -1339,6 +1367,7 @@ def build_home_screen_state(
     health: dict[str, Any],
     system: dict[str, Any],
     jobs: list[dict[str, Any]],
+    focused_target: Optional[str] = None,
 ) -> ScreenState:
     enabled_jobs = sum(1 for job in jobs if job.get("enabled") is True)
     daemon_healthy = health.get("daemon_healthy")
@@ -1346,6 +1375,26 @@ def build_home_screen_state(
     scheduler_enabled = health.get("scheduler_enabled")
     lan_setup_ready = system.get("lan_setup_ready")
     safety_mode = runtime.get("safety_mode")
+    nav_lines: list[str] = []
+
+    for target in HOME_NAVIGATION_TARGET_SEQUENCE:
+        marker = ">" if target == focused_target else " "
+        nav_lines.append(f"{marker} {target}")
+
+    answer_lines = [
+        f"workspace: {summarize_runtime_selection(runtime, 'active_workspace', 'default_workspace')}",
+        f"skill: {summarize_runtime_selection(runtime, 'active_skill', 'default_skill')}",
+        f"safety: {safety_mode if isinstance(safety_mode, str) and safety_mode else '(none)'}",
+        f"jobs: {enabled_jobs}/{len(jobs)} on",
+        f"scheduler: {'on' if scheduler_enabled is True else 'off'}",
+        f"setup: {'lan ready' if lan_setup_ready is True else 'lan pending'}",
+    ]
+
+    if nav_lines:
+        answer_lines.extend([
+            "",
+            *nav_lines,
+        ])
 
     return ScreenState(
         phase="Home",
@@ -1353,14 +1402,7 @@ def build_home_screen_state(
             "daemon ok" if daemon_healthy is True else "daemon issue",
             "stt ready" if stt_ready is True else "stt missing",
         ]),
-        answer="\n".join([
-            f"workspace: {summarize_runtime_selection(runtime, 'active_workspace', 'default_workspace')}",
-            f"skill: {summarize_runtime_selection(runtime, 'active_skill', 'default_skill')}",
-            f"safety: {safety_mode if isinstance(safety_mode, str) and safety_mode else '(none)'}",
-            f"jobs: {enabled_jobs}/{len(jobs)} on",
-            f"scheduler: {'on' if scheduler_enabled is True else 'off'}",
-            f"setup: {'lan ready' if lan_setup_ready is True else 'lan pending'}",
-        ]),
+        answer="\n".join(answer_lines),
     )
 
 
@@ -1399,6 +1441,7 @@ def run_home_screen(
                 get_setup_health_entry(base_url),
                 get_setup_system_entry(base_url),
                 list_job_entries(base_url),
+                focused_target=None,
             )
         )
         return 0
@@ -1407,6 +1450,99 @@ def run_home_screen(
             ScreenState(
                 phase="Error",
                 status="Home screen failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def cycle_home_navigation_state(
+    state: HomeNavigationState,
+    action: str,
+) -> HomeNavigationState:
+    if action == "next-target":
+        if state.screen_mode != "home":
+            raise RuntimeError("home navigation next-target requires home mode")
+
+        current_index = HOME_NAVIGATION_TARGET_SEQUENCE.index(state.focused_target)
+        next_target = HOME_NAVIGATION_TARGET_SEQUENCE[
+            (current_index + 1) % len(HOME_NAVIGATION_TARGET_SEQUENCE)
+        ]
+        return HomeNavigationState(screen_mode="home", focused_target=next_target)
+
+    if action == "toggle-view":
+        if state.screen_mode == "home":
+            return HomeNavigationState(
+                screen_mode=state.focused_target,
+                focused_target=state.focused_target,
+            )
+
+        return HomeNavigationState(
+            screen_mode="home",
+            focused_target=state.focused_target,
+        )
+
+    raise RuntimeError("home navigation action is invalid")
+
+
+def render_home_navigation_state(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    state: HomeNavigationState,
+) -> None:
+    if state.screen_mode == "home":
+        renderer.render(
+            build_home_screen_state(
+                get_runtime_config_entry(base_url),
+                get_setup_health_entry(base_url),
+                get_setup_system_entry(base_url),
+                list_job_entries(base_url),
+                focused_target=state.focused_target,
+            )
+        )
+        return
+
+    if state.screen_mode == "workspace":
+        renderer.render(build_workspace_screen_state(list_workspace_entries(base_url)))
+        return
+
+    if state.screen_mode == "skill":
+        renderer.render(build_skill_screen_state(list_skill_entries(base_url)))
+        return
+
+    if state.screen_mode == "scheduler":
+        renderer.render(build_jobs_screen_state(list_job_entries(base_url)))
+        return
+
+    if state.screen_mode == "diagnostics":
+        renderer.render(
+            build_diagnostics_screen_state(
+                get_runtime_config_entry(base_url),
+                get_setup_health_entry(base_url),
+                get_setup_system_entry(base_url),
+            )
+        )
+        return
+
+    raise RuntimeError("home navigation mode is invalid")
+
+
+def run_home_navigation_preview(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    state: HomeNavigationState,
+    action: str,
+) -> int:
+    try:
+        next_state = cycle_home_navigation_state(state, action)
+        render_home_navigation_state(base_url, renderer, next_state)
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Home navigation failed",
+                prompt=action,
                 error=str(error),
             )
         )
@@ -3214,6 +3350,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
     parser.add_argument("--home-screen", action="store_true", help="Show one device home screen and exit")
+    parser.add_argument(
+        "--home-nav-mode",
+        choices=["home", "workspace", "skill", "scheduler", "diagnostics"],
+        help="Current home navigation screen used by --home-nav-action",
+    )
+    parser.add_argument(
+        "--home-nav-target",
+        choices=["workspace", "skill", "scheduler", "diagnostics"],
+        help="Focused home target used by --home-nav-action",
+    )
+    parser.add_argument(
+        "--home-nav-action",
+        choices=["next-target", "toggle-view"],
+        help="Apply one home navigation step and exit",
+    )
     parser.add_argument("--diagnostics-screen", action="store_true", help="Show one diagnostics screen and exit")
     return parser.parse_args()
 
@@ -3438,9 +3589,21 @@ def main() -> int:
             renderer.render_notice("Use only one of --home-screen or --diagnostics-screen")
             return 1
 
+        if args.home_nav_action is not None and args.home_nav_mode is None:
+            renderer.render_notice("--home-nav-action requires --home-nav-mode")
+            return 1
+
+        if args.home_nav_action is None and (
+            args.home_nav_mode is not None
+            or args.home_nav_target is not None
+        ):
+            renderer.render_notice("--home-nav-mode/--home-nav-target require --home-nav-action")
+            return 1
+
         if selector_mode_active and (
             args.home_screen
             or args.diagnostics_screen
+            or args.home_nav_action is not None
             or args.prompt is not None
             or args.scheduler_screen is not None
             or args.jobs_screen
@@ -3452,7 +3615,7 @@ def main() -> int:
             renderer.render_notice("Use workspace/skill selector modes separately from diagnostics/prompt/scheduler flows")
             return 1
 
-        if (args.home_screen or args.diagnostics_screen) and (
+        if (args.home_screen or args.diagnostics_screen or args.home_nav_action is not None) and (
             args.prompt is not None
             or selector_mode_active
             or args.scheduler_screen is not None
@@ -3462,7 +3625,7 @@ def main() -> int:
             or has_job_upsert_arg
             or selected_job_actions
         ):
-            renderer.render_notice("Use --home-screen/--diagnostics-screen separately from selector/prompt/scheduler flows")
+            renderer.render_notice("Use home/diagnostics navigation flags separately from selector/prompt/scheduler flows")
             return 1
 
         if has_job_upsert_arg:
@@ -3602,6 +3765,17 @@ def main() -> int:
             return run_home_screen(
                 args.host_url,
                 renderer,
+            )
+
+        if args.home_nav_action is not None:
+            return run_home_navigation_preview(
+                args.host_url,
+                renderer,
+                normalize_home_navigation_state(
+                    args.home_nav_mode,
+                    args.home_nav_target,
+                ),
+                args.home_nav_action,
             )
 
         if args.diagnostics_screen:
