@@ -1462,6 +1462,60 @@ def build_error_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
     )
 
 
+def summarize_debug_value(
+    value: Any,
+    empty_value: str,
+    max_length: int = 28,
+) -> str:
+    if not isinstance(value, str):
+        return empty_value
+
+    collapsed_value = " ".join(value.strip().split())
+
+    if not collapsed_value:
+        return empty_value
+
+    if len(collapsed_value) <= max_length:
+        return collapsed_value
+
+    return f"{collapsed_value[:max_length - 3]}..."
+
+
+def build_voice_debug_bundle_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
+    transcript = debug_voice.get("transcript")
+    audio = debug_voice.get("audio")
+    error_entry = debug_voice.get("error")
+
+    if not isinstance(transcript, dict) or not isinstance(audio, dict) or not isinstance(error_entry, dict):
+        raise RuntimeError("debug voice bundle response is invalid")
+
+    transcript_path = transcript.get("path")
+    transcript_text = transcript.get("text")
+    audio_path = audio.get("path")
+    audio_size = audio.get("size_bytes")
+    error_source = error_entry.get("source")
+    error_message = error_entry.get("message")
+
+    return ScreenState(
+        phase="Diagnostics",
+        status="Voice debug",
+        prompt="\n".join([
+            f"tx: {Path(transcript_path).name}" if isinstance(transcript_path, str) and transcript_path else "tx: none",
+            f"wav: {Path(audio_path).name}" if isinstance(audio_path, str) and audio_path else "wav: none",
+            f"err: {error_source}" if isinstance(error_source, str) and error_source else "err: none",
+        ]),
+        answer="\n".join([
+            f"heard: {summarize_debug_value(transcript_text, '(empty)', 32)}",
+            (
+                f"audio: {audio_size} B"
+                if isinstance(audio_size, int)
+                else "audio: none"
+            ),
+            f"error: {summarize_debug_value(error_message, 'none', 32)}",
+        ]),
+    )
+
+
 def build_home_screen_state(
     runtime: dict[str, Any],
     health: dict[str, Any],
@@ -1578,6 +1632,24 @@ def run_error_debug_screen(
             ScreenState(
                 phase="Error",
                 status="Error screen failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_voice_debug_bundle_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    try:
+        renderer.render(build_voice_debug_bundle_screen_state(get_debug_voice_entry(base_url)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Voice debug screen failed",
                 error=str(error),
             )
         )
@@ -3843,6 +3915,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--transcript-screen", action="store_true", help="Show last transcript debug screen and exit")
     parser.add_argument("--audio-screen", action="store_true", help="Show last audio debug screen and exit")
     parser.add_argument("--error-screen", action="store_true", help="Show last error debug screen and exit")
+    parser.add_argument("--voice-debug-screen", action="store_true", help="Show compact transcript/audio/error debug summary and exit")
     parser.add_argument("--home-button-mode", action="store_true", help="Run button-driven home navigation on the renderer")
     parser.add_argument(
         "--home-nav-mode",
@@ -4108,6 +4181,7 @@ def main() -> int:
                 args.transcript_screen,
                 args.audio_screen,
                 args.error_screen,
+                args.voice_debug_screen,
             )
             if value
         )
@@ -4126,6 +4200,7 @@ def main() -> int:
             or args.transcript_screen
             or args.audio_screen
             or args.error_screen
+            or args.voice_debug_screen
             or args.home_nav_action is not None
             or args.jobs_screen
             or args.job_history is not None
@@ -4151,6 +4226,7 @@ def main() -> int:
             or args.transcript_screen
             or args.audio_screen
             or args.error_screen
+            or args.voice_debug_screen
             or args.home_nav_action is not None
             or args.prompt is not None
             or args.scheduler_screen is not None
@@ -4170,6 +4246,7 @@ def main() -> int:
             or args.transcript_screen
             or args.audio_screen
             or args.error_screen
+            or args.voice_debug_screen
             or args.home_nav_action is not None
         ) and (
             args.prompt is not None
@@ -4337,6 +4414,12 @@ def main() -> int:
 
         if args.error_screen:
             return run_error_debug_screen(
+                args.host_url,
+                renderer,
+            )
+
+        if args.voice_debug_screen:
+            return run_voice_debug_bundle_screen(
                 args.host_url,
                 renderer,
             )
