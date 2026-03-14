@@ -62,6 +62,8 @@ const waitForServerReady = (childProcess) =>
   });
 
 const startFakeSttServer = async () => {
+  let transcriptionRequestCount = 0;
+
   const fakeServer = createServer((request, response) => {
     if (request.method !== "POST" || request.url !== "/v1/audio/transcriptions") {
       response.statusCode = 404;
@@ -71,8 +73,13 @@ const startFakeSttServer = async () => {
 
     request.resume();
     request.on("end", () => {
+      transcriptionRequestCount += 1;
       response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({ text: "smoke route transcript" }));
+      response.end(JSON.stringify({
+        text: transcriptionRequestCount === 3
+          ? ""
+          : "smoke route transcript",
+      }));
     });
   });
 
@@ -252,6 +259,7 @@ const runSmoke = async () => {
     );
     assert(debugVoiceJson.audio.size_bytes === WAVE_BYTES.length, "unexpected debug audio size");
     assert(typeof debugVoiceJson.audio.updated_at === "string", "expected debug audio timestamp");
+    assert(debugVoiceJson.error.present === false, "expected empty debug error before failure");
 
     const transcriptScreenResult = runUiCommand(baseUrl, "--transcript-screen");
     assert(transcriptScreenResult.status === 0, "expected transcript screen to return 0");
@@ -316,6 +324,38 @@ const runSmoke = async () => {
       homeAudioViewResult.stdout.includes("last-audio.wav"),
       "expected home audio toggle to render audio screen",
     );
+
+    const failedTalkResponse = await fetch(
+      `${baseUrl}/api/audio/${uploadJson.audio_id}/talk`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspace: "default", skill: "coding" }),
+      },
+    );
+    assert(failedTalkResponse.ok, `failed audio talk returned ${failedTalkResponse.status}`);
+    const failedTalkEvents = parseSsePayload(await failedTalkResponse.text());
+    const failedTalkErrorEvent = failedTalkEvents.find((event) => event.eventType === "error");
+    assert(failedTalkErrorEvent, "expected failed audio talk error event");
+    assert(
+      failedTalkErrorEvent.data.message === "transcription returned empty text",
+      "unexpected failed audio talk error message",
+    );
+
+    const debugVoiceErrorResponse = await fetch(`${baseUrl}/api/debug/voice`);
+    assert(debugVoiceErrorResponse.ok, `debug voice error route failed: ${debugVoiceErrorResponse.status}`);
+    const debugVoiceErrorJson = await debugVoiceErrorResponse.json();
+    assert(debugVoiceErrorJson.error.present === true, "expected debug error presence after failed talk");
+    assert(debugVoiceErrorJson.error.source === "audio-talk", "unexpected debug error source");
+    assert(
+      debugVoiceErrorJson.error.message === "transcription returned empty text",
+      "unexpected debug error message",
+    );
+    assert(
+      typeof debugVoiceErrorJson.error.path === "string" && debugVoiceErrorJson.error.path.endsWith("last-error.json"),
+      "unexpected debug error path",
+    );
+    assert(typeof debugVoiceErrorJson.error.updated_at === "string", "expected debug error timestamp");
 
     console.log("audio route smoke ok");
   } finally {
