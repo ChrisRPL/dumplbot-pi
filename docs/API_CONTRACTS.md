@@ -119,11 +119,18 @@ The daemon streams events back to the UI over Server-Sent Events.
     "path":"/tmp/dumplbot/last-audio.wav",
     "size_bytes":16044,
     "updated_at":"2026-03-14T09:30:00.000Z"
+  },
+  "error":{
+    "present":true,
+    "path":"/tmp/dumplbot/last-error.json",
+    "source":"audio-talk",
+    "message":"transcription returned empty text",
+    "updated_at":"2026-03-14T09:31:00.000Z"
   }
 }
 ```
 
-- When no transcript or audio has been stored yet, that branch returns `{"present":false,"path":null,...}`.
+- When no transcript, audio, or error has been stored yet, that branch returns `{"present":false,"path":null,...}` for that branch.
 
 ### `GET /api/skills`
 
