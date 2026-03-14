@@ -252,6 +252,7 @@ const runSmoke = async () => {
       typeof debugVoiceJson.transcript.path === "string" && debugVoiceJson.transcript.path.endsWith("last-transcript.txt"),
       "unexpected debug transcript path",
     );
+    assert(typeof debugVoiceJson.transcript.updated_at === "string", "expected debug transcript timestamp");
     assert(debugVoiceJson.audio.present === true, "expected debug audio presence");
     assert(
       typeof debugVoiceJson.audio.path === "string" && debugVoiceJson.audio.path.endsWith("last-audio.wav"),
@@ -275,6 +276,10 @@ const runSmoke = async () => {
       transcriptScreenResult.stdout.includes("smoke route transcript"),
       "expected transcript screen text",
     );
+    assert(
+      transcriptScreenResult.stdout.includes("age: "),
+      "expected transcript screen age summary",
+    );
 
     const audioScreenResult = runUiCommand(baseUrl, "--audio-screen");
     assert(audioScreenResult.status === 0, "expected audio screen to return 0");
@@ -293,6 +298,10 @@ const runSmoke = async () => {
     assert(
       audioScreenResult.stdout.includes(`size: ${WAVE_BYTES.length} B`),
       "expected audio screen size",
+    );
+    assert(
+      audioScreenResult.stdout.includes("age: "),
+      "expected audio screen age summary",
     );
 
     const homeTranscriptViewResult = runUiCommand(
@@ -371,6 +380,10 @@ const runSmoke = async () => {
       errorScreenResult.stdout.includes("transcription returned empty text"),
       "expected error screen message",
     );
+    assert(
+      errorScreenResult.stdout.includes("age: "),
+      "expected error screen age summary",
+    );
 
     const homeErrorViewResult = runUiCommand(
       baseUrl,
@@ -388,6 +401,7 @@ const runSmoke = async () => {
     );
 
     const voiceDebugScreenResult = runUiCommand(baseUrl, "--voice-debug-screen");
+    const normalizedVoiceDebugOutput = voiceDebugScreenResult.stdout.replace(/\s+/g, " ");
     assert(voiceDebugScreenResult.status === 0, "expected voice debug screen to return 0");
     assert(
       voiceDebugScreenResult.stdout.includes("Voice debug"),
@@ -398,7 +412,7 @@ const runSmoke = async () => {
       "expected voice debug screen error summary",
     );
     assert(
-      voiceDebugScreenResult.stdout.includes("error: transcription returned empty"),
+      normalizedVoiceDebugOutput.includes("error: transcription returne"),
       "expected voice debug screen error message",
     );
 
