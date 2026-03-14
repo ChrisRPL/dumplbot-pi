@@ -27,7 +27,7 @@ WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
 BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
-HOME_NAVIGATION_TARGET_SEQUENCE = ("workspace", "skill", "scheduler", "diagnostics", "transcript", "audio", "error")
+HOME_NAVIGATION_TARGET_SEQUENCE = ("workspace", "skill", "scheduler", "diagnostics", "voice", "transcript", "audio", "error")
 SCHEDULER_SCREEN_SEQUENCE = ("summary", "detail", "history")
 WORKSPACE_HISTORY_COMMAND_LIMIT = 8
 WORKSPACE_HISTORY_SCREEN_LIMIT = 4
@@ -1579,6 +1579,22 @@ def build_voice_debug_bundle_screen_state(debug_voice: dict[str, Any]) -> Screen
     )
 
 
+def clear_debug_voice_entry(base_url: str) -> dict[str, Any]:
+    payload = request_json(base_url, "/api/debug/voice/clear", method="POST")
+    transcript = payload.get("transcript")
+    audio = payload.get("audio")
+    error = payload.get("error")
+
+    if not isinstance(transcript, dict) or not isinstance(audio, dict) or not isinstance(error, dict):
+        raise RuntimeError("clear debug voice response is invalid")
+
+    return {
+        "transcript": transcript,
+        "audio": audio,
+        "error": error,
+    }
+
+
 def build_home_screen_state(
     runtime: dict[str, Any],
     health: dict[str, Any],
@@ -1719,6 +1735,24 @@ def run_voice_debug_bundle_screen(
         return 1
 
 
+def run_clear_debug_state(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    try:
+        renderer.render(build_voice_debug_bundle_screen_state(clear_debug_voice_entry(base_url)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Clear debug state failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+
 def run_home_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -1771,6 +1805,15 @@ def cycle_home_navigation_state(
             focused_target=state.focused_target,
         )
 
+    if action == "clear-debug":
+        if state.screen_mode != "voice":
+            raise RuntimeError("home navigation clear-debug requires voice mode")
+
+        return HomeNavigationState(
+            screen_mode="voice",
+            focused_target="voice",
+        )
+
     raise RuntimeError("home navigation action is invalid")
 
 
@@ -1813,6 +1856,10 @@ def render_home_navigation_state(
         )
         return
 
+    if state.screen_mode == "voice":
+        renderer.render(build_voice_debug_bundle_screen_state(get_debug_voice_entry(base_url)))
+        return
+
     if state.screen_mode == "transcript":
         renderer.render(build_transcript_debug_screen_state(get_debug_voice_entry(base_url)))
         return
@@ -1836,7 +1883,10 @@ def run_home_navigation_preview(
 ) -> int:
     try:
         next_state = cycle_home_navigation_state(state, action)
-        render_home_navigation_state(base_url, renderer, next_state)
+        if action == "clear-debug":
+            renderer.render(build_voice_debug_bundle_screen_state(clear_debug_voice_entry(base_url)))
+        else:
+            render_home_navigation_state(base_url, renderer, next_state)
         return 0
     except (RuntimeError, urllib.error.URLError) as error:
         renderer.render(
@@ -1891,14 +1941,18 @@ def run_home_button_loop(
             and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
         ):
             try:
-                state = cycle_home_navigation_state(state, "toggle-view")
-                render_home_navigation_state(base_url, renderer, state)
+                action = "clear-debug" if state.screen_mode == "voice" else "toggle-view"
+                state = cycle_home_navigation_state(state, action)
+                if action == "clear-debug":
+                    renderer.render(build_voice_debug_bundle_screen_state(clear_debug_voice_entry(base_url)))
+                else:
+                    render_home_navigation_state(base_url, renderer, state)
             except (RuntimeError, urllib.error.URLError) as error:
                 renderer.render(
                     ScreenState(
                         phase="Error",
                         status="Home navigation failed",
-                        prompt="toggle-view",
+                        prompt=action,
                         error=str(error),
                     )
                 )
@@ -3979,20 +4033,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--audio-screen", action="store_true", help="Show last audio debug screen and exit")
     parser.add_argument("--error-screen", action="store_true", help="Show last error debug screen and exit")
     parser.add_argument("--voice-debug-screen", action="store_true", help="Show compact transcript/audio/error debug summary and exit")
+    parser.add_argument("--clear-debug-state", action="store_true", help="Clear transcript/audio/error debug state and show the empty bundle screen")
     parser.add_argument("--home-button-mode", action="store_true", help="Run button-driven home navigation on the renderer")
     parser.add_argument(
         "--home-nav-mode",
-        choices=["home", "workspace", "skill", "scheduler", "diagnostics", "transcript", "audio", "error"],
+        choices=["home", "workspace", "skill", "scheduler", "diagnostics", "voice", "transcript", "audio", "error"],
         help="Current home navigation screen used by --home-nav-action",
     )
     parser.add_argument(
         "--home-nav-target",
-        choices=["workspace", "skill", "scheduler", "diagnostics", "transcript", "audio", "error"],
+        choices=["workspace", "skill", "scheduler", "diagnostics", "voice", "transcript", "audio", "error"],
         help="Focused home target used by --home-nav-action",
     )
     parser.add_argument(
         "--home-nav-action",
-        choices=["next-target", "toggle-view"],
+        choices=["next-target", "toggle-view", "clear-debug"],
         help="Apply one home navigation step and exit",
     )
     parser.add_argument("--diagnostics-screen", action="store_true", help="Show one diagnostics screen and exit")
@@ -4245,6 +4300,7 @@ def main() -> int:
                 args.audio_screen,
                 args.error_screen,
                 args.voice_debug_screen,
+                args.clear_debug_state,
             )
             if value
         )
@@ -4264,6 +4320,7 @@ def main() -> int:
             or args.audio_screen
             or args.error_screen
             or args.voice_debug_screen
+            or args.clear_debug_state
             or args.home_nav_action is not None
             or args.jobs_screen
             or args.job_history is not None
@@ -4290,6 +4347,7 @@ def main() -> int:
             or args.audio_screen
             or args.error_screen
             or args.voice_debug_screen
+            or args.clear_debug_state
             or args.home_nav_action is not None
             or args.prompt is not None
             or args.scheduler_screen is not None
@@ -4310,6 +4368,7 @@ def main() -> int:
             or args.audio_screen
             or args.error_screen
             or args.voice_debug_screen
+            or args.clear_debug_state
             or args.home_nav_action is not None
         ) and (
             args.prompt is not None
@@ -4483,6 +4542,12 @@ def main() -> int:
 
         if args.voice_debug_screen:
             return run_voice_debug_bundle_screen(
+                args.host_url,
+                renderer,
+            )
+
+        if args.clear_debug_state:
+            return run_clear_debug_state(
                 args.host_url,
                 renderer,
             )
