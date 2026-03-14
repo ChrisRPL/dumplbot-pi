@@ -9,7 +9,8 @@ Use this folder as the implementation source of truth once code starts landing.
 3. `IMPLEMENTATION_PLAN.md`
 4. `SETUP_PI_ZERO.md`
 5. `POLICY.md`
-6. `UX.md`
+6. `SANDBOX_VALIDATION.md`
+7. `UX.md`
 
 ## Rules
 

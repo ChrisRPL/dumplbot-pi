@@ -139,6 +139,8 @@ DumplBot is built to be powerful **without becoming a pocket root shell**:
 * network in bash is disabled by default (use web tools instead)
 * agent runs are sandboxed (bubblewrap on Pi)
 
+For local sandbox confidence before Pi validation, run `npm run smoke:runner-sandbox-local`. On native macOS it proves launch shape and failure-path wiring, while the Linux-only filesystem/network smokes skip by design; see [docs/SANDBOX_VALIDATION.md](/Users/krzysztof/Projects/oss/dumplbot-pi/docs/SANDBOX_VALIDATION.md).
+
 ---
 
 ## Roadmap
