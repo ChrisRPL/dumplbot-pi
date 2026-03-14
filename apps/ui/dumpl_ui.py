@@ -20,6 +20,7 @@ SCREEN_WIDTH = 48
 WHISPLAY_TEXT_WIDTH = 28
 WHISPLAY_DEFAULT_WIDTH = 170
 WHISPLAY_DEFAULT_HEIGHT = 320
+PREVIEW_DEFAULT_SCALE = 3
 WHISPLAY_BACKGROUND = (10, 15, 20)
 WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
@@ -2644,6 +2645,16 @@ def load_pillow() -> Optional[tuple[Any, Any, Any]]:
     return Image, ImageDraw, ImageFont
 
 
+def load_preview_modules() -> Optional[tuple[Any, Any]]:
+    try:
+        import tkinter as tk
+        from PIL import ImageTk
+    except ImportError:
+        return None
+
+    return tk, ImageTk
+
+
 def load_whisplay_board() -> Optional[Any]:
     try:
         from WhisPlay import WhisPlayBoard
@@ -2829,6 +2840,156 @@ class WhisplayRenderer(ConsoleRenderer):
             pass
 
         self._board = None
+
+
+class DesktopPreviewRenderer(ConsoleRenderer):
+    def __init__(self, scale: int = PREVIEW_DEFAULT_SCALE) -> None:
+        super().__init__("Preview")
+        self._scale = max(1, scale)
+        self._image_module: Any = None
+        self._draw_module: Any = None
+        self._font: Any = None
+        self._tk_module: Any = None
+        self._image_tk_module: Any = None
+        self._window: Any = None
+        self._image_label: Any = None
+        self._photo_image: Any = None
+        self._width = WHISPLAY_DEFAULT_WIDTH
+        self._height = WHISPLAY_DEFAULT_HEIGHT
+        self._button_pressed = False
+        self._closed = False
+        self._fallback_reason = self._connect_preview()
+
+        if self._fallback_reason:
+            self.surface_name = "Preview (console fallback)"
+
+    def _connect_preview(self) -> Optional[str]:
+        pillow = load_pillow()
+
+        if pillow is None:
+            return "Pillow is not installed"
+
+        preview_modules = load_preview_modules()
+
+        if preview_modules is None:
+            return "tkinter preview support is unavailable"
+
+        image_module, draw_module, font_module = pillow
+        tk_module, image_tk_module = preview_modules
+
+        try:
+            window = tk_module.Tk()
+        except Exception as error:
+            return f"Preview window unavailable: {error}"
+
+        self._image_module = image_module
+        self._draw_module = draw_module
+        self._font = font_module.load_default()
+        self._tk_module = tk_module
+        self._image_tk_module = image_tk_module
+        self._window = window
+
+        window.title("DumplBot Preview")
+        window.configure(bg="#0a0f14")
+        window.resizable(False, False)
+        window.bind("<KeyPress-space>", self._on_space_press)
+        window.bind("<KeyRelease-space>", self._on_space_release)
+        window.bind("<KeyPress-q>", self._on_quit_key)
+        window.protocol("WM_DELETE_WINDOW", self.close)
+
+        self._image_label = tk_module.Label(
+            window,
+            bg="#0a0f14",
+            bd=0,
+            highlightthickness=0,
+        )
+        self._image_label.pack(padx=12, pady=12)
+        self._pump_events()
+        return None
+
+    def _on_space_press(self, _event: Any) -> None:
+        self._button_pressed = True
+
+    def _on_space_release(self, _event: Any) -> None:
+        self._button_pressed = False
+
+    def _on_quit_key(self, _event: Any) -> None:
+        self.close()
+
+    def _pump_events(self) -> None:
+        if self._window is None:
+            return
+
+        try:
+            self._window.update_idletasks()
+            self._window.update()
+        except Exception:
+            self.close()
+
+    def render_notice(self, message: str) -> None:
+        if self._fallback_reason:
+            message = f"{message} ({self._fallback_reason})"
+
+        self.render(ScreenState(status=message))
+
+    def render(self, state: ScreenState) -> None:
+        if self._window is None or self._image_module is None or self._draw_module is None or self._font is None:
+            super().render(state)
+            return
+
+        try:
+            image, _accent = render_state_image(
+                state,
+                self._image_module,
+                self._draw_module,
+                self._font,
+                width=self._width,
+                height=self._height,
+            )
+            if self._scale != 1:
+                image = image.resize(
+                    (self._width * self._scale, self._height * self._scale),
+                    self._image_module.Resampling.NEAREST,
+                )
+
+            self._photo_image = self._image_tk_module.PhotoImage(image=image)
+            self._image_label.configure(image=self._photo_image)
+            self._window.title(f"DumplBot Preview | {state.phase} | Space=button, q=quit")
+            self._pump_events()
+        except Exception as error:
+            self._fallback_reason = f"Preview draw failed: {error}"
+            self.close()
+            self.surface_name = "Preview (console fallback)"
+            super().render(state)
+
+    def poll_button_pressed(self) -> Optional[bool]:
+        if self._window is None:
+            return None
+
+        self._pump_events()
+
+        if self._window is None:
+            return None
+
+        return self._button_pressed
+
+    def close(self) -> None:
+        self._button_pressed = False
+
+        if self._window is None:
+            self._closed = True
+            return
+
+        window = self._window
+        self._window = None
+        self._image_label = None
+        self._photo_image = None
+        self._closed = True
+
+        try:
+            window.destroy()
+        except Exception:
+            pass
 
 
 class ArecordRecorder:
@@ -3311,6 +3472,13 @@ def run_button_capture_loop(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DumplBot device UI scaffold")
     parser.add_argument("--mock", action="store_true", help="Run the text-only mock client")
+    parser.add_argument("--preview", action="store_true", help="Run the desktop preview renderer")
+    parser.add_argument(
+        "--preview-scale",
+        type=int,
+        default=PREVIEW_DEFAULT_SCALE,
+        help="Desktop preview scale multiplier",
+    )
     parser.add_argument("--host-url", default="http://127.0.0.1:4123", help="Base URL for dumplbotd")
     parser.add_argument("--prompt", help="Run one prompt and exit")
     parser.add_argument(
@@ -3472,7 +3640,22 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    renderer: ConsoleRenderer = ConsoleRenderer() if args.mock else WhisplayRenderer()
+    if args.mock and args.preview:
+        ConsoleRenderer().render_notice("Use --mock or --preview, not both")
+        return 1
+
+    if args.preview_scale < 1:
+        ConsoleRenderer().render_notice("--preview-scale must be >= 1")
+        return 1
+
+    renderer: ConsoleRenderer
+
+    if args.preview:
+        renderer = DesktopPreviewRenderer(scale=args.preview_scale)
+    elif args.mock:
+        renderer = ConsoleRenderer()
+    else:
+        renderer = WhisplayRenderer()
     ui_config = load_ui_runtime_config()
 
     if args.button_debug:
