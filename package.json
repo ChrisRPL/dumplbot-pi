@@ -17,6 +17,8 @@
     "smoke:runner-bash-prefix": "npm run build && node scripts/smoke-runner-bash-prefix.mjs",
     "smoke:runner-bash-exec": "npm run build && node scripts/smoke-runner-bash-exec.mjs",
     "smoke:runner-sandbox-fs": "npm run build && node scripts/smoke-runner-sandbox-fs.mjs",
+    "smoke:runner-sandbox-net": "npm run build && node scripts/smoke-runner-sandbox-net.mjs",
+    "smoke:runner-sandbox-local": "npm run build && node scripts/smoke-runner-sandbox-local.mjs",
     "smoke:runner-policy-mismatch": "npm run build && node scripts/smoke-runner-policy-mismatch.mjs",
     "smoke:runner-sandbox-launch": "npm run build && node scripts/smoke-runner-sandbox-launch.mjs",
     "smoke:runner-timeout": "npm run build && node scripts/smoke-runner-timeout.mjs",
