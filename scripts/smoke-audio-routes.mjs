@@ -18,6 +18,19 @@ const assert = (condition, message) => {
   }
 };
 
+const readPngDimensions = async (filePath) => {
+  const pngBytes = await readFile(filePath);
+  assert(pngBytes.length >= 24, "expected png file to contain header");
+  assert(
+    pngBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+    "expected png signature",
+  );
+  return {
+    width: pngBytes.readUInt32BE(16),
+    height: pngBytes.readUInt32BE(20),
+  };
+};
+
 const parseSsePayload = (payload) =>
   payload
     .split(SSE_DELIMITER)
@@ -130,6 +143,25 @@ const runUiCommand = (baseUrl, ...args) => {
   const result = spawnSync(
     "python3",
     ["apps/ui/dumpl_ui.py", "--mock", "--host-url", baseUrl, ...args],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 8000,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return result;
+};
+
+const runPreviewSnapshot = (baseUrl, outputPath, ...args) => {
+  const result = spawnSync(
+    "python3",
+    ["apps/ui/dumpl_ui.py", "--host-url", baseUrl, "--preview-snapshot", outputPath, ...args],
     {
       cwd: process.cwd(),
       env: process.env,
@@ -334,6 +366,20 @@ const runSmoke = async () => {
       "expected home audio toggle to render audio screen",
     );
 
+    const transcriptPreviewPath = join(tmpRoot, "preview-transcript.png");
+    const transcriptPreviewResult = runPreviewSnapshot(baseUrl, transcriptPreviewPath, "--transcript-screen");
+    assert(transcriptPreviewResult.status === 0, "expected transcript preview snapshot to return 0");
+    const transcriptPreviewDimensions = await readPngDimensions(transcriptPreviewPath);
+    assert(transcriptPreviewDimensions.width === 510, "expected transcript preview width");
+    assert(transcriptPreviewDimensions.height === 960, "expected transcript preview height");
+
+    const audioPreviewPath = join(tmpRoot, "preview-audio.png");
+    const audioPreviewResult = runPreviewSnapshot(baseUrl, audioPreviewPath, "--audio-screen");
+    assert(audioPreviewResult.status === 0, "expected audio preview snapshot to return 0");
+    const audioPreviewDimensions = await readPngDimensions(audioPreviewPath);
+    assert(audioPreviewDimensions.width === 510, "expected audio preview width");
+    assert(audioPreviewDimensions.height === 960, "expected audio preview height");
+
     const failedTalkResponse = await fetch(
       `${baseUrl}/api/audio/${uploadJson.audio_id}/talk`,
       {
@@ -415,6 +461,20 @@ const runSmoke = async () => {
       normalizedVoiceDebugOutput.includes("error: transcription returne"),
       "expected voice debug screen error message",
     );
+
+    const errorPreviewPath = join(tmpRoot, "preview-error.png");
+    const errorPreviewResult = runPreviewSnapshot(baseUrl, errorPreviewPath, "--error-screen");
+    assert(errorPreviewResult.status === 0, "expected error preview snapshot to return 0");
+    const errorPreviewDimensions = await readPngDimensions(errorPreviewPath);
+    assert(errorPreviewDimensions.width === 510, "expected error preview width");
+    assert(errorPreviewDimensions.height === 960, "expected error preview height");
+
+    const voiceDebugPreviewPath = join(tmpRoot, "preview-voice-debug.png");
+    const voiceDebugPreviewResult = runPreviewSnapshot(baseUrl, voiceDebugPreviewPath, "--voice-debug-screen");
+    assert(voiceDebugPreviewResult.status === 0, "expected voice debug preview snapshot to return 0");
+    const voiceDebugPreviewDimensions = await readPngDimensions(voiceDebugPreviewPath);
+    assert(voiceDebugPreviewDimensions.width === 510, "expected voice debug preview width");
+    assert(voiceDebugPreviewDimensions.height === 960, "expected voice debug preview height");
 
     const clearDebugResponse = await fetch(`${baseUrl}/api/debug/voice/clear`, {
       method: "POST",
