@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { applyRetentionPolicy } from "./retention";
@@ -10,6 +10,7 @@ export type StoredTranscript = {
 export type LastTranscript = {
   transcriptPath: string;
   text: string;
+  updatedAt: string;
 };
 
 const TMP_ROOT = process.env.DUMPLBOT_TMP_ROOT ?? "/tmp/dumplbot";
@@ -50,9 +51,11 @@ export const storeTranscript = async (
 export const readLastTranscript = async (): Promise<LastTranscript | null> => {
   try {
     const transcriptText = await readFile(LAST_TRANSCRIPT_PATH, "utf8");
+    const transcriptStats = await stat(LAST_TRANSCRIPT_PATH);
     return {
       transcriptPath: LAST_TRANSCRIPT_PATH,
       text: transcriptText,
+      updatedAt: transcriptStats.mtime.toISOString(),
     };
   } catch {
     return null;

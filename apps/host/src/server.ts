@@ -1102,6 +1102,7 @@ const handleDebugVoiceGet = async (response: ServerResponse): Promise<void> => {
       present: lastTranscript !== null,
       path: lastTranscript?.transcriptPath ?? null,
       text: lastTranscript?.text ?? null,
+      updated_at: lastTranscript?.updatedAt ?? null,
     },
     audio: {
       present: lastAudio !== null,
