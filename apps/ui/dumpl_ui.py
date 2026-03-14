@@ -33,6 +33,7 @@ JOB_HISTORY_SCREEN_LIMIT = 4
 JOB_DETAIL_HISTORY_LIMIT = 3
 WHISPLAY_PHASE_RGB = {
     "Idle": (0, 64, 16),
+    "Diagnostics": (72, 48, 0),
     "Jobs": (0, 56, 72),
     "Workspaces": (24, 56, 96),
     "Skills": (56, 72, 24),
@@ -307,6 +308,54 @@ def request_json(
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace").strip()
         raise RuntimeError(detail or f"{method} {path} failed with HTTP {error.code}") from error
+
+
+def get_runtime_config_entry(base_url: str) -> dict[str, Any]:
+    payload = request_json(base_url, "/api/config")
+    runtime = payload.get("runtime")
+
+    if not isinstance(runtime, dict):
+        raise RuntimeError("config response is invalid")
+
+    return runtime
+
+
+def get_setup_health_entry(base_url: str) -> dict[str, Any]:
+    payload = request_json(base_url, "/api/setup/health")
+    health = payload.get("health")
+
+    if not isinstance(health, dict):
+        raise RuntimeError("setup health response is invalid")
+
+    return health
+
+
+def get_setup_system_entry(base_url: str) -> dict[str, Any]:
+    payload = request_json(base_url, "/api/setup/system")
+    system = payload.get("system")
+
+    if not isinstance(system, dict):
+        raise RuntimeError("setup system response is invalid")
+
+    return system
+
+
+def summarize_runtime_selection(
+    runtime: dict[str, Any],
+    active_key: str,
+    default_key: str,
+) -> str:
+    active_value = runtime.get(active_key)
+
+    if isinstance(active_value, str) and active_value:
+        return active_value
+
+    default_value = runtime.get(default_key)
+
+    if isinstance(default_value, str) and default_value:
+        return f"{default_value} (default)"
+
+    return "(none)"
 
 
 def parse_non_negative_int(value: str, field_name: str) -> int:
@@ -1228,6 +1277,84 @@ def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
             f"bash: {bash_summary or '(none)'}",
         ]),
     )
+
+
+def build_diagnostics_screen_state(
+    runtime: dict[str, Any],
+    health: dict[str, Any],
+    system: dict[str, Any],
+) -> ScreenState:
+    active_server = system.get("active_server")
+    configured_server = system.get("configured_server")
+    active_bind = active_server.get("bind") if isinstance(active_server, dict) else None
+    configured_bind = configured_server.get("bind") if isinstance(configured_server, dict) else None
+    scheduler_enabled = health.get("scheduler_enabled")
+    scheduler_poll_interval = health.get("scheduler_poll_interval_seconds")
+    stt_ready = health.get("stt_ready")
+    stt_model = health.get("stt_model")
+    stt_language = health.get("stt_language")
+    lan_setup_ready = system.get("lan_setup_ready")
+    restart_required = system.get("restart_required")
+    daemon_healthy = health.get("daemon_healthy")
+    status_message = health.get("status_message")
+
+    if not isinstance(status_message, str) or not status_message:
+        status_message = "Diagnostics ready"
+
+    scheduler_summary = "scheduler: on" if scheduler_enabled is True else "scheduler: off"
+
+    if isinstance(scheduler_poll_interval, int):
+        scheduler_summary = f"{scheduler_summary} @ {scheduler_poll_interval}s"
+
+    stt_summary = "stt: ready" if stt_ready is True else "stt: missing"
+
+    if isinstance(stt_model, str) and stt_model:
+        stt_summary = f"{stt_summary} {stt_model}"
+
+    if isinstance(stt_language, str) and stt_language:
+        stt_summary = f"{stt_summary} {stt_language}"
+
+    return ScreenState(
+        phase="Diagnostics",
+        status=status_message,
+        prompt="\n".join([
+            f"workspace: {summarize_runtime_selection(runtime, 'active_workspace', 'default_workspace')}",
+            f"skill: {summarize_runtime_selection(runtime, 'active_skill', 'default_skill')}",
+        ]),
+        answer="\n".join([
+            f"daemon: {'ok' if daemon_healthy is True else 'error'}",
+            scheduler_summary,
+            stt_summary,
+            f"lan setup: {'ready' if lan_setup_ready is True else 'pending'}",
+            f"restart: {'yes' if restart_required is True else 'no'}",
+            f"active bind: {active_bind if isinstance(active_bind, str) and active_bind else '(unknown)'}",
+            f"config bind: {configured_bind if isinstance(configured_bind, str) and configured_bind else '(unknown)'}",
+        ]),
+    )
+
+
+def run_diagnostics_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    try:
+        renderer.render(
+            build_diagnostics_screen_state(
+                get_runtime_config_entry(base_url),
+                get_setup_health_entry(base_url),
+                get_setup_system_entry(base_url),
+            )
+        )
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Diagnostics screen failed",
+                error=str(error),
+            )
+        )
+        return 1
 
 
 def run_skill_screen(
@@ -3030,6 +3157,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skill-clear", action="store_true", help="Clear the active skill and exit")
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
+    parser.add_argument("--diagnostics-screen", action="store_true", help="Show one diagnostics screen and exit")
     return parser.parse_args()
 
 
@@ -3250,7 +3378,8 @@ def main() -> int:
             return 1
 
         if selector_mode_active and (
-            args.prompt is not None
+            args.diagnostics_screen
+            or args.prompt is not None
             or args.scheduler_screen is not None
             or args.jobs_screen
             or args.job_history is not None
@@ -3258,7 +3387,20 @@ def main() -> int:
             or has_job_upsert_arg
             or selected_job_actions
         ):
-            renderer.render_notice("Use workspace/skill selector modes separately from prompt/scheduler flows")
+            renderer.render_notice("Use workspace/skill selector modes separately from diagnostics/prompt/scheduler flows")
+            return 1
+
+        if args.diagnostics_screen and (
+            args.prompt is not None
+            or selector_mode_active
+            or args.scheduler_screen is not None
+            or args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or has_job_upsert_arg
+            or selected_job_actions
+        ):
+            renderer.render_notice("Use --diagnostics-screen separately from selector/prompt/scheduler flows")
             return 1
 
         if has_job_upsert_arg:
@@ -3390,6 +3532,12 @@ def main() -> int:
 
         if args.skill_summary:
             return run_skill_summary(
+                args.host_url,
+                renderer,
+            )
+
+        if args.diagnostics_screen:
+            return run_diagnostics_screen(
                 args.host_url,
                 renderer,
             )
