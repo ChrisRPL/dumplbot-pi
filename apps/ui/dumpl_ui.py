@@ -2664,6 +2664,40 @@ def image_to_rgb565(image: Any) -> list[int]:
     return pixel_data
 
 
+def render_state_image(
+    state: ScreenState,
+    image_module: Any,
+    draw_module: Any,
+    font: Any,
+    width: int = WHISPLAY_DEFAULT_WIDTH,
+    height: int = WHISPLAY_DEFAULT_HEIGHT,
+) -> tuple[Any, tuple[int, int, int]]:
+    image = image_module.new(
+        "RGB",
+        (width, height),
+        WHISPLAY_BACKGROUND,
+    )
+    draw = draw_module.Draw(image)
+    accent = get_phase_rgb(state.phase)
+
+    draw.rectangle(
+        (0, 0, width - 1, 28),
+        fill=WHISPLAY_HEADER_BACKGROUND,
+    )
+    draw.text((10, 9), state.phase.upper(), fill=accent, font=font)
+
+    cursor_y = 38
+
+    for line in build_screen_lines(state, width=WHISPLAY_TEXT_WIDTH):
+        if cursor_y >= height - 12:
+            break
+
+        draw.text((10, cursor_y), line, fill=WHISPLAY_FOREGROUND, font=font)
+        cursor_y += 12
+
+    return image, accent
+
+
 class ConsoleRenderer:
     def __init__(self, surface_name: str = "Mock UI") -> None:
         self.surface_name = surface_name
@@ -2749,28 +2783,14 @@ class WhisplayRenderer(ConsoleRenderer):
             super().render(state)
             return
 
-        image = self._image_module.new(
-            "RGB",
-            (self._width, self._height),
-            WHISPLAY_BACKGROUND,
+        image, accent = render_state_image(
+            state,
+            self._image_module,
+            self._draw_module,
+            self._font,
+            width=self._width,
+            height=self._height,
         )
-        draw = self._draw_module.Draw(image)
-        accent = get_phase_rgb(state.phase)
-
-        draw.rectangle(
-            (0, 0, self._width - 1, 28),
-            fill=WHISPLAY_HEADER_BACKGROUND,
-        )
-        draw.text((10, 9), state.phase.upper(), fill=accent, font=self._font)
-
-        cursor_y = 38
-
-        for line in build_screen_lines(state, width=WHISPLAY_TEXT_WIDTH):
-            if cursor_y >= self._height - 12:
-                break
-
-            draw.text((10, cursor_y), line, fill=WHISPLAY_FOREGROUND, font=self._font)
-            cursor_y += 12
 
         try:
             self._board.set_rgb(*accent)
