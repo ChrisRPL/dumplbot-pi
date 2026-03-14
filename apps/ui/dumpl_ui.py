@@ -32,6 +32,7 @@ JOB_HISTORY_COMMAND_LIMIT = 8
 JOB_HISTORY_SCREEN_LIMIT = 4
 JOB_DETAIL_HISTORY_LIMIT = 3
 WHISPLAY_PHASE_RGB = {
+    "Home": (48, 56, 16),
     "Idle": (0, 64, 16),
     "Diagnostics": (72, 48, 0),
     "Jobs": (0, 56, 72),
@@ -1333,6 +1334,36 @@ def build_diagnostics_screen_state(
     )
 
 
+def build_home_screen_state(
+    runtime: dict[str, Any],
+    health: dict[str, Any],
+    system: dict[str, Any],
+    jobs: list[dict[str, Any]],
+) -> ScreenState:
+    enabled_jobs = sum(1 for job in jobs if job.get("enabled") is True)
+    daemon_healthy = health.get("daemon_healthy")
+    stt_ready = health.get("stt_ready")
+    scheduler_enabled = health.get("scheduler_enabled")
+    lan_setup_ready = system.get("lan_setup_ready")
+    safety_mode = runtime.get("safety_mode")
+
+    return ScreenState(
+        phase="Home",
+        status=" | ".join([
+            "daemon ok" if daemon_healthy is True else "daemon issue",
+            "stt ready" if stt_ready is True else "stt missing",
+        ]),
+        answer="\n".join([
+            f"workspace: {summarize_runtime_selection(runtime, 'active_workspace', 'default_workspace')}",
+            f"skill: {summarize_runtime_selection(runtime, 'active_skill', 'default_skill')}",
+            f"safety: {safety_mode if isinstance(safety_mode, str) and safety_mode else '(none)'}",
+            f"jobs: {enabled_jobs}/{len(jobs)} on",
+            f"scheduler: {'on' if scheduler_enabled is True else 'off'}",
+            f"setup: {'lan ready' if lan_setup_ready is True else 'lan pending'}",
+        ]),
+    )
+
+
 def run_diagnostics_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -1351,6 +1382,31 @@ def run_diagnostics_screen(
             ScreenState(
                 phase="Error",
                 status="Diagnostics screen failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_home_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    try:
+        renderer.render(
+            build_home_screen_state(
+                get_runtime_config_entry(base_url),
+                get_setup_health_entry(base_url),
+                get_setup_system_entry(base_url),
+                list_job_entries(base_url),
+            )
+        )
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Home screen failed",
                 error=str(error),
             )
         )
@@ -3157,6 +3213,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skill-clear", action="store_true", help="Clear the active skill and exit")
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
+    parser.add_argument("--home-screen", action="store_true", help="Show one device home screen and exit")
     parser.add_argument("--diagnostics-screen", action="store_true", help="Show one diagnostics screen and exit")
     return parser.parse_args()
 
@@ -3377,8 +3434,13 @@ def main() -> int:
             renderer.render_notice("Use --skill-select/cycle/clear or talk override --skill, not both")
             return 1
 
+        if args.home_screen and args.diagnostics_screen:
+            renderer.render_notice("Use only one of --home-screen or --diagnostics-screen")
+            return 1
+
         if selector_mode_active and (
-            args.diagnostics_screen
+            args.home_screen
+            or args.diagnostics_screen
             or args.prompt is not None
             or args.scheduler_screen is not None
             or args.jobs_screen
@@ -3390,7 +3452,7 @@ def main() -> int:
             renderer.render_notice("Use workspace/skill selector modes separately from diagnostics/prompt/scheduler flows")
             return 1
 
-        if args.diagnostics_screen and (
+        if (args.home_screen or args.diagnostics_screen) and (
             args.prompt is not None
             or selector_mode_active
             or args.scheduler_screen is not None
@@ -3400,7 +3462,7 @@ def main() -> int:
             or has_job_upsert_arg
             or selected_job_actions
         ):
-            renderer.render_notice("Use --diagnostics-screen separately from selector/prompt/scheduler flows")
+            renderer.render_notice("Use --home-screen/--diagnostics-screen separately from selector/prompt/scheduler flows")
             return 1
 
         if has_job_upsert_arg:
@@ -3532,6 +3594,12 @@ def main() -> int:
 
         if args.skill_summary:
             return run_skill_summary(
+                args.host_url,
+                renderer,
+            )
+
+        if args.home_screen:
+            return run_home_screen(
                 args.host_url,
                 renderer,
             )
