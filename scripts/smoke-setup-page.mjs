@@ -3,7 +3,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const HOST = "127.0.0.1";
 const HOST_PORT = 4138;
@@ -70,6 +70,25 @@ const stopHostServer = async (childProcess) => {
     childProcess.once("exit", resolve);
     setTimeout(() => resolve(), 3000);
   });
+};
+
+const runUiCommand = (baseUrl, ...args) => {
+  const result = spawnSync(
+    "python3",
+    ["apps/ui/dumpl_ui.py", "--mock", "--host-url", baseUrl, ...args],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 8000,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return result;
 };
 
 const runSmoke = async () => {
@@ -296,6 +315,29 @@ const runSmoke = async () => {
     assert(
       restartNeededSystemPayload.system.action_instructions.includes("sudo systemctl restart dumplbotd.service"),
       "expected restart action instructions",
+    );
+
+    const diagnosticsScreenResult = runUiCommand(baseUrl, "--diagnostics-screen");
+    assert(diagnosticsScreenResult.status === 0, "expected diagnostics screen to return 0");
+    assert(
+      diagnosticsScreenResult.stdout.includes("daemon: ok"),
+      "expected diagnostics screen daemon summary",
+    );
+    assert(
+      diagnosticsScreenResult.stdout.includes("scheduler: off @ 15s"),
+      "expected diagnostics screen scheduler summary",
+    );
+    assert(
+      diagnosticsScreenResult.stdout.includes("stt: ready whisper-1 auto"),
+      "expected diagnostics screen stt summary",
+    );
+    assert(
+      diagnosticsScreenResult.stdout.includes(`config bind: 0.0.0.0:${HOST_PORT}`),
+      "expected diagnostics screen configured bind summary",
+    );
+    assert(
+      diagnosticsScreenResult.stdout.includes("restart: yes"),
+      "expected diagnostics screen restart summary",
     );
 
     const invalidImportResponse = await fetch(`${baseUrl}/api/config/import`, {

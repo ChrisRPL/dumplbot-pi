@@ -282,6 +282,29 @@ const runSmoke = async () => {
     assert(Array.isArray(updatedJob?.history), "expected listed job history array");
     assert(updatedJob?.history.length === 0, "expected listed job to have empty history");
 
+    const homeScreenResult = runUiCommand(baseUrl, "--home-screen");
+    assert(homeScreenResult.status === 0, "expected home screen to return 0");
+    assert(
+      homeScreenResult.stdout.includes("daemon ok | stt missing"),
+      "expected home screen readiness summary",
+    );
+    assert(
+      homeScreenResult.stdout.includes("workspace: default (default)"),
+      "expected home screen workspace summary",
+    );
+    assert(
+      homeScreenResult.stdout.includes("skill: coding (default)"),
+      "expected home screen skill summary",
+    );
+    assert(
+      homeScreenResult.stdout.includes("jobs: 2/3 on"),
+      "expected home screen jobs summary",
+    );
+    assert(
+      homeScreenResult.stdout.includes("setup: lan pending"),
+      "expected home screen lan setup summary",
+    );
+
     const detailJobResponse = await fetch(`${baseUrl}/api/jobs/daily-status`);
     assert(detailJobResponse.status === 200, "expected job detail to return 200");
     const detailJobPayload = await detailJobResponse.json();

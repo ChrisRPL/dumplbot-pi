@@ -23,6 +23,7 @@ Design for the tiny screen first. Fast feedback beats density.
 
 - Keep a stable status bar for battery, Wi-Fi, and time.
 - Use wrapped text with predictable paging.
+- Keep the home screen compact: current workspace, current skill, scheduler count, and setup readiness should fit in one glance.
 - Keep workspace and skill selectors short enough that the active entry is obvious at a glance.
 - Keep skill summary screens compact but explanatory: permission, reasoning, and integration readiness should fit without entering detail.
 - Keep workspace and skill detail views to concise summaries, not raw full-file dumps.
@@ -40,6 +41,7 @@ Design for the tiny screen first. Fast feedback beats density.
 
 ## Debug Surfaces
 
+- Add a dedicated diagnostics screen for bind, daemon, scheduler, and STT readiness.
 - Keep last transcript visible or reviewable.
 - Keep last audio and last error reachable for debugging.
 - Add a diagnostics screen after the basic flow works.
