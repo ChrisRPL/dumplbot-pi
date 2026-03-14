@@ -102,6 +102,29 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `POST /api/audio/:audioId/talk` uses the same timeout SSE mapping as `/api/talk`.
 - Successful and terminal runner outcomes append workspace-local run history under `workspaces/<id>/.dumplbot-history.json`.
 
+### `GET /api/debug/voice`
+
+- Return the newest stored transcript and audio metadata for device-side debugging.
+- Current response shape:
+
+```json
+{
+  "transcript":{
+    "present":true,
+    "path":"/tmp/dumplbot/last-transcript.txt",
+    "text":"open the logs"
+  },
+  "audio":{
+    "present":true,
+    "path":"/tmp/dumplbot/last-audio.wav",
+    "size_bytes":16044,
+    "updated_at":"2026-03-14T09:30:00.000Z"
+  }
+}
+```
+
+- When no transcript or audio has been stored yet, that branch returns `{"present":false,"path":null,...}`.
+
 ### `GET /api/skills`
 
 - Return installed skills plus policy metadata.
