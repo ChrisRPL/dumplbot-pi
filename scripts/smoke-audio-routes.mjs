@@ -217,6 +217,23 @@ const runSmoke = async () => {
       "last transcript was not stored",
     );
 
+    const debugVoiceResponse = await fetch(`${baseUrl}/api/debug/voice`);
+    assert(debugVoiceResponse.ok, `debug voice route failed: ${debugVoiceResponse.status}`);
+    const debugVoiceJson = await debugVoiceResponse.json();
+    assert(debugVoiceJson.transcript.present === true, "expected debug transcript presence");
+    assert(debugVoiceJson.transcript.text === "smoke route transcript", "unexpected debug transcript text");
+    assert(
+      typeof debugVoiceJson.transcript.path === "string" && debugVoiceJson.transcript.path.endsWith("last-transcript.txt"),
+      "unexpected debug transcript path",
+    );
+    assert(debugVoiceJson.audio.present === true, "expected debug audio presence");
+    assert(
+      typeof debugVoiceJson.audio.path === "string" && debugVoiceJson.audio.path.endsWith("last-audio.wav"),
+      "unexpected debug audio path",
+    );
+    assert(debugVoiceJson.audio.size_bytes === WAVE_BYTES.length, "unexpected debug audio size");
+    assert(typeof debugVoiceJson.audio.updated_at === "string", "expected debug audio timestamp");
+
     console.log("audio route smoke ok");
   } finally {
     await stopHostServer(hostServer);
