@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const HOST = "127.0.0.1";
 const HOST_PORT = 4123;
@@ -117,6 +117,25 @@ const stopHostServer = async (childProcess) => {
     childProcess.once("exit", resolve);
     setTimeout(() => resolve(), 3000);
   });
+};
+
+const runUiCommand = (baseUrl, ...args) => {
+  const result = spawnSync(
+    "python3",
+    ["apps/ui/dumpl_ui.py", "--mock", "--host-url", baseUrl, ...args],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 8000,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return result;
 };
 
 const uploadAudio = async (baseUrl, fileName, contentType) => {
@@ -233,6 +252,70 @@ const runSmoke = async () => {
     );
     assert(debugVoiceJson.audio.size_bytes === WAVE_BYTES.length, "unexpected debug audio size");
     assert(typeof debugVoiceJson.audio.updated_at === "string", "expected debug audio timestamp");
+
+    const transcriptScreenResult = runUiCommand(baseUrl, "--transcript-screen");
+    assert(transcriptScreenResult.status === 0, "expected transcript screen to return 0");
+    assert(
+      transcriptScreenResult.stdout.includes("Mock UI | Diagnostics"),
+      "expected transcript screen header",
+    );
+    assert(
+      transcriptScreenResult.stdout.includes("Last transcript"),
+      "expected transcript screen status",
+    );
+    assert(
+      transcriptScreenResult.stdout.includes("smoke route transcript"),
+      "expected transcript screen text",
+    );
+
+    const audioScreenResult = runUiCommand(baseUrl, "--audio-screen");
+    assert(audioScreenResult.status === 0, "expected audio screen to return 0");
+    assert(
+      audioScreenResult.stdout.includes("Mock UI | Diagnostics"),
+      "expected audio screen header",
+    );
+    assert(
+      audioScreenResult.stdout.includes("Last audio"),
+      "expected audio screen status",
+    );
+    assert(
+      audioScreenResult.stdout.includes("last-audio.wav"),
+      "expected audio screen path",
+    );
+    assert(
+      audioScreenResult.stdout.includes(`size: ${WAVE_BYTES.length} B`),
+      "expected audio screen size",
+    );
+
+    const homeTranscriptViewResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-target",
+      "transcript",
+      "--home-nav-action",
+      "toggle-view",
+    );
+    assert(homeTranscriptViewResult.status === 0, "expected home transcript toggle to return 0");
+    assert(
+      homeTranscriptViewResult.stdout.includes("smoke route transcript"),
+      "expected home transcript toggle to render transcript screen",
+    );
+
+    const homeAudioViewResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-target",
+      "audio",
+      "--home-nav-action",
+      "toggle-view",
+    );
+    assert(homeAudioViewResult.status === 0, "expected home audio toggle to return 0");
+    assert(
+      homeAudioViewResult.stdout.includes("last-audio.wav"),
+      "expected home audio toggle to render audio screen",
+    );
 
     console.log("audio route smoke ok");
   } finally {
