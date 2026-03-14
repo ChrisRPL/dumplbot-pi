@@ -53,9 +53,10 @@ Design for the tiny screen first. Fast feedback beats density.
 ## Home Navigation
 
 - Home screen should show the next target clearly before the user enters it.
-- Short press on home should cycle workspace, skill, scheduler, diagnostics, transcript, audio, and error targets.
+- Short press on home should cycle workspace, skill, scheduler, diagnostics, voice, transcript, audio, and error targets.
 - Long press on home should enter the focused target view.
 - From a focused top-level view, one press should get the user back home quickly.
+- From the focused voice-debug bundle view, long press should clear debug state in place.
 
 ## Scheduler Navigation
 
