@@ -2,6 +2,7 @@
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -381,6 +382,64 @@ def get_debug_voice_entry(base_url: str) -> dict[str, Any]:
         "audio": audio,
         "error": error,
     }
+
+
+def parse_debug_timestamp(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+
+    normalized_value = value.replace("Z", "+00:00")
+
+    try:
+        parsed = datetime.fromisoformat(normalized_value)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+
+    return parsed.astimezone(timezone.utc)
+
+
+def summarize_debug_age(value: Any) -> str:
+    parsed = parse_debug_timestamp(value)
+
+    if parsed is None:
+        return "(unknown age)"
+
+    age_seconds = max(0, int((datetime.now(timezone.utc) - parsed).total_seconds()))
+
+    if age_seconds < 60:
+        return f"{age_seconds}s ago"
+
+    age_minutes = age_seconds // 60
+
+    if age_minutes < 60:
+        return f"{age_minutes}m ago"
+
+    age_hours = age_minutes // 60
+
+    if age_hours < 24:
+        return f"{age_hours}h ago"
+
+    age_days = age_hours // 24
+    return f"{age_days}d ago"
+
+
+def format_debug_detail_lines(
+    path_value: Any,
+    updated_at: Any,
+) -> str:
+    lines: list[str] = []
+
+    if isinstance(path_value, str) and path_value:
+        lines.append(path_value)
+
+    if isinstance(updated_at, str) and updated_at:
+        lines.append(f"updated: {updated_at}")
+        lines.append(f"age: {summarize_debug_age(updated_at)}")
+
+    return "\n".join(lines)
 
 
 def normalize_home_navigation_state(
@@ -1394,11 +1453,12 @@ def build_transcript_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenSt
 
     transcript_path = transcript.get("path")
     transcript_text = transcript.get("text")
+    updated_at = transcript.get("updated_at")
 
     return ScreenState(
         phase="Diagnostics",
         status="Last transcript",
-        prompt=transcript_path if isinstance(transcript_path, str) and transcript_path else "",
+        prompt=format_debug_detail_lines(transcript_path, updated_at),
         answer=transcript_text if isinstance(transcript_text, str) and transcript_text else "(empty transcript)",
     )
 
@@ -1423,10 +1483,10 @@ def build_audio_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
     return ScreenState(
         phase="Diagnostics",
         status="Last audio",
-        prompt=audio_path if isinstance(audio_path, str) and audio_path else "",
+        prompt=format_debug_detail_lines(audio_path, updated_at),
         answer="\n".join([
             f"size: {size_bytes} B" if isinstance(size_bytes, int) else "size: (unknown)",
-            f"updated: {updated_at}" if isinstance(updated_at, str) and updated_at else "updated: (unknown)",
+            f"age: {summarize_debug_age(updated_at)}" if isinstance(updated_at, str) and updated_at else "age: (unknown)",
         ]),
     )
 
@@ -1452,10 +1512,10 @@ def build_error_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
     return ScreenState(
         phase="Diagnostics",
         status="Last error",
-        prompt=error_path if isinstance(error_path, str) and error_path else "",
+        prompt=format_debug_detail_lines(error_path, updated_at),
         answer="\n".join([
             f"source: {source}" if isinstance(source, str) and source else "source: (unknown)",
-            f"updated: {updated_at}" if isinstance(updated_at, str) and updated_at else "updated: (unknown)",
+            f"age: {summarize_debug_age(updated_at)}" if isinstance(updated_at, str) and updated_at else "age: (unknown)",
             "",
             message if isinstance(message, str) and message else "(empty error)",
         ]),
@@ -1491,10 +1551,13 @@ def build_voice_debug_bundle_screen_state(debug_voice: dict[str, Any]) -> Screen
 
     transcript_path = transcript.get("path")
     transcript_text = transcript.get("text")
+    transcript_updated_at = transcript.get("updated_at")
     audio_path = audio.get("path")
     audio_size = audio.get("size_bytes")
+    audio_updated_at = audio.get("updated_at")
     error_source = error_entry.get("source")
     error_message = error_entry.get("message")
+    error_updated_at = error_entry.get("updated_at")
 
     return ScreenState(
         phase="Diagnostics",
@@ -1505,13 +1568,13 @@ def build_voice_debug_bundle_screen_state(debug_voice: dict[str, Any]) -> Screen
             f"err: {error_source}" if isinstance(error_source, str) and error_source else "err: none",
         ]),
         answer="\n".join([
-            f"heard: {summarize_debug_value(transcript_text, '(empty)', 32)}",
+            f"heard: {summarize_debug_value(transcript_text, '(empty)', 24)} [{summarize_debug_age(transcript_updated_at)}]",
             (
-                f"audio: {audio_size} B"
+                f"audio: {audio_size} B [{summarize_debug_age(audio_updated_at)}]"
                 if isinstance(audio_size, int)
                 else "audio: none"
             ),
-            f"error: {summarize_debug_value(error_message, 'none', 32)}",
+            f"error: {summarize_debug_value(error_message, 'none', 24)} [{summarize_debug_age(error_updated_at) if isinstance(error_source, str) and error_source else 'none'}]",
         ]),
     )
 
