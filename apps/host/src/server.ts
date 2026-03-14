@@ -12,6 +12,7 @@ import type {
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
 import { getStoredAudioPath, readLastAudio, storeAudioBuffer } from "./audio-store";
+import { readLastDebugError, writeLastDebugError } from "./error-store";
 import { isLanClientAddress, isLanOnlySetupPath } from "./lan-only";
 import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
@@ -686,10 +687,31 @@ const logWorkspaceHistoryWriteFailure = (
   process.stderr.write(`workspace history write failed for ${workspaceId}: ${message}\n`);
 };
 
-const streamPolicyDeniedResponse = (
-  response: ServerResponse,
-  message: string,
+const logDebugErrorWriteFailure = (
+  source: string,
+  error: unknown,
 ): void => {
+  const message = error instanceof Error ? error.message : "unknown debug error write failure";
+  process.stderr.write(`debug error write failed for ${source}: ${message}\n`);
+};
+
+const recordDebugError = async (
+  source: string,
+  message: string,
+): Promise<void> => {
+  try {
+    await writeLastDebugError(source, message);
+  } catch (error) {
+    logDebugErrorWriteFailure(source, error);
+  }
+};
+
+const streamPolicyDeniedResponse = async (
+  response: ServerResponse,
+  source: string,
+  message: string,
+): Promise<void> => {
+  await recordDebugError(source, message);
   sendSseHeaders(response);
 
   const statusEvent: DumplStatusEvent = {
@@ -1069,9 +1091,10 @@ const handleConfigGet = async (response: ServerResponse): Promise<void> => {
 };
 
 const handleDebugVoiceGet = async (response: ServerResponse): Promise<void> => {
-  const [lastTranscript, lastAudio] = await Promise.all([
+  const [lastTranscript, lastAudio, lastError] = await Promise.all([
     readLastTranscript(),
     readLastAudio(),
+    readLastDebugError(),
   ]);
 
   sendJson(response, 200, {
@@ -1085,6 +1108,13 @@ const handleDebugVoiceGet = async (response: ServerResponse): Promise<void> => {
       path: lastAudio?.audioPath ?? null,
       size_bytes: lastAudio?.sizeBytes ?? null,
       updated_at: lastAudio?.updatedAt ?? null,
+    },
+    error: {
+      present: lastError !== null,
+      path: lastError?.errorPath ?? null,
+      source: lastError?.source ?? null,
+      message: lastError?.message ?? null,
+      updated_at: lastError?.updatedAt ?? null,
     },
   });
 };
@@ -1842,10 +1872,10 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
       resolvedSkill.bashCommandPrefixAllowlist,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "policy validation failed";
-    streamPolicyDeniedResponse(response, message);
-    return;
-  }
+      const message = error instanceof Error ? error.message : "policy validation failed";
+      await streamPolicyDeniedResponse(response, "talk", message);
+      return;
+    }
 
   const [runtimeConfig, sandboxConfig] = await Promise.all([
     loadHostRuntimeConfig(),
@@ -1872,6 +1902,10 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     id: resolvedSkill.id,
     toolAllowlist,
   }));
+
+  if (runOutcome.status === "error") {
+    await recordDebugError("talk", runOutcome.summary);
+  }
 
   try {
     await recordWorkspaceRun(resolvedWorkspace.path, {
@@ -1920,7 +1954,17 @@ const handleAudioTranscribe = async (
   }
 
   const sttConfig = await loadSttRuntimeConfig();
-  const transcription = await transcribeAudioFile(audioId, audioPath, sttConfig);
+  let transcription;
+
+  try {
+    transcription = await transcribeAudioFile(audioId, audioPath, sttConfig);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "audio transcription failed";
+    await recordDebugError("audio-transcribe", message);
+    sendJson(response, 500, { error: message });
+    return;
+  }
+
   sendJson(response, 200, {
     audio_id: audioId,
     text: transcription.text,
@@ -1981,10 +2025,10 @@ const handleAudioTalk = async (
       resolvedSkill.bashCommandPrefixAllowlist,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "policy validation failed";
-    streamPolicyDeniedResponse(response, message);
-    return;
-  }
+      const message = error instanceof Error ? error.message : "policy validation failed";
+      await streamPolicyDeniedResponse(response, "audio-talk", message);
+      return;
+    }
 
   const [runtimeConfig, sandboxConfig] = await Promise.all([
     loadHostRuntimeConfig(),
@@ -1999,60 +2043,70 @@ const handleAudioTalk = async (
   };
   writeSseEvent(response, transcribingEvent);
 
-  const sttConfig = await loadSttRuntimeConfig();
-  const transcription = await transcribeAudioFile(audioId, audioPath, sttConfig);
-  const prompt = transcription.text.trim();
+  try {
+    const sttConfig = await loadSttRuntimeConfig();
+    const transcription = await transcribeAudioFile(audioId, audioPath, sttConfig);
+    const prompt = transcription.text.trim();
 
-  if (!prompt) {
-    throw new Error("transcription returned empty text");
-  }
+    if (!prompt) {
+      throw new Error("transcription returned empty text");
+    }
 
-  const sttEvent: DumplSttEvent = {
-    type: "stt",
-    text: prompt,
-  };
-  writeSseEvent(response, sttEvent);
+    const sttEvent: DumplSttEvent = {
+      type: "stt",
+      text: prompt,
+    };
+    writeSseEvent(response, sttEvent);
 
-  const runOutcome = await streamTalkResponse(
-    response,
-    {
-      prompt,
-      workspace: resolvedWorkspace.id,
-      skill: resolvedSkill.id,
-      toolAllowlist,
-      policy: {
+    const runOutcome = await streamTalkResponse(
+      response,
+      {
+        prompt,
         workspace: resolvedWorkspace.id,
         skill: resolvedSkill.id,
         toolAllowlist,
-        bashCommandPrefixAllowlist,
-        permissionMode: resolvedSkill.permissionMode,
+        policy: {
+          workspace: resolvedWorkspace.id,
+          skill: resolvedSkill.id,
+          toolAllowlist,
+          bashCommandPrefixAllowlist,
+          permissionMode: resolvedSkill.permissionMode,
+        },
       },
-    },
-    {
-      sandbox: sandboxConfig,
-      workspacePath: resolvedWorkspace.path,
-      attachedRepoPaths: resolvedWorkspace.attachedRepoPaths,
-    },
-    runtimeConfig.maxRunSeconds,
-    buildSkillPreludeEvents({
-      id: resolvedSkill.id,
-      toolAllowlist,
-    }),
-    true,
-  );
+      {
+        sandbox: sandboxConfig,
+        workspacePath: resolvedWorkspace.path,
+        attachedRepoPaths: resolvedWorkspace.attachedRepoPaths,
+      },
+      runtimeConfig.maxRunSeconds,
+      buildSkillPreludeEvents({
+        id: resolvedSkill.id,
+        toolAllowlist,
+      }),
+      true,
+    );
 
-  try {
-    await recordWorkspaceRun(resolvedWorkspace.path, {
-      completedAt: runOutcome.completedAt,
-      prompt,
-      transcript: prompt,
-      skill: resolvedSkill.id,
-      source: "audio",
-      status: runOutcome.status,
-      summary: runOutcome.summary,
-    });
+    if (runOutcome.status === "error") {
+      await recordDebugError("audio-talk", runOutcome.summary);
+    }
+
+    try {
+      await recordWorkspaceRun(resolvedWorkspace.path, {
+        completedAt: runOutcome.completedAt,
+        prompt,
+        transcript: prompt,
+        skill: resolvedSkill.id,
+        source: "audio",
+        status: runOutcome.status,
+        summary: runOutcome.summary,
+      });
+    } catch (error) {
+      logWorkspaceHistoryWriteFailure(resolvedWorkspace.id, error);
+    }
   } catch (error) {
-    logWorkspaceHistoryWriteFailure(resolvedWorkspace.id, error);
+    const message = error instanceof Error ? error.message : "audio talk failed";
+    await recordDebugError("audio-talk", message);
+    throw error;
   }
 };
 
