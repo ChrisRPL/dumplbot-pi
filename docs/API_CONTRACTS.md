@@ -112,7 +112,8 @@ The daemon streams events back to the UI over Server-Sent Events.
   "transcript":{
     "present":true,
     "path":"/tmp/dumplbot/last-transcript.txt",
-    "text":"open the logs"
+    "text":"open the logs",
+    "updated_at":"2026-03-14T09:29:00.000Z"
   },
   "audio":{
     "present":true,
@@ -131,6 +132,11 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```
 
 - When no transcript, audio, or error has been stored yet, that branch returns `{"present":false,"path":null,...}` for that branch.
+
+### `POST /api/debug/voice/clear`
+
+- Clear the last transcript, last audio metadata, and last error metadata used by device-side debug screens.
+- Success response reuses the `GET /api/debug/voice` shape with every branch cleared to `present:false`.
 
 ### `GET /api/skills`
 

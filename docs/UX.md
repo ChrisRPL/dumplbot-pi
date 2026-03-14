@@ -47,6 +47,7 @@ Design for the tiny screen first. Fast feedback beats density.
 - Keep last audio and last error reachable for debugging.
 - Keep transcript/audio debug screens consistent between mock mode, desktop preview, and device renderer.
 - Keep one compact voice-debug summary screen for field triage.
+- Keep debug preview snapshots on the same raster path as the live Whisplay preview.
 - Add a diagnostics screen after the basic flow works.
 
 ## Home Navigation
