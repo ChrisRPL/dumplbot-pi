@@ -462,6 +462,59 @@ const runSmoke = async () => {
       "expected voice debug screen error message",
     );
 
+    const homeVoiceViewResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-target",
+      "voice",
+      "--home-nav-action",
+      "toggle-view",
+    );
+    assert(homeVoiceViewResult.status === 0, "expected home voice toggle to return 0");
+    assert(
+      homeVoiceViewResult.stdout.includes("Voice debug"),
+      "expected home voice toggle to render voice debug screen",
+    );
+    assert(
+      homeVoiceViewResult.stdout.includes("err: audio-talk"),
+      "expected home voice toggle to show error summary",
+    );
+
+    const clearDebugStateResult = runUiCommand(baseUrl, "--clear-debug-state");
+    assert(clearDebugStateResult.status === 0, "expected clear debug state to return 0");
+    assert(
+      clearDebugStateResult.stdout.includes("Voice debug"),
+      "expected clear debug state to render voice debug screen",
+    );
+    assert(
+      clearDebugStateResult.stdout.includes("heard: (empty)"),
+      "expected clear debug state to clear transcript summary",
+    );
+    assert(
+      clearDebugStateResult.stdout.includes("audio: none"),
+      "expected clear debug state to clear audio summary",
+    );
+    assert(
+      clearDebugStateResult.stdout.includes("error: none"),
+      "expected clear debug state to clear error summary",
+    );
+
+    const homeVoiceClearResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "voice",
+      "--home-nav-target",
+      "voice",
+      "--home-nav-action",
+      "clear-debug",
+    );
+    assert(homeVoiceClearResult.status === 0, "expected home voice clear to return 0");
+    assert(
+      homeVoiceClearResult.stdout.includes("error: none"),
+      "expected home voice clear to keep empty bundle state",
+    );
+
     const errorPreviewPath = join(tmpRoot, "preview-error.png");
     const errorPreviewResult = runPreviewSnapshot(baseUrl, errorPreviewPath, "--error-screen");
     assert(errorPreviewResult.status === 0, "expected error preview snapshot to return 0");
