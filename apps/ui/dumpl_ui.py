@@ -26,7 +26,7 @@ WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
 BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
-HOME_NAVIGATION_TARGET_SEQUENCE = ("workspace", "skill", "scheduler", "diagnostics")
+HOME_NAVIGATION_TARGET_SEQUENCE = ("workspace", "skill", "scheduler", "diagnostics", "transcript", "audio")
 SCHEDULER_SCREEN_SEQUENCE = ("summary", "detail", "history")
 WORKSPACE_HISTORY_COMMAND_LIMIT = 8
 WORKSPACE_HISTORY_SCREEN_LIMIT = 4
@@ -365,6 +365,20 @@ def summarize_runtime_selection(
         return f"{default_value} (default)"
 
     return "(none)"
+
+
+def get_debug_voice_entry(base_url: str) -> dict[str, Any]:
+    payload = request_json(base_url, "/api/debug/voice")
+    transcript = payload.get("transcript")
+    audio = payload.get("audio")
+
+    if not isinstance(transcript, dict) or not isinstance(audio, dict):
+        raise RuntimeError("debug voice response is invalid")
+
+    return {
+        "transcript": transcript,
+        "audio": audio,
+    }
 
 
 def normalize_home_navigation_state(
@@ -1363,6 +1377,58 @@ def build_diagnostics_screen_state(
     )
 
 
+def build_transcript_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
+    transcript = debug_voice.get("transcript")
+
+    if not isinstance(transcript, dict):
+        raise RuntimeError("debug transcript response is invalid")
+
+    if transcript.get("present") is not True:
+        return ScreenState(
+            phase="Diagnostics",
+            status="No transcript captured",
+            answer="Run one audio request to populate last transcript.",
+        )
+
+    transcript_path = transcript.get("path")
+    transcript_text = transcript.get("text")
+
+    return ScreenState(
+        phase="Diagnostics",
+        status="Last transcript",
+        prompt=transcript_path if isinstance(transcript_path, str) and transcript_path else "",
+        answer=transcript_text if isinstance(transcript_text, str) and transcript_text else "(empty transcript)",
+    )
+
+
+def build_audio_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
+    audio = debug_voice.get("audio")
+
+    if not isinstance(audio, dict):
+        raise RuntimeError("debug audio response is invalid")
+
+    if audio.get("present") is not True:
+        return ScreenState(
+            phase="Diagnostics",
+            status="No audio captured",
+            answer="Run push-to-talk or audio upload to populate last audio.",
+        )
+
+    audio_path = audio.get("path")
+    size_bytes = audio.get("size_bytes")
+    updated_at = audio.get("updated_at")
+
+    return ScreenState(
+        phase="Diagnostics",
+        status="Last audio",
+        prompt=audio_path if isinstance(audio_path, str) and audio_path else "",
+        answer="\n".join([
+            f"size: {size_bytes} B" if isinstance(size_bytes, int) else "size: (unknown)",
+            f"updated: {updated_at}" if isinstance(updated_at, str) and updated_at else "updated: (unknown)",
+        ]),
+    )
+
+
 def build_home_screen_state(
     runtime: dict[str, Any],
     health: dict[str, Any],
@@ -1425,6 +1491,42 @@ def run_diagnostics_screen(
             ScreenState(
                 phase="Error",
                 status="Diagnostics screen failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_transcript_debug_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    try:
+        renderer.render(build_transcript_debug_screen_state(get_debug_voice_entry(base_url)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Transcript screen failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_audio_debug_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    try:
+        renderer.render(build_audio_debug_screen_state(get_debug_voice_entry(base_url)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Audio screen failed",
                 error=str(error),
             )
         )
@@ -1523,6 +1625,14 @@ def render_home_navigation_state(
                 get_setup_system_entry(base_url),
             )
         )
+        return
+
+    if state.screen_mode == "transcript":
+        renderer.render(build_transcript_debug_screen_state(get_debug_voice_entry(base_url)))
+        return
+
+    if state.screen_mode == "audio":
+        renderer.render(build_audio_debug_screen_state(get_debug_voice_entry(base_url)))
         return
 
     raise RuntimeError("home navigation mode is invalid")
@@ -3675,15 +3785,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
     parser.add_argument("--home-screen", action="store_true", help="Show one device home screen and exit")
+    parser.add_argument("--transcript-screen", action="store_true", help="Show last transcript debug screen and exit")
+    parser.add_argument("--audio-screen", action="store_true", help="Show last audio debug screen and exit")
     parser.add_argument("--home-button-mode", action="store_true", help="Run button-driven home navigation on the renderer")
     parser.add_argument(
         "--home-nav-mode",
-        choices=["home", "workspace", "skill", "scheduler", "diagnostics"],
+        choices=["home", "workspace", "skill", "scheduler", "diagnostics", "transcript", "audio"],
         help="Current home navigation screen used by --home-nav-action",
     )
     parser.add_argument(
         "--home-nav-target",
-        choices=["workspace", "skill", "scheduler", "diagnostics"],
+        choices=["workspace", "skill", "scheduler", "diagnostics", "transcript", "audio"],
         help="Focused home target used by --home-nav-action",
     )
     parser.add_argument(
@@ -3932,8 +4044,19 @@ def main() -> int:
             renderer.render_notice("Use --skill-select/cycle/clear or talk override --skill, not both")
             return 1
 
-        if args.home_screen and args.diagnostics_screen:
-            renderer.render_notice("Use only one of --home-screen or --diagnostics-screen")
+        top_level_debug_screen_count = sum(
+            1
+            for value in (
+                args.home_screen,
+                args.diagnostics_screen,
+                args.transcript_screen,
+                args.audio_screen,
+            )
+            if value
+        )
+
+        if top_level_debug_screen_count > 1:
+            renderer.render_notice("Use only one top-level home/debug screen at a time")
             return 1
 
         if args.home_nav_action is not None and args.home_nav_mode is None:
@@ -3943,6 +4066,8 @@ def main() -> int:
         if args.home_button_mode and (
             args.home_screen
             or args.diagnostics_screen
+            or args.transcript_screen
+            or args.audio_screen
             or args.home_nav_action is not None
             or args.jobs_screen
             or args.job_history is not None
@@ -3965,6 +4090,8 @@ def main() -> int:
             args.home_screen
             or args.home_button_mode
             or args.diagnostics_screen
+            or args.transcript_screen
+            or args.audio_screen
             or args.home_nav_action is not None
             or args.prompt is not None
             or args.scheduler_screen is not None
@@ -3977,7 +4104,14 @@ def main() -> int:
             renderer.render_notice("Use workspace/skill selector modes separately from diagnostics/prompt/scheduler flows")
             return 1
 
-        if (args.home_screen or args.home_button_mode or args.diagnostics_screen or args.home_nav_action is not None) and (
+        if (
+            args.home_screen
+            or args.home_button_mode
+            or args.diagnostics_screen
+            or args.transcript_screen
+            or args.audio_screen
+            or args.home_nav_action is not None
+        ) and (
             args.prompt is not None
             or selector_mode_active
             or args.scheduler_screen is not None
@@ -4125,6 +4259,18 @@ def main() -> int:
 
         if args.home_screen:
             return run_home_screen(
+                args.host_url,
+                renderer,
+            )
+
+        if args.transcript_screen:
+            return run_transcript_debug_screen(
+                args.host_url,
+                renderer,
+            )
+
+        if args.audio_screen:
+            return run_audio_debug_screen(
                 args.host_url,
                 renderer,
             )
