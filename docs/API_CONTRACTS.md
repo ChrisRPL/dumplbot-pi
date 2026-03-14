@@ -470,6 +470,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 
 - Return the LAN-only setup shell for phone/browser appliance setup.
 - The current shell reads `/api/config`, `/api/workspaces`, `/api/skills`, `/api/setup/status`, `/api/setup/health`, `/api/setup/system`, and `/api/config/export`, then saves non-secret runtime config back through `POST /api/config`, setup keys through `POST /api/setup/secrets`, and raw config imports through `POST /api/config/import`.
+- The shell also summarizes per-skill integration readiness from `/api/skills`, so provider-key updates are reflected in setup without exposing secret values.
 - Status codes:
   - `200` with `text/html`.
   - `403` when the client is outside localhost or a private LAN range.
