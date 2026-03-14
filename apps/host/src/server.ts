@@ -11,7 +11,7 @@ import type {
 } from "../../../packages/core/src";
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
-import { getStoredAudioPath, storeAudioBuffer } from "./audio-store";
+import { getStoredAudioPath, readLastAudio, storeAudioBuffer } from "./audio-store";
 import { isLanClientAddress, isLanOnlySetupPath } from "./lan-only";
 import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
@@ -43,6 +43,7 @@ import { buildSetupSystemStatus } from "./setup-system-status";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { renderSetupPage } from "./setup-page";
+import { readLastTranscript } from "./transcript-store";
 import { transcribeAudioFile } from "./transcriber";
 import {
   createWorkspace,
@@ -1065,6 +1066,27 @@ const handleSkillList = async (response: ServerResponse): Promise<void> => {
 
 const handleConfigGet = async (response: ServerResponse): Promise<void> => {
   sendJson(response, 200, await getConfigResponsePayload());
+};
+
+const handleDebugVoiceGet = async (response: ServerResponse): Promise<void> => {
+  const [lastTranscript, lastAudio] = await Promise.all([
+    readLastTranscript(),
+    readLastAudio(),
+  ]);
+
+  sendJson(response, 200, {
+    transcript: {
+      present: lastTranscript !== null,
+      path: lastTranscript?.transcriptPath ?? null,
+      text: lastTranscript?.text ?? null,
+    },
+    audio: {
+      present: lastAudio !== null,
+      path: lastAudio?.audioPath ?? null,
+      size_bytes: lastAudio?.sizeBytes ?? null,
+      updated_at: lastAudio?.updatedAt ?? null,
+    },
+  });
 };
 
 const handleConfigExport = async (response: ServerResponse): Promise<void> => {
@@ -2208,6 +2230,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/config") {
         await handleConfigGet(response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/debug/voice") {
+        await handleDebugVoiceGet(response);
         return;
       }
 

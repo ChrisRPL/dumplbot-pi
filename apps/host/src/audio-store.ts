@@ -1,4 +1,4 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -8,6 +8,12 @@ export type StoredAudio = {
   audioId: string;
   audioPath: string;
   lastAudioPath: string;
+};
+
+export type LastAudio = {
+  audioPath: string;
+  sizeBytes: number;
+  updatedAt: string;
 };
 
 const TMP_ROOT = process.env.DUMPLBOT_TMP_ROOT ?? "/tmp/dumplbot";
@@ -62,4 +68,17 @@ export const getStoredAudioPath = async (audioId: string): Promise<string> => {
   }
 
   return audioPath;
+};
+
+export const readLastAudio = async (): Promise<LastAudio | null> => {
+  try {
+    const audioStats = await stat(LAST_AUDIO_PATH);
+    return {
+      audioPath: LAST_AUDIO_PATH,
+      sizeBytes: audioStats.size,
+      updatedAt: audioStats.mtime.toISOString(),
+    };
+  } catch {
+    return null;
+  }
 };
