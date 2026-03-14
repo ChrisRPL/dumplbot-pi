@@ -305,6 +305,25 @@ const runSmoke = async () => {
       "expected home screen lan setup summary",
     );
 
+    const homeSchedulerViewResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-target",
+      "scheduler",
+      "--home-nav-action",
+      "toggle-view",
+    );
+    assert(homeSchedulerViewResult.status === 0, "expected home nav scheduler toggle to return 0");
+    assert(
+      homeSchedulerViewResult.stdout.includes("Mock UI | Jobs"),
+      "expected home nav scheduler toggle to render jobs screen",
+    );
+    assert(
+      homeSchedulerViewResult.stdout.includes("daily-status [off]"),
+      "expected home nav scheduler toggle to show scheduler content",
+    );
+
     const detailJobResponse = await fetch(`${baseUrl}/api/jobs/daily-status`);
     assert(detailJobResponse.status === 200, "expected job detail to return 200");
     const detailJobPayload = await detailJobResponse.json();

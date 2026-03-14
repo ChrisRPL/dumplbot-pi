@@ -736,6 +736,57 @@ const runSmoke = async () => {
       "expected UI skill summary compact metadata output",
     );
 
+    const homeNextTargetResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-action",
+      "next-target",
+    );
+    assert(homeNextTargetResult.status === 0, "expected home nav next-target to return 0");
+    assert(
+      homeNextTargetResult.stdout.includes("> skill"),
+      "expected home nav next-target to focus skill",
+    );
+
+    const homeWorkspaceViewResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-target",
+      "workspace",
+      "--home-nav-action",
+      "toggle-view",
+    );
+    assert(homeWorkspaceViewResult.status === 0, "expected home nav workspace toggle to return 0");
+    assert(
+      homeWorkspaceViewResult.stdout.includes("Mock UI | Workspaces"),
+      "expected home nav workspace toggle to render workspace screen",
+    );
+    assert(
+      homeWorkspaceViewResult.stdout.includes("alpha [research]"),
+      "expected home nav workspace toggle to show workspace content",
+    );
+
+    const homeSkillViewResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-target",
+      "skill",
+      "--home-nav-action",
+      "toggle-view",
+    );
+    assert(homeSkillViewResult.status === 0, "expected home nav skill toggle to return 0");
+    assert(
+      homeSkillViewResult.stdout.includes("Mock UI | Skills"),
+      "expected home nav skill toggle to render skill screen",
+    );
+    assert(
+      homeSkillViewResult.stdout.includes("* coding [balanced]"),
+      "expected home nav skill toggle to show active skill",
+    );
+
     const talkAfterClearResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },

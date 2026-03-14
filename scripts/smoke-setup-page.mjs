@@ -340,6 +340,25 @@ const runSmoke = async () => {
       "expected diagnostics screen restart summary",
     );
 
+    const homeDiagnosticsViewResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-target",
+      "diagnostics",
+      "--home-nav-action",
+      "toggle-view",
+    );
+    assert(homeDiagnosticsViewResult.status === 0, "expected home nav diagnostics toggle to return 0");
+    assert(
+      homeDiagnosticsViewResult.stdout.includes("Mock UI | Diagnostics"),
+      "expected home nav diagnostics toggle to render diagnostics screen",
+    );
+    assert(
+      homeDiagnosticsViewResult.stdout.includes(`config bind: 0.0.0.0:${HOST_PORT}`),
+      "expected home nav diagnostics toggle to show configured bind",
+    );
+
     const invalidImportResponse = await fetch(`${baseUrl}/api/config/import`, {
       method: "POST",
       headers: { "content-type": "application/json" },

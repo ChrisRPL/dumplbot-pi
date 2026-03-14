@@ -46,6 +46,13 @@ Design for the tiny screen first. Fast feedback beats density.
 - Keep last audio and last error reachable for debugging.
 - Add a diagnostics screen after the basic flow works.
 
+## Home Navigation
+
+- Home screen should show the next target clearly before the user enters it.
+- Short press on home should cycle workspace, skill, scheduler, and diagnostics targets.
+- Long press on home should enter the focused target view.
+- From a focused top-level view, one press should get the user back home quickly.
+
 ## Scheduler Navigation
 
 - Short press should cycle scheduler summary, detail, and history.
