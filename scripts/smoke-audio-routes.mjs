@@ -357,6 +357,51 @@ const runSmoke = async () => {
     );
     assert(typeof debugVoiceErrorJson.error.updated_at === "string", "expected debug error timestamp");
 
+    const errorScreenResult = runUiCommand(baseUrl, "--error-screen");
+    assert(errorScreenResult.status === 0, "expected error screen to return 0");
+    assert(
+      errorScreenResult.stdout.includes("Last error"),
+      "expected error screen status",
+    );
+    assert(
+      errorScreenResult.stdout.includes("source: audio-talk"),
+      "expected error screen source",
+    );
+    assert(
+      errorScreenResult.stdout.includes("transcription returned empty text"),
+      "expected error screen message",
+    );
+
+    const homeErrorViewResult = runUiCommand(
+      baseUrl,
+      "--home-nav-mode",
+      "home",
+      "--home-nav-target",
+      "error",
+      "--home-nav-action",
+      "toggle-view",
+    );
+    assert(homeErrorViewResult.status === 0, "expected home error toggle to return 0");
+    assert(
+      homeErrorViewResult.stdout.includes("transcription returned empty text"),
+      "expected home error toggle to render error screen",
+    );
+
+    const voiceDebugScreenResult = runUiCommand(baseUrl, "--voice-debug-screen");
+    assert(voiceDebugScreenResult.status === 0, "expected voice debug screen to return 0");
+    assert(
+      voiceDebugScreenResult.stdout.includes("Voice debug"),
+      "expected voice debug screen status",
+    );
+    assert(
+      voiceDebugScreenResult.stdout.includes("err: audio-talk"),
+      "expected voice debug screen error summary",
+    );
+    assert(
+      voiceDebugScreenResult.stdout.includes("error: transcription returned empty"),
+      "expected voice debug screen error message",
+    );
+
     console.log("audio route smoke ok");
   } finally {
     await stopHostServer(hostServer);
