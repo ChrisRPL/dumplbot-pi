@@ -11,8 +11,8 @@ import type {
 } from "../../../packages/core/src";
 
 import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
-import { getStoredAudioPath, readLastAudio, storeAudioBuffer } from "./audio-store";
-import { readLastDebugError, writeLastDebugError } from "./error-store";
+import { clearLastAudio, getStoredAudioPath, readLastAudio, storeAudioBuffer } from "./audio-store";
+import { clearLastDebugError, readLastDebugError, writeLastDebugError } from "./error-store";
 import { isLanClientAddress, isLanOnlySetupPath } from "./lan-only";
 import type { RunnerInput, RunnerLaunchOptions } from "./runner";
 import { streamRunnerEvents } from "./runner";
@@ -44,7 +44,7 @@ import { buildSetupSystemStatus } from "./setup-system-status";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { renderSetupPage } from "./setup-page";
-import { readLastTranscript } from "./transcript-store";
+import { clearLastTranscript, readLastTranscript } from "./transcript-store";
 import { transcribeAudioFile } from "./transcriber";
 import {
   createWorkspace,
@@ -1118,6 +1118,16 @@ const handleDebugVoiceGet = async (response: ServerResponse): Promise<void> => {
       updated_at: lastError?.updatedAt ?? null,
     },
   });
+};
+
+const handleDebugVoiceClear = async (response: ServerResponse): Promise<void> => {
+  await Promise.all([
+    clearLastTranscript(),
+    clearLastAudio(),
+    clearLastDebugError(),
+  ]);
+
+  await handleDebugVoiceGet(response);
 };
 
 const handleConfigExport = async (response: ServerResponse): Promise<void> => {
@@ -2290,6 +2300,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/debug/voice") {
         await handleDebugVoiceGet(response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/debug/voice/clear") {
+        await handleDebugVoiceClear(response);
         return;
       }
 

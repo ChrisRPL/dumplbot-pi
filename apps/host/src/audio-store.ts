@@ -1,4 +1,4 @@
-import { access, mkdir, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 
@@ -81,4 +81,8 @@ export const readLastAudio = async (): Promise<LastAudio | null> => {
   } catch {
     return null;
   }
+};
+
+export const clearLastAudio = async (): Promise<void> => {
+  await rm(LAST_AUDIO_PATH, { force: true });
 };

@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { applyRetentionPolicy } from "./retention";
@@ -60,4 +60,8 @@ export const readLastTranscript = async (): Promise<LastTranscript | null> => {
   } catch {
     return null;
   }
+};
+
+export const clearLastTranscript = async (): Promise<void> => {
+  await rm(LAST_TRANSCRIPT_PATH, { force: true });
 };

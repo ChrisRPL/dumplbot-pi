@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export type LastDebugError = {
@@ -94,4 +94,8 @@ export const readLastDebugError = async (): Promise<LastDebugError | null> => {
   } catch {
     return null;
   }
+};
+
+export const clearLastDebugError = async (): Promise<void> => {
+  await rm(LAST_ERROR_PATH, { force: true });
 };
