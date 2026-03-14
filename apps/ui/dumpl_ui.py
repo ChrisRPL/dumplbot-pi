@@ -26,7 +26,7 @@ WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
 BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
-HOME_NAVIGATION_TARGET_SEQUENCE = ("workspace", "skill", "scheduler", "diagnostics", "transcript", "audio")
+HOME_NAVIGATION_TARGET_SEQUENCE = ("workspace", "skill", "scheduler", "diagnostics", "transcript", "audio", "error")
 SCHEDULER_SCREEN_SEQUENCE = ("summary", "detail", "history")
 WORKSPACE_HISTORY_COMMAND_LIMIT = 8
 WORKSPACE_HISTORY_SCREEN_LIMIT = 4
@@ -371,13 +371,15 @@ def get_debug_voice_entry(base_url: str) -> dict[str, Any]:
     payload = request_json(base_url, "/api/debug/voice")
     transcript = payload.get("transcript")
     audio = payload.get("audio")
+    error = payload.get("error")
 
-    if not isinstance(transcript, dict) or not isinstance(audio, dict):
+    if not isinstance(transcript, dict) or not isinstance(audio, dict) or not isinstance(error, dict):
         raise RuntimeError("debug voice response is invalid")
 
     return {
         "transcript": transcript,
         "audio": audio,
+        "error": error,
     }
 
 
@@ -1429,6 +1431,37 @@ def build_audio_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
     )
 
 
+def build_error_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
+    error_entry = debug_voice.get("error")
+
+    if not isinstance(error_entry, dict):
+        raise RuntimeError("debug error response is invalid")
+
+    if error_entry.get("present") is not True:
+        return ScreenState(
+            phase="Diagnostics",
+            status="No error captured",
+            answer="Run one failing talk or transcribe request to populate last error.",
+        )
+
+    error_path = error_entry.get("path")
+    source = error_entry.get("source")
+    message = error_entry.get("message")
+    updated_at = error_entry.get("updated_at")
+
+    return ScreenState(
+        phase="Diagnostics",
+        status="Last error",
+        prompt=error_path if isinstance(error_path, str) and error_path else "",
+        answer="\n".join([
+            f"source: {source}" if isinstance(source, str) and source else "source: (unknown)",
+            f"updated: {updated_at}" if isinstance(updated_at, str) and updated_at else "updated: (unknown)",
+            "",
+            message if isinstance(message, str) and message else "(empty error)",
+        ]),
+    )
+
+
 def build_home_screen_state(
     runtime: dict[str, Any],
     health: dict[str, Any],
@@ -1527,6 +1560,24 @@ def run_audio_debug_screen(
             ScreenState(
                 phase="Error",
                 status="Audio screen failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_error_debug_screen(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    try:
+        renderer.render(build_error_debug_screen_state(get_debug_voice_entry(base_url)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Error screen failed",
                 error=str(error),
             )
         )
@@ -1633,6 +1684,10 @@ def render_home_navigation_state(
 
     if state.screen_mode == "audio":
         renderer.render(build_audio_debug_screen_state(get_debug_voice_entry(base_url)))
+        return
+
+    if state.screen_mode == "error":
+        renderer.render(build_error_debug_screen_state(get_debug_voice_entry(base_url)))
         return
 
     raise RuntimeError("home navigation mode is invalid")
@@ -3787,15 +3842,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--home-screen", action="store_true", help="Show one device home screen and exit")
     parser.add_argument("--transcript-screen", action="store_true", help="Show last transcript debug screen and exit")
     parser.add_argument("--audio-screen", action="store_true", help="Show last audio debug screen and exit")
+    parser.add_argument("--error-screen", action="store_true", help="Show last error debug screen and exit")
     parser.add_argument("--home-button-mode", action="store_true", help="Run button-driven home navigation on the renderer")
     parser.add_argument(
         "--home-nav-mode",
-        choices=["home", "workspace", "skill", "scheduler", "diagnostics", "transcript", "audio"],
+        choices=["home", "workspace", "skill", "scheduler", "diagnostics", "transcript", "audio", "error"],
         help="Current home navigation screen used by --home-nav-action",
     )
     parser.add_argument(
         "--home-nav-target",
-        choices=["workspace", "skill", "scheduler", "diagnostics", "transcript", "audio"],
+        choices=["workspace", "skill", "scheduler", "diagnostics", "transcript", "audio", "error"],
         help="Focused home target used by --home-nav-action",
     )
     parser.add_argument(
@@ -4051,6 +4107,7 @@ def main() -> int:
                 args.diagnostics_screen,
                 args.transcript_screen,
                 args.audio_screen,
+                args.error_screen,
             )
             if value
         )
@@ -4068,6 +4125,7 @@ def main() -> int:
             or args.diagnostics_screen
             or args.transcript_screen
             or args.audio_screen
+            or args.error_screen
             or args.home_nav_action is not None
             or args.jobs_screen
             or args.job_history is not None
@@ -4092,6 +4150,7 @@ def main() -> int:
             or args.diagnostics_screen
             or args.transcript_screen
             or args.audio_screen
+            or args.error_screen
             or args.home_nav_action is not None
             or args.prompt is not None
             or args.scheduler_screen is not None
@@ -4110,6 +4169,7 @@ def main() -> int:
             or args.diagnostics_screen
             or args.transcript_screen
             or args.audio_screen
+            or args.error_screen
             or args.home_nav_action is not None
         ) and (
             args.prompt is not None
@@ -4271,6 +4331,12 @@ def main() -> int:
 
         if args.audio_screen:
             return run_audio_debug_screen(
+                args.host_url,
+                renderer,
+            )
+
+        if args.error_screen:
+            return run_error_debug_screen(
                 args.host_url,
                 renderer,
             )
