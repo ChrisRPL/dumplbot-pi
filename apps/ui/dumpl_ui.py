@@ -1549,6 +1549,86 @@ def run_home_navigation_preview(
         return 1
 
 
+def run_home_button_loop(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+) -> int:
+    state = HomeNavigationState()
+    was_pressed = False
+    long_press_sent = False
+    pressed_started_at: Optional[float] = None
+
+    try:
+        render_home_navigation_state(base_url, renderer, state)
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Home navigation failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+    while True:
+        is_pressed = renderer.poll_button_pressed()
+
+        if is_pressed is None:
+            renderer.render_notice("Button polling unavailable")
+            return 1
+
+        now = time.monotonic()
+
+        if is_pressed and not was_pressed:
+            pressed_started_at = now
+            long_press_sent = False
+        elif (
+            is_pressed
+            and was_pressed
+            and not long_press_sent
+            and pressed_started_at is not None
+            and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
+        ):
+            try:
+                state = cycle_home_navigation_state(state, "toggle-view")
+                render_home_navigation_state(base_url, renderer, state)
+            except (RuntimeError, urllib.error.URLError) as error:
+                renderer.render(
+                    ScreenState(
+                        phase="Error",
+                        status="Home navigation failed",
+                        prompt="toggle-view",
+                        error=str(error),
+                    )
+                )
+                return 1
+
+            long_press_sent = True
+        elif not is_pressed and was_pressed:
+            if not long_press_sent:
+                action = "next-target" if state.screen_mode == "home" else "toggle-view"
+
+                try:
+                    state = cycle_home_navigation_state(state, action)
+                    render_home_navigation_state(base_url, renderer, state)
+                except (RuntimeError, urllib.error.URLError) as error:
+                    renderer.render(
+                        ScreenState(
+                            phase="Error",
+                            status="Home navigation failed",
+                            prompt=action,
+                            error=str(error),
+                        )
+                    )
+                    return 1
+
+            pressed_started_at = None
+            long_press_sent = False
+
+        was_pressed = is_pressed
+        time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
+
+
 def run_skill_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -3350,6 +3430,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", help="Workspace override for talk requests")
     parser.add_argument("--skill", help="Skill override for talk requests")
     parser.add_argument("--home-screen", action="store_true", help="Show one device home screen and exit")
+    parser.add_argument("--home-button-mode", action="store_true", help="Run button-driven home navigation on the renderer")
     parser.add_argument(
         "--home-nav-mode",
         choices=["home", "workspace", "skill", "scheduler", "diagnostics"],
@@ -3593,6 +3674,20 @@ def main() -> int:
             renderer.render_notice("--home-nav-action requires --home-nav-mode")
             return 1
 
+        if args.home_button_mode and (
+            args.home_screen
+            or args.diagnostics_screen
+            or args.home_nav_action is not None
+            or args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or args.scheduler_screen is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+        ):
+            renderer.render_notice("Use --home-button-mode separately from other home/scheduler views")
+            return 1
+
         if args.home_nav_action is None and (
             args.home_nav_mode is not None
             or args.home_nav_target is not None
@@ -3602,6 +3697,7 @@ def main() -> int:
 
         if selector_mode_active and (
             args.home_screen
+            or args.home_button_mode
             or args.diagnostics_screen
             or args.home_nav_action is not None
             or args.prompt is not None
@@ -3615,7 +3711,7 @@ def main() -> int:
             renderer.render_notice("Use workspace/skill selector modes separately from diagnostics/prompt/scheduler flows")
             return 1
 
-        if (args.home_screen or args.diagnostics_screen or args.home_nav_action is not None) and (
+        if (args.home_screen or args.home_button_mode or args.diagnostics_screen or args.home_nav_action is not None) and (
             args.prompt is not None
             or selector_mode_active
             or args.scheduler_screen is not None
@@ -3763,6 +3859,12 @@ def main() -> int:
 
         if args.home_screen:
             return run_home_screen(
+                args.host_url,
+                renderer,
+            )
+
+        if args.home_button_mode:
+            return run_home_button_loop(
                 args.host_url,
                 renderer,
             )
