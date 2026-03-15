@@ -1457,6 +1457,12 @@ def build_transcript_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenSt
             phase="Diagnostics",
             status="No transcript captured",
             answer="Run one audio request to populate last transcript.",
+            visual={
+                "kind": "transcript_debug",
+                "lead_value": "Run one audio request to populate last transcript.",
+                "age": "(unknown)",
+                "file": "(none)",
+            },
         )
 
     transcript_path = transcript.get("path")
@@ -1468,6 +1474,12 @@ def build_transcript_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenSt
         status="Last transcript",
         prompt=format_debug_detail_lines(transcript_path, updated_at),
         answer=transcript_text if isinstance(transcript_text, str) and transcript_text else "(empty transcript)",
+        visual={
+            "kind": "transcript_debug",
+            "lead_value": transcript_text if isinstance(transcript_text, str) and transcript_text else "(empty transcript)",
+            "age": summarize_debug_age(updated_at),
+            "file": visual_path_name(transcript_path),
+        },
     )
 
 
@@ -1482,6 +1494,12 @@ def build_audio_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
             phase="Diagnostics",
             status="No audio captured",
             answer="Run push-to-talk or audio upload to populate last audio.",
+            visual={
+                "kind": "audio_debug",
+                "lead_value": "Run push-to-talk or audio upload to populate last audio.",
+                "age": "(unknown)",
+                "file": "(none)",
+            },
         )
 
     audio_path = audio.get("path")
@@ -1496,6 +1514,12 @@ def build_audio_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
             f"size: {size_bytes} B" if isinstance(size_bytes, int) else "size: (unknown)",
             f"age: {summarize_debug_age(updated_at)}" if isinstance(updated_at, str) and updated_at else "age: (unknown)",
         ]),
+        visual={
+            "kind": "audio_debug",
+            "lead_value": f"{size_bytes} B saved" if isinstance(size_bytes, int) else "(unknown size)",
+            "age": summarize_debug_age(updated_at),
+            "file": visual_path_name(audio_path),
+        },
     )
 
 
@@ -1510,6 +1534,12 @@ def build_error_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
             phase="Diagnostics",
             status="No error captured",
             answer="Run one failing talk or transcribe request to populate last error.",
+            visual={
+                "kind": "error_debug",
+                "lead_value": "Run one failing talk or transcribe request to populate last error.",
+                "age": "(unknown)",
+                "file": "(none)",
+            },
         )
 
     error_path = error_entry.get("path")
@@ -1527,6 +1557,13 @@ def build_error_debug_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
             "",
             message if isinstance(message, str) and message else "(empty error)",
         ]),
+        visual={
+            "kind": "error_debug",
+            "lead_value": message if isinstance(message, str) and message else "(empty error)",
+            "age": summarize_debug_age(updated_at),
+            "file": visual_path_name(error_path),
+            "source": compact_badge_value(source),
+        },
     )
 
 
@@ -1584,6 +1621,15 @@ def build_voice_debug_bundle_screen_state(debug_voice: dict[str, Any]) -> Screen
             ),
             f"error: {summarize_debug_value(error_message, 'none', 24)} [{summarize_debug_age(error_updated_at) if isinstance(error_source, str) and error_source else 'none'}]",
         ]),
+        visual={
+            "kind": "voice_debug",
+            "heard": summarize_debug_value(transcript_text, "(empty)", 30),
+            "heard_age": summarize_debug_age(transcript_updated_at),
+            "audio": f"{audio_size} B" if isinstance(audio_size, int) else "none",
+            "audio_age": summarize_debug_age(audio_updated_at),
+            "error": summarize_debug_value(error_message, "none", 30),
+            "error_age": summarize_debug_age(error_updated_at) if isinstance(error_source, str) and error_source else "none",
+        },
     )
 
 
@@ -3216,6 +3262,13 @@ def compact_home_value(value: Any, max_length: int = 12) -> str:
     return truncate_visual_text(compacted, max_length)
 
 
+def compact_badge_value(value: Any, max_length: int = 8) -> str:
+    if isinstance(value, str) and value:
+        value = value.split("-", 1)[0]
+
+    return truncate_visual_text(value, max_length)
+
+
 def draw_text_block(
     draw: Any,
     text: str,
@@ -3283,6 +3336,13 @@ def draw_panel_card(
     )
 
 
+def visual_path_name(path_value: Any) -> str:
+    if not isinstance(path_value, str) or not path_value:
+        return "(none)"
+
+    return truncate_visual_text(Path(path_value).name, 18)
+
+
 def render_home_visual(
     draw: Any,
     state: ScreenState,
@@ -3346,6 +3406,71 @@ def render_home_visual(
     draw.text((width - 14 - (jobs_bbox[2] - jobs_bbox[0]), height - 22), jobs_text, fill=(154, 162, 170), font=fonts["tiny"])
 
 
+def render_detail_visual(
+    draw: Any,
+    title: str,
+    badge: str,
+    lead_label: str,
+    lead_value: str,
+    meta_left: str,
+    meta_right: str,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), title.upper(), fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 66, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 57, 20), badge.upper(), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 220), radius=16, fill=(22, 28, 36))
+    draw.text((22, 72), lead_label.upper(), fill=accent, font=fonts["tiny"])
+    draw_text_block(
+        draw,
+        lead_value,
+        22,
+        92,
+        width - 44,
+        fonts["body"],
+        WHISPLAY_FOREGROUND,
+        max_lines=8,
+    )
+
+    draw_panel_card(draw, 12, 232, 70, 48, "Age", meta_left, fonts, accent, body_fill=(16, 23, 29))
+    draw_panel_card(draw, 88, 232, 70, 48, "File", meta_right, fonts, accent, body_fill=(16, 23, 29))
+    draw.text((14, height - 22), "debug surface", fill=(154, 162, 170), font=fonts["tiny"])
+
+
+def render_voice_debug_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual if isinstance(state.visual, dict) else {}
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "VOICE DEBUG", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 66, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 55, 20), "TRIAGE", fill=accent, font=fonts["tiny"])
+
+    cards = [
+        ("Heard", truncate_visual_text(visual.get("heard"), 34), truncate_visual_text(visual.get("heard_age"), 12)),
+        ("Audio", truncate_visual_text(visual.get("audio"), 34), truncate_visual_text(visual.get("audio_age"), 12)),
+        ("Error", truncate_visual_text(visual.get("error"), 34), truncate_visual_text(visual.get("error_age"), 12)),
+    ]
+
+    card_y = 60
+
+    for title, value, age in cards:
+        draw.rounded_rectangle((12, card_y, width - 12, card_y + 62), radius=14, fill=(22, 28, 36))
+        draw.text((22, card_y + 10), title.upper(), fill=accent, font=fonts["tiny"])
+        draw_text_block(draw, value, 22, card_y + 28, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=2)
+        draw.text((width - 64, card_y + 10), age, fill=(154, 162, 170), font=fonts["tiny"])
+        card_y += 70
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -3364,6 +3489,61 @@ def render_state_image(
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "home":
         render_home_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "transcript_debug":
+        visual = state.visual
+        render_detail_visual(
+            draw,
+            "Transcript",
+            "heard",
+            "Transcript",
+            truncate_visual_text(visual.get("lead_value"), 180),
+            truncate_visual_text(visual.get("age"), 14),
+            truncate_visual_text(visual.get("file"), 14),
+            fonts,
+            width,
+            height,
+            accent,
+        )
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "audio_debug":
+        visual = state.visual
+        render_detail_visual(
+            draw,
+            "Audio",
+            "wav",
+            "Audio",
+            truncate_visual_text(visual.get("lead_value"), 180),
+            truncate_visual_text(visual.get("age"), 14),
+            truncate_visual_text(visual.get("file"), 14),
+            fonts,
+            width,
+            height,
+            accent,
+        )
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "error_debug":
+        visual = state.visual
+        render_detail_visual(
+            draw,
+            "Error",
+            truncate_visual_text(visual.get("source"), 8),
+            "Message",
+            truncate_visual_text(visual.get("lead_value"), 180),
+            truncate_visual_text(visual.get("age"), 14),
+            truncate_visual_text(visual.get("file"), 14),
+            fonts,
+            width,
+            height,
+            accent,
+        )
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "voice_debug":
+        render_voice_debug_visual(draw, state, fonts, width, accent)
         return image, accent
 
     draw.rectangle(
