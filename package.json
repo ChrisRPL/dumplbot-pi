@@ -8,6 +8,7 @@
     "dev:host": "npm run build && npm run start:host",
     "smoke:audio-routes": "npm run build && node scripts/smoke-audio-routes.mjs",
     "smoke:audio-strict-policy": "npm run build && node scripts/smoke-audio-strict-policy.mjs",
+    "smoke:ui-core-gallery": "npm run build && node scripts/smoke-ui-core-gallery.mjs",
     "smoke:bash-tool-execution": "npm run build && node scripts/smoke-bash-tool-execution.mjs",
     "smoke:bash-prefix-policy": "npm run build && node scripts/smoke-bash-prefix-policy.mjs",
     "smoke:jobs-api": "npm run build && node scripts/smoke-jobs-api.mjs",
