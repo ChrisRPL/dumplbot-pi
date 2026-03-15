@@ -193,13 +193,33 @@ Transcript/audio/error detail:
 - two tiny meta cards below
 - keep filenames short
 
+Scheduler summary:
+
+- show active job count first
+- show 2 compact job cards max
+- each card: job id, schedule, last result, enabled chip
+
+Scheduler detail:
+
+- one schedule card
+- one compact context card for workspace, skill, and history window
+- one short last-run line
+
+Scheduler history:
+
+- 3 stacked run cards max
+- time left, status chip right, result line below
+- keep footer hints short
+
 ## Preview Rules
 
 - Mac preview and Whisplay must share the same raster composition path.
 - Snapshot output is the review artifact for layout changes.
 - Use `python apps/ui/dumpl_ui.py --preview-core-gallery /tmp/dumplbot-core-gallery` for host-free review of `home`, `listening`, `transcribing`, `thinking`, `tool`, `answer`, and `error`.
+- Use `python apps/ui/dumpl_ui.py --preview-scheduler-gallery /tmp/dumplbot-scheduler-gallery` for host-free review of `scheduler-summary`, `scheduler-detail`, and `scheduler-history`.
 - When changing visual hierarchy, regenerate `home`, `transcript`, `audio`, `error`, and `voice-debug` snapshots together.
 - Run `npm run smoke:ui-core-gallery` after core-state raster changes so the PNG set stays locked.
+- Run `npm run smoke:ui-scheduler-gallery` after scheduler raster changes.
 
 ## Interaction Tone
 
