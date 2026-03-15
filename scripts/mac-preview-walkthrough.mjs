@@ -98,8 +98,15 @@ const parseArgs = (argv) => {
 };
 
 const ensureHostReady = async (hostUrl) => {
-  const response = await fetch(`${hostUrl}/health`);
-  assert(response.status === 200, `expected ${hostUrl}/health to return 200`);
+  try {
+    const response = await fetch(`${hostUrl}/health`);
+    assert(response.status === 200, `expected ${hostUrl}/health to return 200`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `cannot reach dumplbotd at ${hostUrl}; start it first with "npm run dev:host" or pass --host-url (detail: ${detail})`,
+    );
+  }
 };
 
 const runPythonUi = (args) => {
