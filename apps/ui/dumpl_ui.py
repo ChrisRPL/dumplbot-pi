@@ -139,6 +139,14 @@ def build_capture_screen_state(state: CaptureFlowState) -> ScreenState:
         return ScreenState(
             phase="Listening",
             status="Recording audio",
+            visual={
+                "kind": "stage",
+                "title": "Listening",
+                "badge": "rec",
+                "lead": "Release to send",
+                "detail": "Keep holding to record.\nLong hold cancels this capture.",
+                "footer": "walkie-talkie mode",
+            },
         )
 
     if state.phase == "Saved":
@@ -146,6 +154,14 @@ def build_capture_screen_state(state: CaptureFlowState) -> ScreenState:
             phase="Saved",
             status="Audio capture saved",
             transcript=state.saved_path,
+            visual={
+                "kind": "stage",
+                "title": "Saved",
+                "badge": "wav",
+                "lead": "Audio saved",
+                "detail": truncate_visual_text(state.saved_path, 42) if isinstance(state.saved_path, str) else "Ready to upload and run.",
+                "footer": "sending to host",
+            },
         )
 
     if state.phase == "Error":
@@ -153,11 +169,27 @@ def build_capture_screen_state(state: CaptureFlowState) -> ScreenState:
             phase="Error",
             status="Audio capture failed",
             error=state.error or "Unknown error",
+            visual={
+                "kind": "stage",
+                "title": "Error",
+                "badge": "mic",
+                "lead": "Capture failed",
+                "detail": state.error or "Unknown error",
+                "footer": "release, then try again",
+            },
         )
 
     return ScreenState(
         phase="Idle",
         status="Ready for push-to-talk",
+        visual={
+            "kind": "stage",
+            "title": "Ready",
+            "badge": "ptt",
+            "lead": "Hold to record",
+            "detail": "Release sends audio.\nLong hold cancels before upload.",
+            "footer": "push-to-talk idle",
+        },
     )
 
 
@@ -3068,6 +3100,14 @@ def stream_audio_talk(
         phase="Transcribing",
         status="Uploading audio",
         transcript=audio_id,
+        visual={
+            "kind": "stage",
+            "title": "Transcribing",
+            "badge": "wav",
+            "lead": "Uploading audio",
+            "detail": truncate_visual_text(audio_id, 48),
+            "footer": "sending wav to host",
+        },
     )
     payload: dict[str, str] = {}
 
@@ -3094,6 +3134,14 @@ def stream_audio_talk(
         state.phase = "Error"
         state.status = "Network failure"
         state.error = str(error)
+        state.visual = {
+            "kind": "stage",
+            "title": "Error",
+            "badge": "net",
+            "lead": "Network failure",
+            "detail": str(error),
+            "footer": "check dumplbotd and retry",
+        }
         renderer.render(state)
 
     return state
@@ -3110,6 +3158,14 @@ def run_audio_talk_from_file(
         phase="Saved",
         status="Uploading audio",
         transcript=audio_path,
+        visual={
+            "kind": "stage",
+            "title": "Saved",
+            "badge": "wav",
+            "lead": "Uploading audio",
+            "detail": truncate_visual_text(audio_path, 64),
+            "footer": "sending capture to host",
+        },
     )
     renderer.render(state)
 
@@ -3119,6 +3175,14 @@ def run_audio_talk_from_file(
         state.phase = "Error"
         state.status = "Audio upload failed"
         state.error = str(error)
+        state.visual = {
+            "kind": "stage",
+            "title": "Error",
+            "badge": "wav",
+            "lead": "Upload failed",
+            "detail": str(error),
+            "footer": "check host connection",
+        }
         renderer.render(state)
         return state
 
@@ -3471,6 +3535,48 @@ def render_voice_debug_visual(
         card_y += 70
 
 
+def render_stage_visual(
+    draw: Any,
+    title: str,
+    badge: str,
+    lead: str,
+    detail: str,
+    footer: str,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), title.upper(), fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 66, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 57, 20), badge.upper(), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 66, width - 12, 236), radius=18, fill=(22, 28, 36))
+    draw.text((22, 82), "NOW", fill=accent, font=fonts["tiny"])
+    draw_text_block(
+        draw,
+        lead,
+        22,
+        104,
+        width - 44,
+        fonts["hero"],
+        WHISPLAY_FOREGROUND,
+        max_lines=4,
+    )
+    draw_text_block(
+        draw,
+        detail,
+        22,
+        178,
+        width - 44,
+        fonts["label"],
+        (174, 182, 190),
+        max_lines=4,
+    )
+    draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -3544,6 +3650,22 @@ def render_state_image(
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "voice_debug":
         render_voice_debug_visual(draw, state, fonts, width, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "stage":
+        visual = state.visual
+        render_stage_visual(
+            draw,
+            truncate_visual_text(visual.get("title"), 18),
+            truncate_visual_text(visual.get("badge"), 10),
+            truncate_visual_text(visual.get("lead"), 160),
+            truncate_visual_text(visual.get("detail"), 220),
+            truncate_visual_text(visual.get("footer"), 28),
+            fonts,
+            width,
+            height,
+            accent,
+        )
         return image, accent
 
     draw.rectangle(
@@ -3986,6 +4108,14 @@ def apply_stream_event(
         message = str(data.get("message") or "Thinking")
         state.phase = "Thinking"
         state.status = message
+        state.visual = {
+            "kind": "stage",
+            "title": "Thinking",
+            "badge": "run",
+            "lead": truncate_visual_text(message, 42),
+            "detail": truncate_visual_text(state.prompt or state.transcript or "Working on your request.", 72),
+            "footer": "agent is planning",
+        }
         return
 
     if event_type == "stt":
@@ -3993,6 +4123,14 @@ def apply_stream_event(
         state.phase = "Transcribing"
         state.status = "Captured transcript"
         state.transcript = transcript or state.transcript
+        state.visual = {
+            "kind": "stage",
+            "title": "Transcribing",
+            "badge": "stt",
+            "lead": "Captured speech",
+            "detail": truncate_visual_text(transcript or state.transcript or "(empty transcript)", 72),
+            "footer": "handing off to the agent",
+        }
         return
 
     if event_type == "tool":
@@ -4031,6 +4169,14 @@ def build_prompt_state(prompt: str) -> ScreenState:
         phase="Thinking",
         status="Connecting to dumplbotd",
         prompt=prompt,
+        visual={
+            "kind": "stage",
+            "title": "Thinking",
+            "badge": "run",
+            "lead": "Connecting",
+            "detail": truncate_visual_text(prompt, 64),
+            "footer": "starting agent run",
+        },
     )
 
 
