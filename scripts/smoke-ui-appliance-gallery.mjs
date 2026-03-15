@@ -25,12 +25,12 @@ const readPngDimensions = async (filePath) => {
 };
 
 const runSmoke = async () => {
-  const outputDir = await mkdtemp(join(tmpdir(), "dumplbot-ui-review-bundle-"));
+  const outputDir = await mkdtemp(join(tmpdir(), "dumplbot-ui-appliance-gallery-"));
 
   try {
     const result = spawnSync(
-      "node",
-      ["scripts/ui-review-bundle.mjs", "--output-dir", outputDir],
+      "python3",
+      ["apps/ui/dumpl_ui.py", "--preview-appliance-gallery", outputDir],
       {
         cwd: process.cwd(),
         env: process.env,
@@ -42,22 +42,20 @@ const runSmoke = async () => {
       throw result.error;
     }
 
-    assert(result.status === 0, "expected ui review bundle to return 0");
-    assert(result.stdout.includes("bundle:"), "expected review bundle success output");
+    assert(result.status === 0, "expected preview appliance gallery command to return 0");
+    assert(result.stdout.includes("Appliance gallery saved"), "expected appliance gallery success output");
 
-    for (const [subdir, fileName] of [
-      ["core", "home.png"],
-      ["appliance", "home-ready.png"],
-      ["scheduler", "scheduler-summary.png"],
-      ["skills", "skill-summary.png"],
-      ["workspaces", "workspace-summary.png"],
+    for (const fileName of [
+      "home-ready.png",
+      "home-setup-key.png",
+      "home-setup-audio.png",
     ]) {
-      const dimensions = await readPngDimensions(join(outputDir, subdir, fileName));
-      assert(dimensions.width === 510, `expected ${subdir}/${fileName} width`);
-      assert(dimensions.height === 960, `expected ${subdir}/${fileName} height`);
+      const dimensions = await readPngDimensions(join(outputDir, fileName));
+      assert(dimensions.width === 510, `expected ${fileName} width`);
+      assert(dimensions.height === 960, `expected ${fileName} height`);
     }
 
-    console.log("ui review bundle smoke ok");
+    console.log("ui appliance gallery smoke ok");
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
