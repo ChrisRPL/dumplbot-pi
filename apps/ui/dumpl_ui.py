@@ -1316,16 +1316,22 @@ def build_skill_screen_state(skills: list[dict[str, Any]]) -> ScreenState:
             phase="Skills",
             status="No skills",
             answer="Install skills under skills/<id>/.",
+            visual={
+                "kind": "skills_summary",
+                "skill_count": 0,
+                "active_skill": "(none)",
+                "cards": [],
+            },
         )
 
     lines: list[str] = []
+    cards: list[dict[str, str]] = []
+    active_skill = "(none)"
 
     for skill in skills[:4]:
         skill_id = skill.get("id")
         permission_mode = skill.get("permission_mode")
         tool_allowlist = skill.get("tool_allowlist")
-        integrations = skill.get("integrations")
-        model = skill.get("model")
 
         if not isinstance(skill_id, str):
             continue
@@ -1333,42 +1339,36 @@ def build_skill_screen_state(skills: list[dict[str, Any]]) -> ScreenState:
         marker = "*" if skill.get("is_active") else " "
         summary = f"{marker} {skill_id}"
 
+        if skill.get("is_active") is True:
+            active_skill = skill_id
+
         if isinstance(permission_mode, str) and permission_mode:
             summary = f"{summary} [{permission_mode}]"
 
-        reasoning = model.get("reasoning") if isinstance(model, dict) else None
         tool_count = len(tool_allowlist) if isinstance(tool_allowlist, list) else 0
-        integration_total = 0
-        integration_ready = 0
-
-        if isinstance(integrations, list):
-            for integration in integrations:
-                if not isinstance(integration, dict):
-                    continue
-
-                if not isinstance(integration.get("provider"), str):
-                    continue
-
-                integration_total += 1
-
-                if integration.get("configured") is True:
-                    integration_ready += 1
-
+        reasoning_summary, readiness_summary = summarize_skill_readiness(skill)
         detail = []
 
-        if isinstance(reasoning, str) and reasoning:
-            detail.append(reasoning)
+        if reasoning_summary:
+            detail.append(reasoning_summary)
 
         if tool_count > 0:
             detail.append(f"tools:{tool_count}")
 
-        if integration_total > 0:
-            detail.append(f"ready:{integration_ready}/{integration_total}")
+        if readiness_summary:
+            detail.append(readiness_summary)
 
         if detail:
             summary = f"{summary}\n{' | '.join(detail)}"
 
         lines.append(summary)
+        cards.append({
+            "id": truncate_visual_text(skill_id, 16),
+            "permission": truncate_visual_text(permission_mode if isinstance(permission_mode, str) and permission_mode else "open", 10),
+            "reasoning": reasoning_summary,
+            "readiness": readiness_summary,
+            "state": "active" if skill.get("is_active") else "idle",
+        })
 
     if len(skills) > 4:
         lines.append(f"+{len(skills) - 4} more")
@@ -1377,6 +1377,13 @@ def build_skill_screen_state(skills: list[dict[str, Any]]) -> ScreenState:
         phase="Skills",
         status=f"{len(skills)} skill(s)",
         answer="\n".join(lines),
+        visual={
+            "kind": "skills_summary",
+            "skill_count": len(skills),
+            "active_skill": truncate_visual_text(active_skill, 18),
+            "cards": cards[:2],
+            "remaining_count": max(0, len(cards) - 2),
+        },
     )
 
 
@@ -2649,6 +2656,38 @@ def summarize_job_run_line(job: dict[str, Any], max_length: int = 30) -> str:
         return summarize_debug_value(last_status, "never", max_length)
 
     return "never"
+
+
+def summarize_skill_readiness(skill: dict[str, Any]) -> tuple[str, str]:
+    integrations = skill.get("integrations")
+    model = skill.get("model")
+    reasoning = model.get("reasoning") if isinstance(model, dict) else None
+    integration_total = 0
+    integration_ready = 0
+
+    if isinstance(integrations, list):
+        for integration in integrations:
+            if not isinstance(integration, dict):
+                continue
+
+            if not isinstance(integration.get("provider"), str):
+                continue
+
+            integration_total += 1
+
+            if integration.get("configured") is True:
+                integration_ready += 1
+
+    reasoning_summary = reasoning if isinstance(reasoning, str) and reasoning else "standard"
+    readiness_summary = (
+        f"ready {integration_ready}/{integration_total}"
+        if integration_total > 0
+        else "no integrations"
+    )
+    return (
+        truncate_visual_text(reasoning_summary, 14),
+        truncate_visual_text(readiness_summary, 18),
+    )
 
 
 def handle_jobs_command(
@@ -3964,6 +4003,68 @@ def render_job_history_visual(
     draw.text((14, height - 22), "short: summary · long: next", fill=(154, 162, 170), font=fonts["tiny"])
 
 
+def render_skills_summary_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    cards = visual.get("cards")
+    skill_count = visual.get("skill_count")
+    active_skill = truncate_visual_text(visual.get("active_skill"), 18)
+    remaining_count = visual.get("remaining_count")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "SKILLS", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 58, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 48, 20), str(skill_count or 0), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 106), radius=14, fill=(22, 28, 36))
+    draw.text((22, 72), "ACTIVE", fill=accent, font=fonts["tiny"])
+    draw_text_block(
+        draw,
+        active_skill or "(none)",
+        22,
+        86,
+        width - 44,
+        fonts["body"],
+        WHISPLAY_FOREGROUND,
+        max_lines=1,
+    )
+
+    if not isinstance(cards, list) or not cards:
+        draw.rounded_rectangle((12, 118, width - 12, 228), radius=16, fill=(22, 28, 36))
+        draw_text_block(draw, "No skills yet", 22, 150, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=2)
+        draw.text((14, height - 22), "add skills under skills/", fill=(154, 162, 170), font=fonts["tiny"])
+        return
+
+    card_y = 118
+
+    for card in cards[:2]:
+        if not isinstance(card, dict):
+            continue
+
+        draw.rounded_rectangle((12, card_y, width - 12, card_y + 62), radius=14, fill=(22, 28, 36))
+        draw.text((22, card_y + 10), truncate_visual_text(card.get("id"), 16).upper(), fill=accent, font=fonts["tiny"])
+        chip_fill = (36, 81, 107) if card.get("state") == "active" else (43, 50, 58)
+        chip_text = (227, 245, 251) if card.get("state") == "active" else (195, 201, 207)
+        draw.rounded_rectangle((width - 68, card_y + 8, width - 18, card_y + 28), radius=10, fill=chip_fill)
+        draw.text((width - 61, card_y + 13), truncate_visual_text(card.get("permission"), 8).upper(), fill=chip_text, font=fonts["tiny"])
+        draw_text_block(draw, truncate_visual_text(card.get("reasoning"), 16), 22, card_y + 30, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
+        draw_text_block(draw, truncate_visual_text(card.get("readiness"), 18), 22, card_y + 44, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
+        card_y += 72
+
+    footer = "skill detail shows policy"
+
+    if isinstance(remaining_count, int) and remaining_count > 0:
+        footer = f"+{remaining_count} more  ·  skill detail"
+
+    draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -3982,6 +4083,10 @@ def render_state_image(
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "home":
         render_home_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "skills_summary":
+        render_skills_summary_visual(draw, state, fonts, width, height, accent)
         return image, accent
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "jobs_summary":
