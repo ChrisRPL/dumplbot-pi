@@ -12,6 +12,7 @@
     "smoke:ui-scheduler-gallery": "npm run build && node scripts/smoke-ui-scheduler-gallery.mjs",
     "smoke:ui-skill-gallery": "npm run build && node scripts/smoke-ui-skill-gallery.mjs",
     "smoke:ui-workspace-gallery": "npm run build && node scripts/smoke-ui-workspace-gallery.mjs",
+    "smoke:ui-review-bundle": "npm run build && node scripts/smoke-ui-review-bundle.mjs",
     "smoke:ui-run-cancel": "npm run build && node scripts/smoke-ui-run-cancel.mjs",
     "smoke:bash-tool-execution": "npm run build && node scripts/smoke-bash-tool-execution.mjs",
     "smoke:bash-prefix-policy": "npm run build && node scripts/smoke-bash-prefix-policy.mjs",
