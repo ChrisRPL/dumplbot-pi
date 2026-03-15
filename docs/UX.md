@@ -1,5 +1,7 @@
 # UX
 
+Read with: `VISUAL_DESIGN.md` when changing the actual screen composition or visual hierarchy.
+
 Design for the tiny screen first. Fast feedback beats density.
 
 ## Core States
