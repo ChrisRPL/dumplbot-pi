@@ -10,6 +10,7 @@
     "smoke:audio-strict-policy": "npm run build && node scripts/smoke-audio-strict-policy.mjs",
     "smoke:ui-core-gallery": "npm run build && node scripts/smoke-ui-core-gallery.mjs",
     "smoke:ui-scheduler-gallery": "npm run build && node scripts/smoke-ui-scheduler-gallery.mjs",
+    "smoke:ui-skill-gallery": "npm run build && node scripts/smoke-ui-skill-gallery.mjs",
     "smoke:ui-run-cancel": "npm run build && node scripts/smoke-ui-run-cancel.mjs",
     "smoke:bash-tool-execution": "npm run build && node scripts/smoke-bash-tool-execution.mjs",
     "smoke:bash-prefix-policy": "npm run build && node scripts/smoke-bash-prefix-policy.mjs",
