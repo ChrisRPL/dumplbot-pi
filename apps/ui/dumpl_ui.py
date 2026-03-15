@@ -6,11 +6,13 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import queue
 import shlex
 import signal
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from typing import Any, Iterator, Optional
 import urllib.error
@@ -3214,22 +3216,7 @@ def stream_audio_talk(
     )
     renderer.render(state)
 
-    try:
-        with urllib.request.urlopen(request) as response:
-            for event_type, data in iter_sse_events(response):
-                apply_stream_event(state, event_type, data)
-                renderer.render(state)
-    except urllib.error.URLError as error:
-        state.phase = "Error"
-        state.status = "Network failure"
-        state.error = str(error)
-        state.visual = {
-            "kind": "run_error",
-            "badge": "net",
-            "body": str(error),
-            "footer": "check dumplbotd and retry",
-        }
-        renderer.render(state)
+    stream_sse_request(request, base_url, renderer, state)
 
     return state
 
@@ -4281,7 +4268,7 @@ def apply_stream_event(
             "badge": "run",
             "lead": truncate_visual_text(message, 42),
             "detail": truncate_visual_text(state.prompt or state.transcript or "Working on your request.", 72),
-            "footer": "agent is planning",
+            "footer": "hold to cancel",
         }
         return
 
@@ -4296,7 +4283,7 @@ def apply_stream_event(
             "badge": "stt",
             "lead": "Captured speech",
             "detail": truncate_visual_text(transcript or state.transcript or "(empty transcript)", 72),
-            "footer": "handing off to the agent",
+            "footer": "hold to cancel",
         }
         return
 
@@ -4310,7 +4297,7 @@ def apply_stream_event(
             "kind": "tool_run",
             "badge": compact_badge_value(name, 10),
             "body": detail or name,
-            "footer": "tool is running",
+            "footer": "hold to cancel",
         }
         return
 
@@ -4324,7 +4311,7 @@ def apply_stream_event(
             "kind": "answer",
             "badge": "live",
             "body": state.answer,
-            "footer": "streaming reply",
+            "footer": "hold to cancel",
         }
         return
 
@@ -4369,9 +4356,151 @@ def build_prompt_state(prompt: str) -> ScreenState:
             "badge": "run",
             "lead": "Connecting",
             "detail": truncate_visual_text(prompt, 64),
-            "footer": "starting agent run",
+            "footer": "hold to cancel",
         },
     )
+
+
+def request_run_cancel(base_url: str, run_id: str) -> dict[str, Any]:
+    encoded_run_id = urllib.parse.quote(run_id, safe="")
+    return request_json(base_url, f"/api/runs/{encoded_run_id}/cancel", method="POST")
+
+
+def set_run_cancel_pending_visual(state: ScreenState) -> None:
+    state.phase = "Thinking"
+    state.status = "Canceling run"
+    state.tool_banner = None
+    state.visual = {
+        "kind": "stage",
+        "title": "Canceling",
+        "badge": "stop",
+        "lead": "Stopping run",
+        "detail": "Waiting for the runner to exit cleanly.",
+        "footer": "cancel requested",
+    }
+
+
+def stream_sse_request(
+    request: urllib.request.Request,
+    base_url: str,
+    renderer: ConsoleRenderer,
+    state: ScreenState,
+) -> ScreenState:
+    event_queue: "queue.Queue[tuple[str, Any]]" = queue.Queue()
+    run_id: Optional[str] = None
+    cancel_requested = False
+    button_polling_supported = renderer.poll_button_pressed() is not None
+    was_pressed = False
+    long_press_sent = False
+    pressed_started_at: Optional[float] = None
+
+    def worker() -> None:
+        try:
+            with urllib.request.urlopen(request) as response:
+                event_queue.put(("run_id", response.headers.get("x-dumplbot-run-id")))
+
+                for event_type, data in iter_sse_events(response):
+                    event_queue.put(("event", (event_type, data)))
+        except urllib.error.URLError as error:
+            event_queue.put(("url_error", error))
+        except Exception as error:
+            event_queue.put(("error", error))
+        finally:
+            event_queue.put(("done", None))
+
+    worker_thread = threading.Thread(target=worker, daemon=True)
+    worker_thread.start()
+
+    while True:
+        try:
+            item_type, payload = event_queue.get(timeout=BUTTON_POLL_INTERVAL_SECONDS)
+        except queue.Empty:
+            item_type = "poll"
+            payload = None
+
+        if item_type == "run_id":
+            if isinstance(payload, str) and payload:
+                run_id = payload
+        elif item_type == "event":
+            event_type, data = payload
+            apply_stream_event(state, event_type, data)
+            renderer.render(state)
+        elif item_type == "url_error":
+            state.phase = "Error"
+            state.status = "Network failure"
+            state.error = str(payload)
+            state.visual = {
+                "kind": "run_error",
+                "badge": "net",
+                "body": str(payload),
+                "footer": "check dumplbotd and retry",
+            }
+            renderer.render(state)
+            break
+        elif item_type == "error":
+            state.phase = "Error"
+            state.status = "Run failed"
+            state.error = str(payload)
+            state.visual = {
+                "kind": "run_error",
+                "badge": "err",
+                "body": str(payload),
+                "footer": "fix and retry",
+            }
+            renderer.render(state)
+            break
+        elif item_type == "done":
+            break
+
+        if not button_polling_supported or cancel_requested:
+            continue
+
+        is_pressed = renderer.poll_button_pressed()
+
+        if is_pressed is None:
+            button_polling_supported = False
+            continue
+
+        now = time.monotonic()
+
+        if is_pressed and not was_pressed:
+            pressed_started_at = now
+            long_press_sent = False
+        elif (
+            is_pressed
+            and was_pressed
+            and not long_press_sent
+            and pressed_started_at is not None
+            and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
+        ):
+            if run_id:
+                try:
+                    request_run_cancel(base_url, run_id)
+                except RuntimeError as error:
+                    state.phase = "Error"
+                    state.status = "Cancel failed"
+                    state.error = str(error)
+                    state.visual = {
+                        "kind": "run_error",
+                        "badge": "stop",
+                        "body": str(error),
+                        "footer": "cancel failed",
+                    }
+                    renderer.render(state)
+                    break
+
+                cancel_requested = True
+                set_run_cancel_pending_visual(state)
+                renderer.render(state)
+                long_press_sent = True
+        elif not is_pressed and was_pressed:
+            pressed_started_at = None
+            long_press_sent = False
+
+        was_pressed = is_pressed
+
+    worker_thread.join(timeout=1)
+    return state
 
 
 def stream_talk(
@@ -4400,22 +4529,7 @@ def stream_talk(
     )
     renderer.render(state)
 
-    try:
-        with urllib.request.urlopen(request) as response:
-            for event_type, data in iter_sse_events(response):
-                apply_stream_event(state, event_type, data)
-                renderer.render(state)
-    except urllib.error.URLError as error:
-        state.phase = "Error"
-        state.status = "Network failure"
-        state.error = str(error)
-        state.visual = {
-            "kind": "run_error",
-            "badge": "net",
-            "body": str(error),
-            "footer": "check dumplbotd and retry",
-        }
-        renderer.render(state)
+    stream_sse_request(request, base_url, renderer, state)
 
 
 def run_mock_loop(
