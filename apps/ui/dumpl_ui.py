@@ -1975,6 +1975,95 @@ def run_preview_gallery(
         return 1
 
 
+def build_core_preview_gallery_entries() -> list[tuple[str, ScreenState]]:
+    prompt = "summarize current workspace"
+    thinking_state = build_prompt_state(prompt)
+    apply_stream_event(thinking_state, "status", {"message": "Planning next steps"})
+
+    transcribing_state = build_prompt_state(prompt)
+    apply_stream_event(transcribing_state, "stt", {"text": prompt})
+
+    tool_state = build_prompt_state(prompt)
+    apply_stream_event(tool_state, "tool", {"name": "bash", "detail": "git status --short"})
+
+    answer_state = build_prompt_state(prompt)
+    apply_stream_event(
+        answer_state,
+        "token",
+        {"text": "Workspace is healthy. Scheduler and setup are ready for Pi validation."},
+    )
+    apply_stream_event(answer_state, "done", {"summary": "Run finished"})
+
+    error_state = build_prompt_state(prompt)
+    apply_stream_event(error_state, "error", {"message": "runner timed out after 30s"})
+
+    return [
+        (
+            "home.png",
+            build_home_screen_state(
+                {
+                    "active_workspace": "default",
+                    "active_skill": "coding",
+                    "safety_mode": "strict",
+                },
+                {
+                    "daemon_healthy": True,
+                    "stt_ready": True,
+                    "scheduler_enabled": True,
+                },
+                {
+                    "lan_setup_ready": True,
+                },
+                [
+                    {"id": "daily-status", "enabled": True},
+                    {"id": "weekly-review", "enabled": True},
+                ],
+                focused_target="voice",
+            ),
+        ),
+        ("listening.png", build_capture_screen_state(CaptureFlowState(phase="Listening"))),
+        ("transcribing.png", transcribing_state),
+        ("thinking.png", thinking_state),
+        ("tool.png", tool_state),
+        ("answer.png", answer_state),
+        ("error.png", error_state),
+    ]
+
+
+def run_preview_core_gallery(
+    renderer: "ConsoleRenderer",
+    output_dir: str,
+    scale: int,
+) -> int:
+    try:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+        gallery_entries = build_core_preview_gallery_entries()
+
+        for filename, state in gallery_entries:
+            write_preview_gallery_snapshot(output_root / filename, state, scale)
+
+        renderer.render(
+            ScreenState(
+                phase="Preview",
+                status="Core gallery saved",
+                prompt=str(output_root),
+                answer="\n".join(filename for filename, _state in gallery_entries),
+            )
+        )
+        return 0
+    except RuntimeError as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Core gallery failed",
+                prompt=output_dir,
+                error=str(error),
+            )
+        )
+        return 1
+
+
 def run_home_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -4643,6 +4732,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview", action="store_true", help="Run the desktop preview renderer")
     parser.add_argument("--preview-snapshot", help="Write one rasterized preview snapshot to PNG")
     parser.add_argument("--preview-gallery", help="Write a compact debug preview gallery to one directory")
+    parser.add_argument("--preview-core-gallery", help="Write a host-free core UI gallery to one directory")
     parser.add_argument(
         "--preview-scale",
         type=int,
@@ -4824,12 +4914,24 @@ def main() -> int:
         ConsoleRenderer().render_notice("Use --preview or --preview-snapshot, not both")
         return 1
 
+    if args.preview_gallery is not None and args.preview_core_gallery is not None:
+        ConsoleRenderer().render_notice("Use --preview-gallery or --preview-core-gallery, not both")
+        return 1
+
     if args.preview_gallery is not None and (
         args.preview
         or args.preview_snapshot is not None
         or args.mock
     ):
         ConsoleRenderer().render_notice("Use --preview-gallery separately from --mock/--preview/--preview-snapshot")
+        return 1
+
+    if args.preview_core_gallery is not None and (
+        args.preview
+        or args.preview_snapshot is not None
+        or args.mock
+    ):
+        ConsoleRenderer().render_notice("Use --preview-core-gallery separately from --mock/--preview/--preview-snapshot")
         return 1
 
     if args.mock and args.preview:
@@ -4848,6 +4950,8 @@ def main() -> int:
         renderer = SnapshotRenderer(args.preview_snapshot, scale=args.preview_scale)
     elif args.preview_gallery is not None:
         renderer = ConsoleRenderer("Preview Gallery")
+    elif args.preview_core_gallery is not None:
+        renderer = ConsoleRenderer("Core Gallery")
     elif args.mock:
         renderer = ConsoleRenderer()
     else:
@@ -5139,6 +5243,31 @@ def main() -> int:
             renderer.render_notice("Use --preview-gallery separately from other screen/action flows")
             return 1
 
+        if args.preview_core_gallery is not None and (
+            args.home_screen
+            or args.home_button_mode
+            or args.diagnostics_screen
+            or args.transcript_screen
+            or args.audio_screen
+            or args.error_screen
+            or args.voice_debug_screen
+            or args.seed_debug_state is not None
+            or args.clear_debug_state
+            or args.home_nav_action is not None
+            or args.prompt is not None
+            or selector_mode_active
+            or args.scheduler_screen is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+            or args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or has_job_upsert_arg
+            or selected_job_actions
+        ):
+            renderer.render_notice("Use --preview-core-gallery separately from other screen/action flows")
+            return 1
+
         if selector_mode_active and (
             args.home_screen
             or args.home_button_mode
@@ -5355,6 +5484,13 @@ def main() -> int:
                 args.preview_gallery,
                 args.preview_scale,
                 args.seed_debug_state,
+            )
+
+        if args.preview_core_gallery is not None:
+            return run_preview_core_gallery(
+                renderer,
+                args.preview_core_gallery,
+                args.preview_scale,
             )
 
         if args.seed_debug_state is not None:
