@@ -27,6 +27,8 @@ PREVIEW_DEFAULT_SCALE = 3
 WHISPLAY_BACKGROUND = (10, 15, 20)
 WHISPLAY_HEADER_BACKGROUND = (18, 34, 48)
 WHISPLAY_FOREGROUND = (242, 244, 247)
+LIVE_RENDER_BOOT_SECONDS = 0.16
+LIVE_RENDER_PHASE_TRANSITION_SECONDS = 0.08
 BUTTON_POLL_INTERVAL_SECONDS = 0.05
 BUTTON_LONG_PRESS_SECONDS = 1.2
 HOME_NAVIGATION_TARGET_SEQUENCE = ("workspace", "skill", "scheduler", "diagnostics", "voice", "transcript", "audio", "error")
@@ -3980,6 +3982,63 @@ def visual_path_name(path_value: Any) -> str:
     return truncate_visual_text(Path(path_value).name, 18)
 
 
+def build_brand_splash_state(
+    phase: str,
+    badge: str,
+    title: str,
+    detail: str,
+) -> ScreenState:
+    return ScreenState(
+        phase=phase,
+        status=detail,
+        visual={
+            "kind": "brand_splash",
+            "badge": truncate_visual_text(badge, 12),
+            "title": truncate_visual_text(title, 22),
+            "detail": truncate_visual_text(detail, 40),
+        },
+    )
+
+
+def render_brand_splash_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "DUMPLBOT", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 66, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 57, 20), truncate_visual_text(visual.get("badge"), 10).upper(), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 82, width - 12, 238), radius=18, fill=(22, 28, 36))
+    draw.text((22, 102), "NOW", fill=accent, font=fonts["tiny"])
+    draw_text_block(
+        draw,
+        truncate_visual_text(visual.get("title"), 22).upper(),
+        22,
+        128,
+        width - 44,
+        fonts["hero"],
+        WHISPLAY_FOREGROUND,
+        max_lines=3,
+    )
+    draw_text_block(
+        draw,
+        truncate_visual_text(visual.get("detail"), 40),
+        22,
+        196,
+        width - 44,
+        fonts["label"],
+        (174, 182, 190),
+        max_lines=3,
+    )
+
+
 def render_home_visual(
     draw: Any,
     state: ScreenState,
@@ -4677,6 +4736,10 @@ def render_state_image(
         render_home_visual(draw, state, fonts, width, height, accent)
         return image, accent
 
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "brand_splash":
+        render_brand_splash_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
     if isinstance(state.visual, dict) and state.visual.get("kind") == "skills_summary":
         render_skills_summary_visual(draw, state, fonts, width, height, accent)
         return image, accent
@@ -4892,6 +4955,8 @@ class WhisplayRenderer(ConsoleRenderer):
         self._fonts: Optional[dict[str, Any]] = None
         self._width = WHISPLAY_DEFAULT_WIDTH
         self._height = WHISPLAY_DEFAULT_HEIGHT
+        self._last_phase: Optional[str] = None
+        self._has_shown_boot_splash = False
         self._fallback_reason = self._connect_hardware()
 
         if self._fallback_reason:
@@ -4934,11 +4999,7 @@ class WhisplayRenderer(ConsoleRenderer):
 
         self.render(ScreenState(status=message))
 
-    def render(self, state: ScreenState) -> None:
-        if self._board is None:
-            super().render(state)
-            return
-
+    def _render_direct(self, state: ScreenState) -> None:
         image, accent = render_state_image(
             state,
             self._image_module,
@@ -4947,16 +5008,63 @@ class WhisplayRenderer(ConsoleRenderer):
             width=self._width,
             height=self._height,
         )
+        self._board.set_rgb(*accent)
+        self._board.draw_image(
+            0,
+            0,
+            self._width,
+            self._height,
+            image_to_rgb565(image),
+        )
+
+    def _render_transition_splash(
+        self,
+        state: ScreenState,
+        badge: str,
+        title: str,
+        detail: str,
+        delay_seconds: float,
+    ) -> None:
+        if delay_seconds <= 0:
+            return
+
+        self._render_direct(build_brand_splash_state(state.phase, badge, title, detail))
+        time.sleep(delay_seconds)
+
+    def _maybe_render_transition(self, state: ScreenState) -> None:
+        visual_kind = state.visual.get("kind") if isinstance(state.visual, dict) else None
+
+        if visual_kind == "brand_splash":
+            return
+
+        if not self._has_shown_boot_splash:
+            self._render_transition_splash(
+                state,
+                "boot",
+                "DumplBot",
+                "Waking up",
+                LIVE_RENDER_BOOT_SECONDS,
+            )
+            self._has_shown_boot_splash = True
+
+        if self._last_phase is not None and self._last_phase != state.phase:
+            self._render_transition_splash(
+                state,
+                "now",
+                state.phase,
+                state.status or f"{state.phase} in progress",
+                LIVE_RENDER_PHASE_TRANSITION_SECONDS,
+            )
+
+    def render(self, state: ScreenState) -> None:
+        if self._board is None:
+            super().render(state)
+            return
 
         try:
-            self._board.set_rgb(*accent)
-            self._board.draw_image(
-                0,
-                0,
-                self._width,
-                self._height,
-                image_to_rgb565(image),
-            )
+            self._maybe_render_transition(state)
+            self._render_direct(state)
+            self._last_phase = state.phase
         except Exception as error:
             self._fallback_reason = f"Whisplay draw failed: {error}"
             self._board = None
@@ -5003,6 +5111,8 @@ class DesktopPreviewRenderer(ConsoleRenderer):
         self._height = WHISPLAY_DEFAULT_HEIGHT
         self._button_pressed = False
         self._closed = False
+        self._last_phase: Optional[str] = None
+        self._has_shown_boot_splash = False
         self._fallback_reason = self._connect_preview()
 
         if self._fallback_reason:
@@ -5077,30 +5187,87 @@ class DesktopPreviewRenderer(ConsoleRenderer):
 
         self.render(ScreenState(status=message))
 
+    def _sleep_with_events(self, delay_seconds: float) -> None:
+        if delay_seconds <= 0:
+            return
+
+        deadline = time.monotonic() + delay_seconds
+
+        while self._window is not None and time.monotonic() < deadline:
+            self._pump_events()
+            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+
+    def _show_image(self, image: Any, phase: str) -> None:
+        if self._scale != 1:
+            image = image.resize(
+                (self._width * self._scale, self._height * self._scale),
+                self._image_module.Resampling.NEAREST,
+            )
+
+        self._photo_image = self._image_tk_module.PhotoImage(image=image)
+        self._image_label.configure(image=self._photo_image)
+        self._window.title(f"DumplBot Preview | {phase} | Space=button, q=quit")
+        self._pump_events()
+
+    def _render_direct(self, state: ScreenState) -> None:
+        image, _accent = render_state_image(
+            state,
+            self._image_module,
+            self._draw_module,
+            self._fonts,
+            width=self._width,
+            height=self._height,
+        )
+        self._show_image(image, state.phase)
+
+    def _render_transition_splash(
+        self,
+        state: ScreenState,
+        badge: str,
+        title: str,
+        detail: str,
+        delay_seconds: float,
+    ) -> None:
+        if delay_seconds <= 0:
+            return
+
+        self._render_direct(build_brand_splash_state(state.phase, badge, title, detail))
+        self._sleep_with_events(delay_seconds)
+
+    def _maybe_render_transition(self, state: ScreenState) -> None:
+        visual_kind = state.visual.get("kind") if isinstance(state.visual, dict) else None
+
+        if visual_kind == "brand_splash":
+            return
+
+        if not self._has_shown_boot_splash:
+            self._render_transition_splash(
+                state,
+                "boot",
+                "DumplBot",
+                "Waking up",
+                LIVE_RENDER_BOOT_SECONDS,
+            )
+            self._has_shown_boot_splash = True
+
+        if self._last_phase is not None and self._last_phase != state.phase:
+            self._render_transition_splash(
+                state,
+                "now",
+                state.phase,
+                state.status or f"{state.phase} in progress",
+                LIVE_RENDER_PHASE_TRANSITION_SECONDS,
+            )
+
     def render(self, state: ScreenState) -> None:
         if self._window is None or self._image_module is None or self._draw_module is None or self._fonts is None:
             super().render(state)
             return
 
         try:
-            image, _accent = render_state_image(
-                state,
-                self._image_module,
-                self._draw_module,
-                self._fonts,
-                width=self._width,
-                height=self._height,
-            )
-            if self._scale != 1:
-                image = image.resize(
-                    (self._width * self._scale, self._height * self._scale),
-                    self._image_module.Resampling.NEAREST,
-                )
-
-            self._photo_image = self._image_tk_module.PhotoImage(image=image)
-            self._image_label.configure(image=self._photo_image)
-            self._window.title(f"DumplBot Preview | {state.phase} | Space=button, q=quit")
-            self._pump_events()
+            self._maybe_render_transition(state)
+            self._render_direct(state)
+            self._last_phase = state.phase
         except Exception as error:
             self._fallback_reason = f"Preview draw failed: {error}"
             self.close()
