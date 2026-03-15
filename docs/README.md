@@ -12,6 +12,7 @@ Use this folder as the implementation source of truth once code starts landing.
 6. `SANDBOX_VALIDATION.md`
 7. `UX.md`
 8. `VISUAL_DESIGN.md`
+9. `PLUG_AND_PLAY_PLAN.md`
 
 ## Rules
 

@@ -57,6 +57,7 @@ The stepwise build plan now lives in `docs/`:
 - `docs/IMPLEMENTATION_PLAN.md` for milestone-by-milestone execution
 - `docs/SETUP_PI_ZERO.md`, `docs/POLICY.md`, and `docs/UX.md` for hardware, safety, and device behavior
 - `docs/VISUAL_DESIGN.md` for the Whisplay visual target and screen hierarchy
+- `docs/PLUG_AND_PLAY_PLAN.md` for the onboarding + brand-polish target
 
 ---
 
@@ -66,7 +67,7 @@ The stepwise build plan now lives in `docs/`:
 ```bash
 cp .env.example .env
 # set ANTHROPIC_API_KEY (and OPENAI_API_KEY for STT when enabled)
-````
+```
 
 2. Install + build:
 
@@ -85,33 +86,102 @@ python apps/ui/dumpl_ui.py --mock
 ```
 
 Type into `Dumpl>` and watch streamed output.
-Use `:workspace`, `:workspace <id>`, `:workspace history <id> [offset]`, `:workspace files <id>`, `:workspace read <id> <path>`, `:skill`, `:skill <id>`, `:jobs`, `:jobs history <id> [offset]`, `:jobs on|off|delete <id>`, `:jobs add <id> "<schedule>" "<prompt>" [workspace|-] [skill|-] [on|off]`, and `:jobs edit ...` inside mock mode to inspect active selections, workspace files, and scheduler jobs. Schedule input now accepts cron, presets like `daily 09:15`, and tiny natural phrases like `every day at 09:15`. Job history keeps the newest 20 runs per job and can be paged with the optional history offset; workspace history keeps the newest 20 runs per workspace with the same offset pattern.
-For the device renderer path, start `dumplbotd` first with `npm run dev:host` or point `--host-url` at a running host. Then use `node scripts/mac-preview-walkthrough.mjs --output-dir /tmp/dumplbot-mac-preview --seed error` on the Mac to seed the host, write `home.png`, `transcript.png`, `audio.png`, `error.png`, and `voice-debug.png`, and print the exact live preview command. You can also run `python apps/ui/dumpl_ui.py --preview --preview-scale 3 --home-button-mode` on the Mac for a large live Whisplay-style window (`Space` = hold button, release `Space` = release, `q` = quit), `python apps/ui/dumpl_ui.py --preview-snapshot /tmp/dumplbot-home.png --home-screen` for a PNG snapshot of the same raster path, `python apps/ui/dumpl_ui.py --preview-core-gallery /tmp/dumplbot-core-gallery` for a host-free design review set (`home.png`, `listening.png`, `transcribing.png`, `thinking.png`, `tool.png`, `answer.png`, `error.png`), `python apps/ui/dumpl_ui.py --preview-scheduler-gallery /tmp/dumplbot-scheduler-gallery` for a host-free scheduler review set (`scheduler-summary.png`, `scheduler-detail.png`, `scheduler-history.png`), `python apps/ui/dumpl_ui.py --preview-skill-gallery /tmp/dumplbot-skill-gallery` for a host-free skill review set (`skill-summary.png`, `skill-detail.png`), `python apps/ui/dumpl_ui.py --preview-workspace-gallery /tmp/dumplbot-workspace-gallery` for a host-free workspace review set (`workspace-summary.png`, `workspace-detail.png`, `workspace-history.png`, `workspace-files.png`, `workspace-file.png`), `python apps/ui/dumpl_ui.py --home-screen` for a compact device overview, `python apps/ui/dumpl_ui.py --diagnostics-screen` for bind/daemon/STT diagnostics, `python apps/ui/dumpl_ui.py --transcript-screen` for the last stored transcript, `python apps/ui/dumpl_ui.py --audio-screen` for the last stored audio metadata, `python apps/ui/dumpl_ui.py --error-screen` for the last stored voice error, `python apps/ui/dumpl_ui.py --voice-debug-screen` for the compact transcript/audio/error summary, `python apps/ui/dumpl_ui.py --seed-debug-state error` to seed a preview-friendly transcript/audio/error bundle from the renderer path, `python apps/ui/dumpl_ui.py --clear-debug-state` to clear transcript/audio/error state from the renderer path, `python apps/ui/dumpl_ui.py --home-nav-mode home --home-nav-action next-target` to preview one home-navigation short press, `python apps/ui/dumpl_ui.py --home-nav-mode voice --home-nav-target voice --home-nav-action clear-debug` to preview the voice-debug clear action, or `python apps/ui/dumpl_ui.py --home-button-mode` on-device for one-button home navigation into workspace/skill/scheduler/diagnostics/voice/transcript/audio/error views. During an active text/audio run on preview or hardware, long press the same button path to request cancel. Debug snapshot examples: `python apps/ui/dumpl_ui.py --preview-snapshot /tmp/dumplbot-transcript.png --transcript-screen`, `python apps/ui/dumpl_ui.py --preview-snapshot /tmp/dumplbot-audio.png --audio-screen`, `python apps/ui/dumpl_ui.py --preview-snapshot /tmp/dumplbot-error.png --error-screen`, `python apps/ui/dumpl_ui.py --preview-snapshot /tmp/dumplbot-voice-debug.png --voice-debug-screen`, and `python apps/ui/dumpl_ui.py --preview-gallery /tmp/dumplbot-gallery --seed-debug-state error` to write `home.png`, `transcript.png`, `audio.png`, `error.png`, and `voice-debug.png` in one pass. Run `npm run smoke:ui-core-gallery`, `npm run smoke:ui-scheduler-gallery`, `npm run smoke:ui-skill-gallery`, `npm run smoke:ui-workspace-gallery`, `npm run smoke:run-cancel`, and `npm run smoke:ui-run-cancel` to lock the core raster set, scheduler raster set, skill raster set, workspace raster set, and host/UI cancel flow before Pi validation. Workspace-specific flows still support `python apps/ui/dumpl_ui.py --workspace-screen`, `--workspace-files alpha`, `--workspace-file alpha --workspace-file-path notes/today.md`, `--workspace-history alpha --workspace-history-offset 4`, `--workspace-detail alpha`, `--workspace-select alpha`, `--workspace-create field-lab --workspace-instructions "# Field Lab"`, or `--workspace-clear`; skill flows still support `python apps/ui/dumpl_ui.py --skill-summary`, `--skill-screen`, `--skill-detail coding`, `--skill-select research`, or `--skill-clear`; scheduler flows still support `python apps/ui/dumpl_ui.py --scheduler-screen summary`, `python apps/ui/dumpl_ui.py --scheduler-screen detail --scheduler-job daily-status`, `python apps/ui/dumpl_ui.py --scheduler-screen history --scheduler-job daily-status --scheduler-history-offset 4`, `python apps/ui/dumpl_ui.py --scheduler-nav-mode summary --scheduler-nav-action next-screen`, or `python apps/ui/dumpl_ui.py --scheduler-button-mode`. Focused action/edit flows still use `python apps/ui/dumpl_ui.py --job-detail daily-status --job-detail-action disable`, `python apps/ui/dumpl_ui.py --job-detail daily-status --job-detail-prompt "summarize repo state" --job-detail-schedule "every monday at 08:30" --job-detail-workspace default --job-detail-skill coding`, `python apps/ui/dumpl_ui.py --job-history daily-status --job-history-offset 4`, `python apps/ui/dumpl_ui.py --job-enable daily-status` or `--job-disable daily-status` or `--job-delete daily-status`, or `python apps/ui/dumpl_ui.py --job-id daily-status --job-schedule "every monday at 08:30" --job-prompt "summarize repo state"` to save one scheduler job through the renderer flow.
+
+Common mock commands:
+
+- `:workspace`, `:workspace <id>`, `:workspace history <id> [offset]`, `:workspace files <id>`, `:workspace read <id> <path>`
+- `:skill`, `:skill <id>`
+- `:jobs`, `:jobs history <id> [offset]`, `:jobs on|off|delete <id>`
+- `:jobs add <id> "<schedule>" "<prompt>" [workspace|-] [skill|-] [on|off]`
+- `:jobs edit ...`
+
+Schedule input accepts cron, presets like `daily 09:15`, and tiny natural phrases like `every day at 09:15`. Job/workspace history keeps the newest 20 runs and supports the optional offset window.
+
+### Mac preview / review
+
+Host-backed preview:
+
+1. Start the host:
+```bash
+npm run dev:host
+```
+2. Seed debug state + get the live preview command:
+```bash
+node scripts/mac-preview-walkthrough.mjs --output-dir /tmp/dumplbot-mac-preview --seed error
+```
+3. Live large-screen preview:
+```bash
+python apps/ui/dumpl_ui.py --preview --preview-scale 3 --home-button-mode
+```
+
+Host-free design review bundle:
+
+```bash
+node scripts/ui-review-bundle.mjs --output-dir /tmp/dumplbot-ui-review
+open /tmp/dumplbot-ui-review
+```
+
+Individual host-free galleries:
+
+- `python apps/ui/dumpl_ui.py --preview-core-gallery /tmp/dumplbot-core-gallery`
+- `python apps/ui/dumpl_ui.py --preview-scheduler-gallery /tmp/dumplbot-scheduler-gallery`
+- `python apps/ui/dumpl_ui.py --preview-skill-gallery /tmp/dumplbot-skill-gallery`
+- `python apps/ui/dumpl_ui.py --preview-workspace-gallery /tmp/dumplbot-workspace-gallery`
+
+Useful one-off renderer screens:
+
+- `python apps/ui/dumpl_ui.py --home-screen`
+- `python apps/ui/dumpl_ui.py --diagnostics-screen`
+- `python apps/ui/dumpl_ui.py --transcript-screen`
+- `python apps/ui/dumpl_ui.py --audio-screen`
+- `python apps/ui/dumpl_ui.py --error-screen`
+- `python apps/ui/dumpl_ui.py --voice-debug-screen`
+
+UI review checks before Pi validation:
+
+- `npm run smoke:ui-core-gallery`
+- `npm run smoke:ui-scheduler-gallery`
+- `npm run smoke:ui-skill-gallery`
+- `npm run smoke:ui-workspace-gallery`
+- `npm run smoke:ui-review-bundle`
+- `npm run smoke:run-cancel`
+- `npm run smoke:ui-run-cancel`
 
 ---
 
-## Install on Pi Zero 2 WH (appliance mode)
+## Install on Pi Zero 2 WH (easy path)
 
-1. Flash Raspberry Pi OS Lite, pre-seed Wi-Fi + SSH.
-2. Install Whisplay drivers and verify LCD/buttons/audio.
+Detailed checklist: `docs/SETUP_PI_ZERO.md`
+
+1. Flash Raspberry Pi OS Lite, pre-seed Wi-Fi + SSH, boot once.
+2. Install PiSugar / Whisplay drivers and verify LCD, buttons, mic, and speaker.
 3. Install DumplBot:
 
 ```bash
 bash scripts/install_pi.sh
 ```
 
-4. Put your keys into:
-
-* `/etc/dumplbot/secrets.env`
-* `/etc/dumplbot/config.yaml`
-
-Fresh installs now default `server.host` to `0.0.0.0`, so the setup shell at `/setup` is reachable from the same Wi-Fi and can save default workspace/default skill/safety plus provider keys. The setup page now also shows live bind/configured bind, daemon/scheduler/STT readiness, and exact next-step instructions when an old install still needs rebind + restart.
-
-5. Start services:
+4. Start services:
 
 ```bash
 sudo systemctl enable --now dumplbotd.service
 sudo systemctl enable --now dumpl-ui.service
+```
+
+5. Open setup from the same Wi-Fi:
+
+- `http://<pi-ip>:4123/setup`
+- save provider keys
+- choose default workspace + skill
+- choose safety mode
+- confirm daemon / scheduler / STT readiness
+
+Fresh installs now default `server.host` to `0.0.0.0`, so the setup shell at `/setup` is reachable from the same Wi-Fi and can save default workspace/default skill/safety plus provider keys. The setup page now also shows live bind/configured bind, daemon/scheduler/STT readiness, and exact next-step instructions when an old install still needs rebind + restart.
+
+6. Quick health check:
+
+```bash
+curl -i http://127.0.0.1:4123/health
 ```
 
 ---
