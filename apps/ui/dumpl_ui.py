@@ -3135,11 +3135,9 @@ def stream_audio_talk(
         state.status = "Network failure"
         state.error = str(error)
         state.visual = {
-            "kind": "stage",
-            "title": "Error",
+            "kind": "run_error",
             "badge": "net",
-            "lead": "Network failure",
-            "detail": str(error),
+            "body": str(error),
             "footer": "check dumplbotd and retry",
         }
         renderer.render(state)
@@ -3577,6 +3575,38 @@ def render_stage_visual(
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
 
+def render_result_visual(
+    draw: Any,
+    title: str,
+    badge: str,
+    label: str,
+    body: str,
+    footer: str,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), title.upper(), fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 66, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 57, 20), badge.upper(), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 268), radius=16, fill=(22, 28, 36))
+    draw.text((22, 72), label.upper(), fill=accent, font=fonts["tiny"])
+    draw_text_block(
+        draw,
+        body,
+        22,
+        92,
+        width - 44,
+        fonts["body"],
+        WHISPLAY_FOREGROUND,
+        max_lines=11,
+    )
+    draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -3660,6 +3690,54 @@ def render_state_image(
             truncate_visual_text(visual.get("badge"), 10),
             truncate_visual_text(visual.get("lead"), 160),
             truncate_visual_text(visual.get("detail"), 220),
+            truncate_visual_text(visual.get("footer"), 28),
+            fonts,
+            width,
+            height,
+            accent,
+        )
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "tool_run":
+        visual = state.visual
+        render_result_visual(
+            draw,
+            "Tool",
+            truncate_visual_text(visual.get("badge"), 10),
+            "Running",
+            truncate_visual_text(visual.get("body"), 220),
+            truncate_visual_text(visual.get("footer"), 28),
+            fonts,
+            width,
+            height,
+            accent,
+        )
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "answer":
+        visual = state.visual
+        render_result_visual(
+            draw,
+            "Answer",
+            truncate_visual_text(visual.get("badge"), 10),
+            "Reply",
+            truncate_visual_text(visual.get("body"), 280),
+            truncate_visual_text(visual.get("footer"), 28),
+            fonts,
+            width,
+            height,
+            accent,
+        )
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "run_error":
+        visual = state.visual
+        render_result_visual(
+            draw,
+            "Run failed",
+            truncate_visual_text(visual.get("badge"), 10),
+            "Error",
+            truncate_visual_text(visual.get("body"), 220),
             truncate_visual_text(visual.get("footer"), 28),
             fonts,
             width,
@@ -4139,6 +4217,12 @@ def apply_stream_event(
         state.phase = "Tool"
         state.status = "Running tool"
         state.tool_banner = f"{name}: {detail}" if detail else name
+        state.visual = {
+            "kind": "tool_run",
+            "badge": compact_badge_value(name, 10),
+            "body": detail or name,
+            "footer": "tool is running",
+        }
         return
 
     if event_type == "token":
@@ -4147,13 +4231,28 @@ def apply_stream_event(
         state.status = "Streaming reply"
         state.tool_banner = None
         state.answer += text
+        state.visual = {
+            "kind": "answer",
+            "badge": "live",
+            "body": state.answer,
+            "footer": "streaming reply",
+        }
         return
 
     if event_type == "done":
         summary = str(data.get("summary") or "Run finished")
-        state.phase = "Idle"
+        state.phase = "Answer" if state.answer else "Idle"
         state.status = summary
         state.tool_banner = None
+        state.visual = {
+            "kind": "answer" if state.answer else "stage",
+            "badge": "done",
+            "body": state.answer or summary,
+            "footer": summary,
+            "title": "Done",
+            "lead": summary,
+            "detail": "Run finished cleanly.",
+        }
         return
 
     if event_type == "error":
@@ -4162,6 +4261,12 @@ def apply_stream_event(
         state.status = "Run failed"
         state.tool_banner = None
         state.error = message
+        state.visual = {
+            "kind": "run_error",
+            "badge": "err",
+            "body": message,
+            "footer": "fix and retry",
+        }
 
 
 def build_prompt_state(prompt: str) -> ScreenState:
@@ -4215,6 +4320,12 @@ def stream_talk(
         state.phase = "Error"
         state.status = "Network failure"
         state.error = str(error)
+        state.visual = {
+            "kind": "run_error",
+            "badge": "net",
+            "body": str(error),
+            "footer": "check dumplbotd and retry",
+        }
         renderer.render(state)
 
 
