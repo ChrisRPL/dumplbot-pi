@@ -67,6 +67,7 @@ The daemon streams events back to the UI over Server-Sent Events.
 - `skill` optional.
 - `tools` optional; when present, it must be a non-empty string array and each value must be allowed by the selected skill.
 - Response: SSE stream using the event types above.
+- Response headers include `x-dumplbot-run-id: <run-id>` for active-run cancel support.
 - Workspace selection order when `workspace` is omitted: `active_workspace` from `/api/config`, then `runtime.default_workspace`.
 - Skill selection order when `skill` is omitted: `active_skill` from `/api/config`, then workspace `default_skill`, then `runtime.default_skill`.
 - Host emits skill prelude metadata before runner events:
@@ -98,9 +99,24 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Follow-up: either hand the client to `/api/talk` or expose a dedicated audio-run stream path later.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"workspace not found"}` when workspace selection is invalid.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"skill not found"}` when skill selection is invalid.
+- `POST /api/audio/:audioId/talk` response headers include `x-dumplbot-run-id: <run-id>` for active-run cancel support.
 - `POST /api/audio/:audioId/talk` uses the same policy-denial SSE mapping as `/api/talk`.
 - `POST /api/audio/:audioId/talk` uses the same timeout SSE mapping as `/api/talk`.
 - Successful and terminal runner outcomes append workspace-local run history under `workspaces/<id>/.dumplbot-history.json`.
+
+### `POST /api/runs/:runId/cancel`
+
+- Request one active run to stop.
+- Success response:
+
+```json
+{"run_id":"c7f2d6f0-7f6f-4b0f-a5dc-6ac9f7f22bde","status":"cancel_requested"}
+```
+
+- Status codes:
+  - `202` when the cancel request is accepted.
+  - `404` when the run is already finished or unknown.
+- Canceled runs terminate their SSE stream with `error`: `{"message":"run canceled"}`.
 
 ### `GET /api/debug/voice`
 

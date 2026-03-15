@@ -34,12 +34,14 @@ Design for the tiny screen first. Fast feedback beats density.
 - Stream tokens into a scrolling buffer.
 - Show short tool banners when a tool runs.
 - Add stop/cancel affordance early.
+- During an active run, long press should request cancel on the same button path used for capture/navigation.
 
 ## Push-To-Talk Rules
 
 - Hold starts recording.
 - Release stops and saves.
 - Long press cancels.
+- After release starts the remote run, a new long press should request run cancel until the stream finishes.
 - Errors should return to a recoverable idle state quickly.
 
 ## Debug Surfaces
