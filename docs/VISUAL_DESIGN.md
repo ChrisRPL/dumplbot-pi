@@ -197,7 +197,9 @@ Transcript/audio/error detail:
 
 - Mac preview and Whisplay must share the same raster composition path.
 - Snapshot output is the review artifact for layout changes.
+- Use `python apps/ui/dumpl_ui.py --preview-core-gallery /tmp/dumplbot-core-gallery` for host-free review of `home`, `listening`, `transcribing`, `thinking`, `tool`, `answer`, and `error`.
 - When changing visual hierarchy, regenerate `home`, `transcript`, `audio`, `error`, and `voice-debug` snapshots together.
+- Run `npm run smoke:ui-core-gallery` after core-state raster changes so the PNG set stays locked.
 
 ## Interaction Tone
 
