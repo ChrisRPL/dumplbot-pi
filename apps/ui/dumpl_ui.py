@@ -1400,6 +1400,8 @@ def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
     if not isinstance(skill_id, str):
         raise RuntimeError("skill response is invalid")
 
+    tool_count = len(tool_allowlist) if isinstance(tool_allowlist, list) else 0
+    bash_count = len(bash_prefix_allowlist) if isinstance(bash_prefix_allowlist, list) else 0
     tool_summary = ", ".join(
         tool_name
         for tool_name in tool_allowlist
@@ -1410,6 +1412,8 @@ def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
         for prefix in bash_prefix_allowlist
         if isinstance(prefix, str)
     ) if isinstance(bash_prefix_allowlist, list) else ""
+    integration_total = 0
+    integration_ready = 0
     integration_summary = ", ".join(
         f"{provider}[{'ready' if configured else 'missing'}]"
         for entry in integrations
@@ -1417,7 +1421,27 @@ def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
         for provider, configured in [(entry.get("provider"), entry.get("configured"))]
         if isinstance(provider, str) and isinstance(configured, bool)
     ) if isinstance(integrations, list) else ""
+    if isinstance(integrations, list):
+        for entry in integrations:
+            if not isinstance(entry, dict):
+                continue
+
+            provider = entry.get("provider")
+            configured = entry.get("configured")
+
+            if not isinstance(provider, str) or not isinstance(configured, bool):
+                continue
+
+            integration_total += 1
+            if configured:
+                integration_ready += 1
+
+    if integration_total > 0:
+        integration_visual = f"{integration_ready} ready · {integration_total - integration_ready} missing"
+    else:
+        integration_visual = "no integrations"
     reasoning = model.get("reasoning") if isinstance(model, dict) else None
+    reasoning_summary, readiness_summary = summarize_skill_readiness(skill)
 
     return ScreenState(
         phase="Skills",
@@ -1430,6 +1454,18 @@ def build_skill_detail_screen_state(skill: dict[str, Any]) -> ScreenState:
             f"tools: {tool_summary or '(none)'}",
             f"bash: {bash_summary or '(none)'}",
         ]),
+        visual={
+            "kind": "skill_detail",
+            "skill_id": truncate_visual_text(skill_id, 18),
+            "state": "active" if is_active else "idle",
+            "permission": truncate_visual_text(permission_mode if isinstance(permission_mode, str) and permission_mode else "open", 12),
+            "reasoning": truncate_visual_text(reasoning_summary, 14),
+            "readiness": truncate_visual_text(readiness_summary, 18),
+            "integrations": truncate_visual_text(integration_visual or "(none)", 42),
+            "prelude": truncate_visual_text(prompt_prelude_summary if isinstance(prompt_prelude_summary, str) and prompt_prelude_summary else "(none)", 52),
+            "tool_count": tool_count,
+            "bash_count": bash_count,
+        },
     )
 
 
@@ -4065,6 +4101,57 @@ def render_skills_summary_visual(
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
 
+def render_skill_detail_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    state_value = truncate_visual_text(visual.get("state"), 6)
+    skill_id = truncate_visual_text(visual.get("skill_id"), 18)
+    readiness = truncate_visual_text(visual.get("readiness"), 18)
+    permission = truncate_visual_text(visual.get("permission"), 12)
+    reasoning = truncate_visual_text(visual.get("reasoning"), 14)
+    integrations = truncate_visual_text(visual.get("integrations"), 44)
+    prelude = truncate_visual_text(visual.get("prelude"), 64)
+    tool_count = visual.get("tool_count")
+    bash_count = visual.get("bash_count")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "SKILL DETAIL", fill=(236, 240, 244), font=fonts["title"])
+    chip_fill = (36, 81, 107) if state_value == "active" else (43, 50, 58)
+    chip_text = (227, 245, 251) if state_value == "active" else (195, 201, 207)
+    draw.rounded_rectangle((width - 60, 14, width - 18, 36), radius=10, fill=chip_fill)
+    draw.text((width - 52, 20), state_value.upper(), fill=chip_text, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 112), radius=16, fill=(22, 28, 36))
+    draw.text((22, 72), "SKILL", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, skill_id.upper(), 22, 88, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=1)
+    draw.text((22, 102), readiness, fill=(154, 162, 170), font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 124, 82, 172), radius=14, fill=(16, 23, 29))
+    draw.text((22, 136), "PERMISSION", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, permission, 22, 152, 50, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+
+    draw.rounded_rectangle((88, 124, width - 12, 172), radius=14, fill=(16, 23, 29))
+    draw.text((98, 136), "REASONING", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, reasoning, 98, 152, width - 110, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+
+    draw.rounded_rectangle((12, 184, width - 12, 220), radius=14, fill=(22, 28, 36))
+    draw.text((22, 196), "INTEGRATIONS", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, integrations, 22, 210, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+
+    draw.rounded_rectangle((12, 230, width - 12, 286), radius=14, fill=(22, 28, 36))
+    draw.text((22, 242), "PRELUDE", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, prelude, 22, 258, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=2)
+
+    footer = f"tools {tool_count or 0} · bash {bash_count or 0}"
+    draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -4087,6 +4174,10 @@ def render_state_image(
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "skills_summary":
         render_skills_summary_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "skill_detail":
+        render_skill_detail_visual(draw, state, fonts, width, height, accent)
         return image, accent
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "jobs_summary":
