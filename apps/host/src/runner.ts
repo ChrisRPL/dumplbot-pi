@@ -276,6 +276,11 @@ export async function* streamRunnerEvents(
           clearTimeout(forceKillTimer);
         }
 
+        if (cancelRequested) {
+          yield toErrorEvent("run canceled");
+          return;
+        }
+
         const message = error instanceof Error ? error.message : "runner stream failed";
         yield toErrorEvent(message);
         return;
