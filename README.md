@@ -56,6 +56,7 @@ The stepwise build plan now lives in `docs/`:
 - `docs/API_CONTRACTS.md` for stable daemon/UI/runner contracts
 - `docs/IMPLEMENTATION_PLAN.md` for milestone-by-milestone execution
 - `docs/SETUP_PI_ZERO.md`, `docs/POLICY.md`, and `docs/UX.md` for hardware, safety, and device behavior
+- `docs/VISUAL_DESIGN.md` for the Whisplay visual target and screen hierarchy
 
 ---
 
