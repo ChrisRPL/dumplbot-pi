@@ -41,6 +41,11 @@ export const renderSetupPage = (): string => `<!doctype html>
         padding: 1.25rem;
       }
 
+      .stack {
+        display: grid;
+        gap: 1rem;
+      }
+
       h1, h2, p { margin: 0; }
       .eyebrow {
         color: var(--accent);
@@ -106,6 +111,35 @@ export const renderSetupPage = (): string => `<!doctype html>
         font-size: 0.92rem;
       }
 
+      .checklist {
+        display: grid;
+        gap: 0.65rem;
+        margin-top: 1.5rem;
+      }
+
+      .checklist-item {
+        display: grid;
+        gap: 0.2rem;
+        padding: 0.8rem 0.9rem;
+        border-radius: 1rem;
+        background: rgba(255, 255, 255, 0.65);
+        border: 1px solid var(--border);
+      }
+
+      .checklist-item strong {
+        font-size: 0.95rem;
+      }
+
+      .checklist-item span {
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.35;
+      }
+
+      .checklist-item.done strong {
+        color: var(--accent-strong);
+      }
+
       .status {
         min-height: 1.4rem;
         color: var(--accent-strong);
@@ -126,7 +160,7 @@ export const renderSetupPage = (): string => `<!doctype html>
   </head>
   <body>
     <main>
-      <section class="card">
+      <section class="card stack">
         <p class="eyebrow">LAN-only setup</p>
         <h1>DumplBot Setup</h1>
         <p class="lede">
@@ -137,6 +171,15 @@ export const renderSetupPage = (): string => `<!doctype html>
           Secret values stay hidden here. The page only shows whether the local secrets file
           and provider keys are configured. Leave key fields blank to keep existing values.
         </p>
+
+        <section>
+          <p class="eyebrow">First run</p>
+          <h2>What to do next</h2>
+          <p class="lede" id="first-run-message">Loading first-run checklist…</p>
+          <div class="checklist" id="first-run-checklist"></div>
+          <p class="lede">Next action: <strong id="first-run-next-action">-</strong></p>
+          <p class="lede" id="first-run-next-detail">-</p>
+        </section>
 
         <form id="setup-form">
           <label>
@@ -251,6 +294,10 @@ export const renderSetupPage = (): string => `<!doctype html>
       const skillIntegrationsNode = document.querySelector("#skill-integrations");
       const systemActionLabelNode = document.querySelector("#system-action-label");
       const systemActionInstructionsNode = document.querySelector("#system-action-instructions");
+      const firstRunMessageNode = document.querySelector("#first-run-message");
+      const firstRunChecklistNode = document.querySelector("#first-run-checklist");
+      const firstRunNextActionNode = document.querySelector("#first-run-next-action");
+      const firstRunNextDetailNode = document.querySelector("#first-run-next-detail");
       const formNode = document.querySelector("#setup-form");
       const secretsFormNode = document.querySelector("#secrets-form");
       const openAiApiKeyNode = document.querySelector("#openai-api-key");
@@ -308,6 +355,27 @@ export const renderSetupPage = (): string => `<!doctype html>
           : "No skills loaded";
       };
 
+      const renderFirstRunChecklist = (payload) => {
+        firstRunMessageNode.textContent = payload.first_run.status_message;
+        firstRunNextActionNode.textContent = payload.first_run.next_action_label;
+        firstRunNextDetailNode.textContent = payload.first_run.next_action_detail;
+        firstRunChecklistNode.innerHTML = "";
+
+        for (const step of payload.first_run.steps) {
+          const itemNode = document.createElement("div");
+          itemNode.className = "checklist-item" + (step.done ? " done" : "");
+
+          const titleNode = document.createElement("strong");
+          titleNode.textContent = (step.done ? "Done: " : "Next: ") + step.label;
+
+          const detailNode = document.createElement("span");
+          detailNode.textContent = step.detail;
+
+          itemNode.append(titleNode, detailNode);
+          firstRunChecklistNode.append(itemNode);
+        }
+      };
+
       const loadConfigExport = async () => {
         const configExportPayload = await fetchJson("/api/config/export");
         configExportNode.value = configExportPayload.config;
@@ -351,6 +419,11 @@ export const renderSetupPage = (): string => `<!doctype html>
         setupHealthMessageNode.textContent = setupHealthPayload.health.status_message;
       };
 
+      const loadSetupFirstRun = async () => {
+        const setupFirstRunPayload = await fetchJson("/api/setup/first-run");
+        renderFirstRunChecklist(setupFirstRunPayload);
+      };
+
       const loadSetup = async () => {
         statusNode.textContent = "Loading setup…";
 
@@ -384,6 +457,7 @@ export const renderSetupPage = (): string => `<!doctype html>
         await loadSetupStatus();
         await loadSetupHealth();
         await loadSetupSystem();
+        await loadSetupFirstRun();
         await loadConfigExport();
         statusNode.textContent = "Setup loaded";
       };

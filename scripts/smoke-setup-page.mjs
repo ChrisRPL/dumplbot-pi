@@ -158,8 +158,11 @@ const runSmoke = async () => {
     assert(setupPageHtml.includes("safety-mode"), "expected setup safety field");
     assert(setupPageHtml.includes("/api/config"), "expected setup page to use config api");
     assert(setupPageHtml.includes("/api/setup/health"), "expected setup page to use setup health api");
+    assert(setupPageHtml.includes("/api/setup/first-run"), "expected setup page to use first-run api");
     assert(setupPageHtml.includes("/api/setup/status"), "expected setup page to use setup status api");
     assert(setupPageHtml.includes("/api/setup/system"), "expected setup page to use setup system api");
+    assert(setupPageHtml.includes("What to do next"), "expected setup page to show first-run heading");
+    assert(setupPageHtml.includes("first-run-checklist"), "expected setup page first-run checklist node");
     assert(setupPageHtml.includes("OpenAI key"), "expected setup page to show OpenAI key status");
     assert(setupPageHtml.includes("Skill integrations"), "expected setup page to show skill integration summary");
     assert(setupPageHtml.includes("skill-integrations"), "expected setup page skill integration node");
@@ -175,6 +178,21 @@ const runSmoke = async () => {
     assert(setupHealthPayload.health.stt_ready === true, "expected setup health STT readiness");
     assert(setupHealthPayload.health.stt_model === "whisper-1", "expected setup health STT model");
     assert(setupHealthPayload.health.stt_language === "auto", "expected setup health STT language");
+
+    const setupFirstRunResponse = await fetch(`${baseUrl}/api/setup/first-run`);
+    assert(setupFirstRunResponse.status === 200, "expected GET /api/setup/first-run to return 200");
+    const setupFirstRunPayload = await setupFirstRunResponse.json();
+    assert(setupFirstRunPayload.first_run.ready === false, "expected first-run checklist to start incomplete");
+    assert(setupFirstRunPayload.first_run.next_action_label === "Same-Wi-Fi setup", "expected first-run next action label");
+    assert(Array.isArray(setupFirstRunPayload.first_run.steps), "expected first-run steps array");
+    assert(
+      setupFirstRunPayload.first_run.steps.some((step) => step.id === "openai" && step.done === true),
+      "expected first-run checklist OpenAI step to be complete",
+    );
+    assert(
+      setupFirstRunPayload.first_run.steps.some((step) => step.id === "lan" && step.done === false),
+      "expected first-run checklist LAN step to be incomplete",
+    );
 
     const setupSystemResponse = await fetch(`${baseUrl}/api/setup/system`);
     assert(setupSystemResponse.status === 200, "expected GET /api/setup/system to return 200");
