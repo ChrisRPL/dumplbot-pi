@@ -813,9 +813,17 @@ def build_workspace_screen_state(workspaces: list[dict[str, Any]]) -> ScreenStat
             phase="Workspaces",
             status="No workspaces",
             answer="Create via /api/workspaces.",
+            visual={
+                "kind": "workspace_summary",
+                "workspace_count": 0,
+                "active_workspace": "(none)",
+                "cards": [],
+            },
         )
 
     lines: list[str] = []
+    cards: list[dict[str, str]] = []
+    active_workspace = "(none)"
 
     for workspace in workspaces[:5]:
         workspace_id = workspace.get("id")
@@ -828,15 +836,26 @@ def build_workspace_screen_state(workspaces: list[dict[str, Any]]) -> ScreenStat
         marker = "*" if workspace.get("is_active") else " "
         summary = f"{marker} {workspace_id}"
 
+        if workspace.get("is_active") is True:
+            active_workspace = workspace_id
+
         if isinstance(default_skill, str) and default_skill:
             summary = f"{summary} [{default_skill}]"
 
         repo_count = len(attached_repos) if isinstance(attached_repos, list) else 0
+        instructions_state = "instructions" if workspace.get("has_instructions") else "no notes"
 
         if repo_count > 0:
             summary = f"{summary} repos:{repo_count}"
 
         lines.append(summary)
+        cards.append({
+            "id": truncate_visual_text(workspace_id, 16),
+            "skill": truncate_visual_text(default_skill if isinstance(default_skill, str) and default_skill else "no skill", 16),
+            "repos": f"{repo_count} repo" if repo_count == 1 else f"{repo_count} repos",
+            "notes": truncate_visual_text(instructions_state, 16),
+            "state": "active" if workspace.get("is_active") else "idle",
+        })
 
     if len(workspaces) > 5:
         lines.append(f"+{len(workspaces) - 5} more")
@@ -845,6 +864,13 @@ def build_workspace_screen_state(workspaces: list[dict[str, Any]]) -> ScreenStat
         phase="Workspaces",
         status=f"{len(workspaces)} workspace(s)",
         answer="\n".join(lines),
+        visual={
+            "kind": "workspace_summary",
+            "workspace_count": len(workspaces),
+            "active_workspace": truncate_visual_text(active_workspace, 18),
+            "cards": cards[:2],
+            "remaining_count": max(0, len(cards) - 2),
+        },
     )
 
 
@@ -879,6 +905,11 @@ def build_workspace_detail_screen_state(workspace: dict[str, Any]) -> ScreenStat
     if not repo_lines:
         repo_lines.append("repo: (none)")
 
+    repo_preview = " · ".join(
+        truncate_visual_text(line.replace("repo: ", ""), 16)
+        for line in repo_lines[:2]
+    )
+
     return ScreenState(
         phase="Workspaces",
         status=f"{workspace_id} [{'active' if is_active else 'idle'}]",
@@ -887,6 +918,15 @@ def build_workspace_detail_screen_state(workspace: dict[str, Any]) -> ScreenStat
             f"default skill: {default_skill if isinstance(default_skill, str) and default_skill else '(none)'}",
             *repo_lines,
         ]),
+        visual={
+            "kind": "workspace_detail",
+            "workspace_id": truncate_visual_text(workspace_id, 18),
+            "state": "active" if is_active else "idle",
+            "instructions": "present" if has_instructions else "missing",
+            "default_skill": truncate_visual_text(default_skill if isinstance(default_skill, str) and default_skill else "no skill", 18),
+            "repo_count": len(attached_repos) if isinstance(attached_repos, list) else 0,
+            "repos": truncate_visual_text(repo_preview or "(none)", 42),
+        },
     )
 
 
@@ -4229,6 +4269,102 @@ def render_skill_detail_visual(
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
 
+def render_workspace_summary_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    cards = visual.get("cards")
+    workspace_count = visual.get("workspace_count")
+    active_workspace = truncate_visual_text(visual.get("active_workspace"), 18)
+    remaining_count = visual.get("remaining_count")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "WORKSPACES", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 58, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 48, 20), str(workspace_count or 0), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 106), radius=14, fill=(22, 28, 36))
+    draw.text((22, 72), "ACTIVE", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, active_workspace or "(none)", 22, 86, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=1)
+
+    if not isinstance(cards, list) or not cards:
+        draw.rounded_rectangle((12, 118, width - 12, 228), radius=16, fill=(22, 28, 36))
+        draw_text_block(draw, "No workspaces yet", 22, 150, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=2)
+        draw.text((14, height - 22), "create via host or setup", fill=(154, 162, 170), font=fonts["tiny"])
+        return
+
+    card_y = 118
+
+    for card in cards[:2]:
+        if not isinstance(card, dict):
+            continue
+
+        draw.rounded_rectangle((12, card_y, width - 12, card_y + 62), radius=14, fill=(22, 28, 36))
+        draw.text((22, card_y + 10), truncate_visual_text(card.get("id"), 16).upper(), fill=accent, font=fonts["tiny"])
+        chip_fill = (36, 81, 107) if card.get("state") == "active" else (43, 50, 58)
+        chip_text = (227, 245, 251) if card.get("state") == "active" else (195, 201, 207)
+        draw.rounded_rectangle((width - 60, card_y + 8, width - 18, card_y + 28), radius=10, fill=chip_fill)
+        draw.text((width - 52, card_y + 13), truncate_visual_text(card.get("skill"), 10).upper(), fill=chip_text, font=fonts["tiny"])
+        draw_text_block(draw, truncate_visual_text(card.get("repos"), 18), 22, card_y + 30, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
+        draw_text_block(draw, truncate_visual_text(card.get("notes"), 18), 22, card_y + 44, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
+        card_y += 72
+
+    footer = "workspace detail shows repos"
+
+    if isinstance(remaining_count, int) and remaining_count > 0:
+        footer = f"+{remaining_count} more  ·  workspace detail"
+
+    draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
+
+
+def render_workspace_detail_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    state_value = truncate_visual_text(visual.get("state"), 6)
+    workspace_id = truncate_visual_text(visual.get("workspace_id"), 18)
+    default_skill = truncate_visual_text(visual.get("default_skill"), 18)
+    instructions = truncate_visual_text(visual.get("instructions"), 12)
+    repos = truncate_visual_text(visual.get("repos"), 44)
+    repo_count = visual.get("repo_count")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "WORKSPACE", fill=(236, 240, 244), font=fonts["title"])
+    chip_fill = (36, 81, 107) if state_value == "active" else (43, 50, 58)
+    chip_text = (227, 245, 251) if state_value == "active" else (195, 201, 207)
+    draw.rounded_rectangle((width - 60, 14, width - 18, 36), radius=10, fill=chip_fill)
+    draw.text((width - 52, 20), state_value.upper(), fill=chip_text, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 112), radius=16, fill=(22, 28, 36))
+    draw.text((22, 72), "ID", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, workspace_id.upper(), 22, 88, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=1)
+    draw.text((22, 102), f"{repo_count or 0} repos attached", fill=(154, 162, 170), font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 124, 82, 172), radius=14, fill=(16, 23, 29))
+    draw.text((22, 136), "SKILL", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, default_skill, 22, 152, 50, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+
+    draw.rounded_rectangle((88, 124, width - 12, 172), radius=14, fill=(16, 23, 29))
+    draw.text((98, 136), "NOTES", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, instructions, 98, 152, width - 110, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+
+    draw.rounded_rectangle((12, 184, width - 12, 228), radius=14, fill=(22, 28, 36))
+    draw.text((22, 196), "REPOS", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, repos, 22, 212, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=2)
+
+    draw.text((14, height - 22), "short: history · long: files", fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -4255,6 +4391,14 @@ def render_state_image(
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "skill_detail":
         render_skill_detail_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "workspace_summary":
+        render_workspace_summary_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "workspace_detail":
+        render_workspace_detail_visual(draw, state, fonts, width, height, accent)
         return image, accent
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "jobs_summary":
