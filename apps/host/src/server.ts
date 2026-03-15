@@ -44,7 +44,7 @@ import { buildSetupSystemStatus } from "./setup-system-status";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
 import { renderSetupPage } from "./setup-page";
-import { clearLastTranscript, readLastTranscript } from "./transcript-store";
+import { clearLastTranscript, readLastTranscript, storeTranscript } from "./transcript-store";
 import { transcribeAudioFile } from "./transcriber";
 import {
   createWorkspace,
@@ -110,6 +110,13 @@ type DumplImportConfigRequest = {
 type DumplSetupSecretsUpdateRequest = {
   anthropic_api_key?: string;
   openai_api_key?: string;
+};
+
+type DumplSeedDebugVoiceRequest = {
+  transcript_text?: string | null;
+  audio_size_bytes?: number | null;
+  error_source?: string | null;
+  error_message?: string | null;
 };
 
 type DumplUpsertJobRequest = {
@@ -1126,6 +1133,83 @@ const handleDebugVoiceClear = async (response: ServerResponse): Promise<void> =>
     clearLastAudio(),
     clearLastDebugError(),
   ]);
+
+  await handleDebugVoiceGet(response);
+};
+
+const handleDebugVoiceSeed = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> => {
+  let body: DumplSeedDebugVoiceRequest;
+
+  try {
+    body = await readJson<DumplSeedDebugVoiceRequest>(request);
+  } catch {
+    sendJson(response, 400, { error: "request body must be valid JSON" });
+    return;
+  }
+
+  if (
+    typeof body.transcript_text !== "undefined"
+    && body.transcript_text !== null
+    && typeof body.transcript_text !== "string"
+  ) {
+    sendJson(response, 400, { error: "transcript_text must be string or null" });
+    return;
+  }
+
+  if (
+    typeof body.audio_size_bytes !== "undefined"
+    && body.audio_size_bytes !== null
+    && (!Number.isInteger(body.audio_size_bytes) || body.audio_size_bytes < 0)
+  ) {
+    sendJson(response, 400, { error: "audio_size_bytes must be non-negative integer or null" });
+    return;
+  }
+
+  if (
+    typeof body.error_source !== "undefined"
+    && body.error_source !== null
+    && typeof body.error_source !== "string"
+  ) {
+    sendJson(response, 400, { error: "error_source must be string or null" });
+    return;
+  }
+
+  if (
+    typeof body.error_message !== "undefined"
+    && body.error_message !== null
+    && typeof body.error_message !== "string"
+  ) {
+    sendJson(response, 400, { error: "error_message must be string or null" });
+    return;
+  }
+
+  if ((body.error_source === null) !== (body.error_message === null) && (
+    body.error_source === null || body.error_message === null
+  )) {
+    sendJson(response, 400, { error: "error_source and error_message must both be set or both be null" });
+    return;
+  }
+
+  await Promise.all([
+    clearLastTranscript(),
+    clearLastAudio(),
+    clearLastDebugError(),
+  ]);
+
+  if (typeof body.transcript_text === "string") {
+    await storeTranscript("debug-seed", body.transcript_text);
+  }
+
+  if (typeof body.audio_size_bytes === "number") {
+    await storeAudioBuffer(Buffer.alloc(body.audio_size_bytes, 0));
+  }
+
+  if (typeof body.error_source === "string" && typeof body.error_message === "string") {
+    await writeLastDebugError(body.error_source, body.error_message);
+  }
 
   await handleDebugVoiceGet(response);
 };
@@ -2305,6 +2389,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/debug/voice/clear") {
         await handleDebugVoiceClear(response);
+        return;
+      }
+
+      if (request.method === "POST" && pathname === "/api/debug/voice/seed") {
+        await handleDebugVoiceSeed(request, response);
         return;
       }
 
