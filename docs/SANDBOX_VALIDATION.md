@@ -61,3 +61,9 @@ Then keep the final target checks:
 - attached repos are reachable, outside paths are denied
 - scheduler-triggered runs behave the same as manual runs
 - memory/latency stay acceptable on target hardware
+
+The filesystem smoke now covers three cases on Linux/Pi:
+
+- workspace-local file read succeeds
+- attached repo read through `repos/<id>/...` succeeds after the real attach route runs
+- outside-path read fails inside the sandbox
