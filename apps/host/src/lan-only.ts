@@ -4,6 +4,7 @@ const SETUP_ONLY_PATHS = new Set<string>([
   "/api/config/export",
   "/api/config/import",
   "/api/setup/health",
+  "/api/setup/first-run",
   "/api/setup/secrets",
   "/api/setup/status",
   "/api/setup/system",

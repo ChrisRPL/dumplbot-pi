@@ -41,6 +41,7 @@ import {
 import { writeSetupSecretUpdate } from "./secret-store";
 import { loadSetupSecretStatus } from "./secret-status";
 import { buildSetupHealthStatus } from "./setup-health-status";
+import { buildSetupFirstRunStatus } from "./setup-first-run-status";
 import { buildSetupSystemStatus } from "./setup-system-status";
 import { listSkills, loadSkill, normalizeSkillId } from "./skill-store";
 import { loadSttRuntimeConfig } from "./stt-config";
@@ -1266,6 +1267,35 @@ const handleSetupHealthGet = async (response: ServerResponse): Promise<void> => 
   sendJson(response, 200, buildSetupHealthStatus(schedulerConfig, sttConfig));
 };
 
+const handleSetupFirstRunGet = async (response: ServerResponse): Promise<void> => {
+  const [
+    runtimeConfig,
+    secretStatus,
+    schedulerConfig,
+    sttConfig,
+  ] = await Promise.all([
+    loadHostRuntimeConfig(),
+    loadSetupSecretStatus(),
+    loadHostSchedulerConfig(),
+    loadSttRuntimeConfig(),
+  ]);
+  const configuredServerConfig = await loadHostServerConfig(undefined, {
+    applyEnvOverrides: false,
+  });
+  const currentActiveServerConfig = activeServerConfig ?? configuredServerConfig;
+
+  sendJson(
+    response,
+    200,
+    buildSetupFirstRunStatus(
+      runtimeConfig,
+      secretStatus,
+      buildSetupHealthStatus(schedulerConfig, sttConfig),
+      buildSetupSystemStatus(currentActiveServerConfig, configuredServerConfig),
+    ),
+  );
+};
+
 const handleSetupSystemGet = async (response: ServerResponse): Promise<void> => {
   const configuredServerConfig = await loadHostServerConfig(undefined, {
     applyEnvOverrides: false,
@@ -2489,6 +2519,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "GET" && pathname === "/api/setup/health") {
         await handleSetupHealthGet(response);
+        return;
+      }
+
+      if (request.method === "GET" && pathname === "/api/setup/first-run") {
+        await handleSetupFirstRunGet(response);
         return;
       }
 
