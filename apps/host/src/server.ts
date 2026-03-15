@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 
 import type {
   DumplDoneEvent,
@@ -166,8 +167,13 @@ type JobActionRoute = JobRoute & {
   action: JobAction;
 };
 
+type RunCancelRoute = {
+  runId: string;
+};
+
 const AUDIO_ACTIONS = new Set<AudioAction>(["talk", "transcribe"]);
 let activeServerConfig: Awaited<ReturnType<typeof loadHostServerConfig>> | null = null;
+const activeRunCancels = new Map<string, () => void>();
 
 const sendJson = (
   response: ServerResponse,
@@ -187,11 +193,15 @@ const sendHtml = (
   response.end(html);
 };
 
-const sendSseHeaders = (response: ServerResponse): void => {
+const sendSseHeaders = (
+  response: ServerResponse,
+  extraHeaders: Record<string, string> = {},
+): void => {
   response.writeHead(200, {
     "cache-control": "no-cache",
     connection: "keep-alive",
     "content-type": "text/event-stream; charset=utf-8",
+    ...extraHeaders,
   });
 };
 
@@ -341,6 +351,22 @@ const matchJobHistoryRoute = (pathname: string): JobHistoryRoute | null => {
 
   return {
     jobId: segments[2],
+  };
+};
+
+const matchRunCancelRoute = (pathname: string): RunCancelRoute | null => {
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "api" || segments[1] !== "runs" || segments[3] !== "cancel") {
+    return null;
+  }
+
+  return {
+    runId: segments[2],
   };
 };
 
@@ -1865,9 +1891,21 @@ const streamTalkResponse = async (
   maxRunSeconds: number,
   preludeEvents: DumplEvent[] = [],
   assumeHeadersSent = false,
+  runId = randomUUID(),
 ): Promise<StreamTalkOutcome> => {
+  let streamFinished = false;
+  const cancelActiveRun = (): void => {
+    activeRunCancels.get(runId)?.();
+  };
+
+  response.once("close", () => {
+    if (!streamFinished) {
+      cancelActiveRun();
+    }
+  });
+
   if (!assumeHeadersSent) {
-    sendSseHeaders(response);
+    sendSseHeaders(response, { "x-dumplbot-run-id": runId });
   }
 
   for (const event of preludeEvents) {
@@ -1877,7 +1915,19 @@ const streamTalkResponse = async (
   let sawTerminalEvent = false;
   let outcome: StreamTalkOutcome | null = null;
 
-  for await (const event of streamRunnerEvents(input, launchOptions, maxRunSeconds)) {
+  for await (const event of streamRunnerEvents(
+    input,
+    launchOptions,
+    maxRunSeconds,
+    {
+      onCancelReady: (cancel) => {
+        activeRunCancels.set(runId, cancel);
+      },
+      onSettled: () => {
+        activeRunCancels.delete(runId);
+      },
+    },
+  )) {
     if (event.type === "done") {
       sawTerminalEvent = true;
       outcome = {
@@ -1913,12 +1963,31 @@ const streamTalkResponse = async (
     writeSseEvent(response, doneEvent);
   }
 
+  streamFinished = true;
   response.end();
   return outcome ?? {
     completedAt: new Date().toISOString(),
     status: "success",
     summary: "Run finished",
   };
+};
+
+const handleRunCancel = async (
+  runId: string,
+  response: ServerResponse,
+): Promise<void> => {
+  const cancel = activeRunCancels.get(runId);
+
+  if (!cancel) {
+    sendJson(response, 404, { error: "run not found" });
+    return;
+  }
+
+  cancel();
+  sendJson(response, 202, {
+    run_id: runId,
+    status: "cancel_requested",
+  });
 };
 
 const handleTalk = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -1976,6 +2045,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
     loadHostRuntimeConfig(),
     loadHostSandboxConfig(),
   ]);
+  const runId = randomUUID();
 
   const runOutcome = await streamTalkResponse(response, {
     prompt,
@@ -1996,7 +2066,7 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
   }, runtimeConfig.maxRunSeconds, buildSkillPreludeEvents({
     id: resolvedSkill.id,
     toolAllowlist,
-  }));
+  }), false, runId);
 
   if (runOutcome.status === "error") {
     await recordDebugError("talk", runOutcome.summary);
@@ -2129,8 +2199,9 @@ const handleAudioTalk = async (
     loadHostRuntimeConfig(),
     loadHostSandboxConfig(),
   ]);
+  const runId = randomUUID();
 
-  sendSseHeaders(response);
+  sendSseHeaders(response, { "x-dumplbot-run-id": runId });
 
   const transcribingEvent: DumplStatusEvent = {
     type: "status",
@@ -2179,6 +2250,7 @@ const handleAudioTalk = async (
         toolAllowlist,
       }),
       true,
+      runId,
     );
 
     if (runOutcome.status === "error") {
@@ -2276,6 +2348,9 @@ export const createHostServer = (): Server =>
       const jobActionRoute = request.method === "POST"
         ? matchJobActionRoute(pathname)
         : null;
+      const runCancelRoute = request.method === "POST"
+        ? matchRunCancelRoute(pathname)
+        : null;
 
       if (isLanOnlySetupPath(pathname) && !isLanClientAddress(request.socket.remoteAddress)) {
         sendLanOnlySetupDenied(pathname, response);
@@ -2299,6 +2374,11 @@ export const createHostServer = (): Server =>
 
       if (request.method === "POST" && pathname === "/api/audio") {
         await handleAudio(request, response);
+        return;
+      }
+
+      if (request.method === "POST" && runCancelRoute) {
+        await handleRunCancel(runCancelRoute.runId, response);
         return;
       }
 

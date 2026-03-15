@@ -33,6 +33,11 @@ export type RunnerLaunchOptions = {
   attachedRepoPaths?: string[];
 };
 
+export type RunnerControlHooks = {
+  onCancelReady?: (cancel: () => void) => void;
+  onSettled?: () => void;
+};
+
 const DEFAULT_MAX_RUN_SECONDS = 180;
 
 const KNOWN_EVENT_TYPES = new Set([
@@ -164,6 +169,7 @@ export async function* streamRunnerEvents(
   input: RunnerInput,
   launchOptions?: RunnerLaunchOptions,
   maxRunSeconds = DEFAULT_MAX_RUN_SECONDS,
+  controlHooks?: RunnerControlHooks,
 ): AsyncGenerator<DumplEvent> {
   const resolvedLaunchOptions = launchOptions ?? {
     sandbox: { enabled: false, backend: "bwrap" as const },
@@ -190,19 +196,47 @@ export async function* streamRunnerEvents(
   const stderrLines: string[] = [];
   let sawRunnerErrorEvent = false;
   let timedOut = false;
+  let cancelRequested = false;
   let forceKillTimer: NodeJS.Timeout | null = null;
-  const runTimeout = setTimeout(() => {
-    timedOut = true;
+  let settled = false;
+  const settle = (): void => {
+    if (settled) {
+      return;
+    }
+
+    settled = true;
+    controlHooks?.onSettled?.();
+  };
+  const requestChildStop = (reason: "cancel" | "timeout"): void => {
+    if (child.exitCode !== null) {
+      return;
+    }
+
+    if (reason === "cancel") {
+      cancelRequested = true;
+    } else {
+      timedOut = true;
+    }
+
     child.kill("SIGTERM");
 
-    forceKillTimer = setTimeout(() => {
-      if (child.exitCode === null) {
-        child.kill("SIGKILL");
-      }
-    }, 1000);
-    forceKillTimer.unref();
+    if (!forceKillTimer) {
+      forceKillTimer = setTimeout(() => {
+        if (child.exitCode === null) {
+          child.kill("SIGKILL");
+        }
+      }, 1000);
+      forceKillTimer.unref();
+    }
+  };
+  const runTimeout = setTimeout(() => {
+    requestChildStop("timeout");
   }, resolvedMaxRunSeconds * 1000);
   runTimeout.unref();
+  child.once("close", settle);
+  controlHooks?.onCancelReady?.(() => {
+    requestChildStop("cancel");
+  });
 
   child.on("error", (error) => {
     childErrorMessage = error.message;
@@ -269,6 +303,11 @@ export async function* streamRunnerEvents(
 
   if (timedOut) {
     yield toErrorEvent(`runner timed out after ${resolvedMaxRunSeconds}s`);
+    return;
+  }
+
+  if (cancelRequested) {
+    yield toErrorEvent("run canceled");
     return;
   }
 
