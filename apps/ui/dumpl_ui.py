@@ -60,6 +60,7 @@ class ScreenState:
     tool_banner: Optional[str] = None
     answer: str = ""
     error: Optional[str] = None
+    visual: Optional[dict[str, Any]] = None
 
 
 @dataclass
@@ -1679,6 +1680,19 @@ def build_home_screen_state(
             "stt ready" if stt_ready is True else "stt missing",
         ]),
         answer="\n".join(answer_lines),
+        visual={
+            "kind": "home",
+            "workspace": summarize_runtime_selection(runtime, "active_workspace", "default_workspace"),
+            "skill": summarize_runtime_selection(runtime, "active_skill", "default_skill"),
+            "safety": safety_mode if isinstance(safety_mode, str) and safety_mode else "(none)",
+            "enabled_jobs": enabled_jobs,
+            "job_count": len(jobs),
+            "daemon_healthy": daemon_healthy is True,
+            "stt_ready": stt_ready is True,
+            "scheduler_enabled": scheduler_enabled is True,
+            "lan_setup_ready": lan_setup_ready is True,
+            "focused_target": focused_target or HOME_NAVIGATION_TARGET_SEQUENCE[0],
+        },
     )
 
 
@@ -3129,6 +3143,25 @@ def load_pillow() -> Optional[tuple[Any, Any, Any]]:
     return Image, ImageDraw, ImageFont
 
 
+def load_display_fonts(font_module: Any) -> dict[str, Any]:
+    default_font = font_module.load_default()
+
+    def load_named_font(name: str, size: int) -> Any:
+        try:
+            return font_module.truetype(name, size)
+        except Exception:
+            return default_font
+
+    return {
+        "tiny": load_named_font("DejaVuSans.ttf", 10),
+        "label": load_named_font("DejaVuSans.ttf", 11),
+        "body": load_named_font("DejaVuSans.ttf", 13),
+        "title": load_named_font("DejaVuSans-Bold.ttf", 15),
+        "hero": load_named_font("DejaVuSans-Bold.ttf", 22),
+        "default": default_font,
+    }
+
+
 def load_preview_modules() -> Optional[tuple[Any, Any]]:
     try:
         import tkinter as tk
@@ -3159,11 +3192,165 @@ def image_to_rgb565(image: Any) -> list[int]:
     return pixel_data
 
 
+def truncate_visual_text(value: Any, max_length: int) -> str:
+    if not isinstance(value, str):
+        return "(none)"
+
+    collapsed = " ".join(value.strip().split())
+
+    if not collapsed:
+        return "(none)"
+
+    if len(collapsed) <= max_length:
+        return collapsed
+
+    return f"{collapsed[:max_length - 1]}..."
+
+
+def compact_home_value(value: Any, max_length: int = 12) -> str:
+    compacted = truncate_visual_text(value, max_length + 10)
+
+    if compacted.endswith(" (default)"):
+        compacted = compacted.removesuffix(" (default)")
+
+    return truncate_visual_text(compacted, max_length)
+
+
+def draw_text_block(
+    draw: Any,
+    text: str,
+    x: int,
+    y: int,
+    max_width: int,
+    font: Any,
+    fill: tuple[int, int, int],
+    line_gap: int = 3,
+    max_lines: Optional[int] = None,
+) -> int:
+    lines = textwrap.wrap(text, width=max(8, max_width // 7)) or [text]
+
+    if max_lines is not None:
+        lines = lines[:max_lines]
+
+    cursor_y = y
+
+    for line in lines:
+        draw.text((x, cursor_y), line, fill=fill, font=font)
+        bbox = draw.textbbox((x, cursor_y), line, font=font)
+        cursor_y = bbox[3] + line_gap
+
+    return cursor_y
+
+
+def draw_status_chip(
+    draw: Any,
+    x: int,
+    y: int,
+    width: int,
+    label: str,
+    active: bool,
+    fonts: dict[str, Any],
+) -> None:
+    fill = (28, 64, 84) if active else (34, 40, 46)
+    text_fill = (222, 242, 247) if active else (162, 171, 179)
+    draw.rounded_rectangle((x, y, x + width, y + 20), radius=8, fill=fill)
+    draw.text((x + 8, y + 5), label, fill=text_fill, font=fonts["tiny"])
+
+
+def draw_panel_card(
+    draw: Any,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    title: str,
+    value: str,
+    fonts: dict[str, Any],
+    accent: tuple[int, int, int],
+    body_fill: tuple[int, int, int] = (16, 23, 29),
+) -> None:
+    draw.rounded_rectangle((x, y, x + width, y + height), radius=12, fill=body_fill)
+    draw.text((x + 10, y + 8), title.upper(), fill=accent, font=fonts["tiny"])
+    draw_text_block(
+        draw,
+        value,
+        x + 10,
+        y + 24,
+        width - 20,
+        fonts["body"],
+        WHISPLAY_FOREGROUND,
+        max_lines=2,
+    )
+
+
+def render_home_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual if isinstance(state.visual, dict) else {}
+    workspace = compact_home_value(visual.get("workspace"))
+    skill = compact_home_value(visual.get("skill"))
+    safety = truncate_visual_text(visual.get("safety"), 18)
+    focused_target = truncate_visual_text(visual.get("focused_target"), 18)
+    enabled_jobs = visual.get("enabled_jobs")
+    job_count = visual.get("job_count")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "DUMPLBOT", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 68, 14, width - 18, 36), radius=10, fill=(24, 48, 30))
+    draw.text((width - 58, 20), "HOME", fill=(201, 230, 160), font=fonts["tiny"])
+
+    draw_panel_card(draw, 12, 56, 70, 50, "Workspace", workspace, fonts, accent)
+    draw_panel_card(draw, 88, 56, 70, 50, "Skill", skill, fonts, accent)
+
+    draw_status_chip(draw, 12, 116, 70, "daemon ok" if visual.get("daemon_healthy") else "daemon issue", bool(visual.get("daemon_healthy")), fonts)
+    draw_status_chip(draw, 88, 116, 70, "stt ready" if visual.get("stt_ready") else "stt miss", bool(visual.get("stt_ready")), fonts)
+    draw_status_chip(draw, 12, 142, 70, "sched on" if visual.get("scheduler_enabled") else "sched off", bool(visual.get("scheduler_enabled")), fonts)
+    draw_status_chip(draw, 88, 142, 70, "lan ready" if visual.get("lan_setup_ready") else "lan wait", bool(visual.get("lan_setup_ready")), fonts)
+
+    draw.rounded_rectangle((12, 176, width - 12, 262), radius=16, fill=(22, 28, 36))
+    draw.text((22, 188), "NEXT", fill=accent, font=fonts["tiny"])
+    draw_text_block(
+        draw,
+        focused_target.upper(),
+        22,
+        206,
+        width - 44,
+        fonts["hero"],
+        WHISPLAY_FOREGROUND,
+        max_lines=2,
+    )
+    draw_text_block(
+        draw,
+        "tap next\nhold enter",
+        22,
+        238,
+        width - 44,
+        fonts["tiny"],
+        (160, 170, 180),
+        max_lines=2,
+    )
+
+    footer_text = f"safety {safety}"
+    jobs_text = (
+        f"jobs {enabled_jobs}/{job_count}"
+        if isinstance(enabled_jobs, int) and isinstance(job_count, int)
+        else "jobs (unknown)"
+    )
+    draw.text((14, height - 22), footer_text, fill=(154, 162, 170), font=fonts["tiny"])
+    jobs_bbox = draw.textbbox((0, 0), jobs_text, font=fonts["tiny"])
+    draw.text((width - 14 - (jobs_bbox[2] - jobs_bbox[0]), height - 22), jobs_text, fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
     draw_module: Any,
-    font: Any,
+    fonts: dict[str, Any],
     width: int = WHISPLAY_DEFAULT_WIDTH,
     height: int = WHISPLAY_DEFAULT_HEIGHT,
 ) -> tuple[Any, tuple[int, int, int]]:
@@ -3175,11 +3362,15 @@ def render_state_image(
     draw = draw_module.Draw(image)
     accent = get_phase_rgb(state.phase)
 
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "home":
+        render_home_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
     draw.rectangle(
         (0, 0, width - 1, 28),
         fill=WHISPLAY_HEADER_BACKGROUND,
     )
-    draw.text((10, 9), state.phase.upper(), fill=accent, font=font)
+    draw.text((10, 9), state.phase.upper(), fill=accent, font=fonts["label"])
 
     cursor_y = 38
 
@@ -3187,7 +3378,7 @@ def render_state_image(
         if cursor_y >= height - 12:
             break
 
-        draw.text((10, cursor_y), line, fill=WHISPLAY_FOREGROUND, font=font)
+        draw.text((10, cursor_y), line, fill=WHISPLAY_FOREGROUND, font=fonts["default"])
         cursor_y += 12
 
     return image, accent
@@ -3228,7 +3419,7 @@ class WhisplayRenderer(ConsoleRenderer):
         self._board: Any = None
         self._image_module: Any = None
         self._draw_module: Any = None
-        self._font: Any = None
+        self._fonts: Optional[dict[str, Any]] = None
         self._width = WHISPLAY_DEFAULT_WIDTH
         self._height = WHISPLAY_DEFAULT_HEIGHT
         self._fallback_reason = self._connect_hardware()
@@ -3256,7 +3447,7 @@ class WhisplayRenderer(ConsoleRenderer):
         self._board = board
         self._image_module = image_module
         self._draw_module = draw_module
-        self._font = font_module.load_default()
+        self._fonts = load_display_fonts(font_module)
         self._width = int(getattr(board, "LCD_WIDTH", WHISPLAY_DEFAULT_WIDTH))
         self._height = int(getattr(board, "LCD_HEIGHT", WHISPLAY_DEFAULT_HEIGHT))
 
@@ -3282,7 +3473,7 @@ class WhisplayRenderer(ConsoleRenderer):
             state,
             self._image_module,
             self._draw_module,
-            self._font,
+            self._fonts or load_display_fonts(load_pillow()[2]),
             width=self._width,
             height=self._height,
         )
@@ -3332,7 +3523,7 @@ class DesktopPreviewRenderer(ConsoleRenderer):
         self._scale = max(1, scale)
         self._image_module: Any = None
         self._draw_module: Any = None
-        self._font: Any = None
+        self._fonts: Optional[dict[str, Any]] = None
         self._tk_module: Any = None
         self._image_tk_module: Any = None
         self._window: Any = None
@@ -3368,7 +3559,7 @@ class DesktopPreviewRenderer(ConsoleRenderer):
 
         self._image_module = image_module
         self._draw_module = draw_module
-        self._font = font_module.load_default()
+        self._fonts = load_display_fonts(font_module)
         self._tk_module = tk_module
         self._image_tk_module = image_tk_module
         self._window = window
@@ -3417,7 +3608,7 @@ class DesktopPreviewRenderer(ConsoleRenderer):
         self.render(ScreenState(status=message))
 
     def render(self, state: ScreenState) -> None:
-        if self._window is None or self._image_module is None or self._draw_module is None or self._font is None:
+        if self._window is None or self._image_module is None or self._draw_module is None or self._fonts is None:
             super().render(state)
             return
 
@@ -3426,7 +3617,7 @@ class DesktopPreviewRenderer(ConsoleRenderer):
                 state,
                 self._image_module,
                 self._draw_module,
-                self._font,
+                self._fonts,
                 width=self._width,
                 height=self._height,
             )
@@ -3483,7 +3674,7 @@ class SnapshotRenderer(ConsoleRenderer):
         self._scale = max(1, scale)
         self._image_module: Any = None
         self._draw_module: Any = None
-        self._font: Any = None
+        self._fonts: Optional[dict[str, Any]] = None
         self._fallback_reason = self._connect_snapshot()
 
         if self._fallback_reason:
@@ -3498,7 +3689,7 @@ class SnapshotRenderer(ConsoleRenderer):
         image_module, draw_module, font_module = pillow
         self._image_module = image_module
         self._draw_module = draw_module
-        self._font = font_module.load_default()
+        self._fonts = load_display_fonts(font_module)
         return None
 
     def render_notice(self, message: str) -> None:
@@ -3508,7 +3699,7 @@ class SnapshotRenderer(ConsoleRenderer):
         self.render(ScreenState(status=message))
 
     def render(self, state: ScreenState) -> None:
-        if self._image_module is None or self._draw_module is None or self._font is None:
+        if self._image_module is None or self._draw_module is None or self._fonts is None:
             super().render(state)
             return
 
@@ -3516,7 +3707,7 @@ class SnapshotRenderer(ConsoleRenderer):
             state,
             self._image_module,
             self._draw_module,
-            self._font,
+            self._fonts,
             width=WHISPLAY_DEFAULT_WIDTH,
             height=WHISPLAY_DEFAULT_HEIGHT,
         )
