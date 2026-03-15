@@ -2066,6 +2066,80 @@ def run_preview_core_gallery(
         return 1
 
 
+def build_scheduler_preview_gallery_entries() -> list[tuple[str, ScreenState]]:
+    jobs = [
+        {
+            "id": "daily-status",
+            "schedule": "daily 09:15",
+            "enabled": True,
+            "last_status": "success",
+            "last_result": "repo clean",
+        },
+        {
+            "id": "weekly-review",
+            "schedule": "every monday at 08:30",
+            "enabled": True,
+            "last_status": "error",
+            "last_result": "runner timed out",
+        },
+        {
+            "id": "nightly-sync",
+            "schedule": "hourly",
+            "enabled": False,
+        },
+    ]
+    history_payload = {
+        "job_id": "daily-status",
+        "total": 5,
+        "returned": 3,
+        "history": [
+            {"completed_at": "2026-03-15T10:00Z", "status": "success", "result": "repo clean"},
+            {"completed_at": "2026-03-14T10:00Z", "status": "error", "result": "runner timed out"},
+            {"completed_at": "2026-03-13T10:00Z", "status": "success", "result": "tests passed"},
+        ],
+    }
+
+    return [
+        ("scheduler-summary.png", build_jobs_screen_state(jobs)),
+        ("scheduler-detail.png", build_job_detail_screen_state(jobs[0], history_payload)),
+        ("scheduler-history.png", build_job_history_screen_state(history_payload)),
+    ]
+
+
+def run_preview_scheduler_gallery(
+    renderer: "ConsoleRenderer",
+    output_dir: str,
+    scale: int,
+) -> int:
+    try:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+        gallery_entries = build_scheduler_preview_gallery_entries()
+
+        for filename, state in gallery_entries:
+            write_preview_gallery_snapshot(output_root / filename, state, scale)
+
+        renderer.render(
+            ScreenState(
+                phase="Preview",
+                status="Scheduler gallery saved",
+                prompt=str(output_root),
+                answer="\n".join(filename for filename, _state in gallery_entries),
+            )
+        )
+        return 0
+    except RuntimeError as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Scheduler gallery failed",
+                prompt=output_dir,
+                error=str(error),
+            )
+        )
+        return 1
+
+
 def run_home_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -5066,6 +5140,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview-snapshot", help="Write one rasterized preview snapshot to PNG")
     parser.add_argument("--preview-gallery", help="Write a compact debug preview gallery to one directory")
     parser.add_argument("--preview-core-gallery", help="Write a host-free core UI gallery to one directory")
+    parser.add_argument("--preview-scheduler-gallery", help="Write a host-free scheduler UI gallery to one directory")
     parser.add_argument(
         "--preview-scale",
         type=int,
@@ -5251,6 +5326,13 @@ def main() -> int:
         ConsoleRenderer().render_notice("Use --preview-gallery or --preview-core-gallery, not both")
         return 1
 
+    if args.preview_scheduler_gallery is not None and (
+        args.preview_gallery is not None
+        or args.preview_core_gallery is not None
+    ):
+        ConsoleRenderer().render_notice("Use one preview gallery mode at a time")
+        return 1
+
     if args.preview_gallery is not None and (
         args.preview
         or args.preview_snapshot is not None
@@ -5265,6 +5347,14 @@ def main() -> int:
         or args.mock
     ):
         ConsoleRenderer().render_notice("Use --preview-core-gallery separately from --mock/--preview/--preview-snapshot")
+        return 1
+
+    if args.preview_scheduler_gallery is not None and (
+        args.preview
+        or args.preview_snapshot is not None
+        or args.mock
+    ):
+        ConsoleRenderer().render_notice("Use --preview-scheduler-gallery separately from --mock/--preview/--preview-snapshot")
         return 1
 
     if args.mock and args.preview:
@@ -5285,6 +5375,8 @@ def main() -> int:
         renderer = ConsoleRenderer("Preview Gallery")
     elif args.preview_core_gallery is not None:
         renderer = ConsoleRenderer("Core Gallery")
+    elif args.preview_scheduler_gallery is not None:
+        renderer = ConsoleRenderer("Scheduler Gallery")
     elif args.mock:
         renderer = ConsoleRenderer()
     else:
@@ -5601,6 +5693,31 @@ def main() -> int:
             renderer.render_notice("Use --preview-core-gallery separately from other screen/action flows")
             return 1
 
+        if args.preview_scheduler_gallery is not None and (
+            args.home_screen
+            or args.home_button_mode
+            or args.diagnostics_screen
+            or args.transcript_screen
+            or args.audio_screen
+            or args.error_screen
+            or args.voice_debug_screen
+            or args.seed_debug_state is not None
+            or args.clear_debug_state
+            or args.home_nav_action is not None
+            or args.prompt is not None
+            or selector_mode_active
+            or args.scheduler_screen is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+            or args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or has_job_upsert_arg
+            or selected_job_actions
+        ):
+            renderer.render_notice("Use --preview-scheduler-gallery separately from other screen/action flows")
+            return 1
+
         if selector_mode_active and (
             args.home_screen
             or args.home_button_mode
@@ -5823,6 +5940,13 @@ def main() -> int:
             return run_preview_core_gallery(
                 renderer,
                 args.preview_core_gallery,
+                args.preview_scale,
+            )
+
+        if args.preview_scheduler_gallery is not None:
+            return run_preview_scheduler_gallery(
+                renderer,
+                args.preview_scheduler_gallery,
                 args.preview_scale,
             )
 
