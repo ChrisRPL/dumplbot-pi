@@ -177,6 +177,25 @@ const runPreviewSnapshot = (baseUrl, outputPath, ...args) => {
   return result;
 };
 
+const runPreviewGallery = (baseUrl, outputDir, ...args) => {
+  const result = spawnSync(
+    "python3",
+    ["apps/ui/dumpl_ui.py", "--host-url", baseUrl, "--preview-gallery", outputDir, ...args],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 8000,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return result;
+};
+
 const uploadAudio = async (baseUrl, fileName, contentType) => {
   const form = new FormData();
   form.append("file", new File([WAVE_BYTES], fileName, { type: contentType }));
@@ -401,6 +420,23 @@ const runSmoke = async () => {
     });
     assert(resetAfterSeedResponse.ok, `debug voice clear after seed failed: ${resetAfterSeedResponse.status}`);
 
+    const seededDebugUiResult = runUiCommand(baseUrl, "--seed-debug-state", "error");
+    assert(seededDebugUiResult.status === 0, "expected ui seed debug state to return 0");
+    assert(
+      seededDebugUiResult.stdout.includes("preview error"),
+      "expected ui seed debug transcript preview",
+    );
+    assert(
+      seededDebugUiResult.stdout.includes("preview failure"),
+      "expected ui seed debug error preview",
+    );
+
+    const seededDebugVoiceResponse = await fetch(`${baseUrl}/api/debug/voice`);
+    assert(seededDebugVoiceResponse.ok, `seeded debug voice route failed: ${seededDebugVoiceResponse.status}`);
+    const seededDebugVoiceJson = await seededDebugVoiceResponse.json();
+    assert(seededDebugVoiceJson.transcript.text === "preview error", "unexpected ui-seeded transcript text");
+    assert(seededDebugVoiceJson.error.message === "preview failure", "unexpected ui-seeded error text");
+
     const transcriptPreviewPath = join(tmpRoot, "preview-transcript.png");
     const transcriptPreviewResult = runPreviewSnapshot(baseUrl, transcriptPreviewPath, "--transcript-screen");
     assert(transcriptPreviewResult.status === 0, "expected transcript preview snapshot to return 0");
@@ -414,6 +450,23 @@ const runSmoke = async () => {
     const audioPreviewDimensions = await readPngDimensions(audioPreviewPath);
     assert(audioPreviewDimensions.width === 510, "expected audio preview width");
     assert(audioPreviewDimensions.height === 960, "expected audio preview height");
+
+    const previewGalleryDir = join(tmpRoot, "preview-gallery");
+    const previewGalleryResult = runPreviewGallery(baseUrl, previewGalleryDir, "--seed-debug-state", "error");
+    assert(previewGalleryResult.status === 0, "expected preview gallery command to return 0");
+    assert(
+      previewGalleryResult.stdout.includes("Gallery saved"),
+      "expected preview gallery status",
+    );
+    for (const fileName of ["home.png", "transcript.png", "audio.png", "error.png", "voice-debug.png"]) {
+      assert(
+        previewGalleryResult.stdout.includes(fileName),
+        `expected preview gallery output to mention ${fileName}`,
+      );
+      const dimensions = await readPngDimensions(join(previewGalleryDir, fileName));
+      assert(dimensions.width === 510, `expected ${fileName} preview width`);
+      assert(dimensions.height === 960, `expected ${fileName} preview height`);
+    }
 
     const failedTalkResponse = await fetch(
       `${baseUrl}/api/audio/${uploadJson.audio_id}/talk`,
