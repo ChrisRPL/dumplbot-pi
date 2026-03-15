@@ -2773,6 +2773,7 @@ def build_job_history_screen_state(
         )
 
     lines: list[str] = []
+    cards: list[dict[str, str]] = []
 
     for entry in history:
         if not isinstance(entry, dict):
@@ -2793,12 +2794,23 @@ def build_job_history_screen_state(
             summary = f"{summary}\n{status}"
 
         lines.append(summary)
+        cards.append({
+            "time": truncate_visual_text(completed_at, 18),
+            "status": truncate_visual_text(status, 12),
+            "result": truncate_visual_text(result if isinstance(result, str) and result else "no result", 34),
+        })
 
     return ScreenState(
         phase="Jobs",
         status=f"{job_id} history ({describe_history_window(total, returned, history_offset)})",
         prompt=job_id,
         answer="\n".join(lines) if lines else "No valid history entries.",
+        visual={
+            "kind": "job_history",
+            "job_id": truncate_visual_text(job_id, 16),
+            "window": describe_history_window(total, returned, history_offset),
+            "cards": cards[:3],
+        },
     )
 
 
@@ -2857,6 +2869,16 @@ def build_job_detail_screen_state(
             f"last run: {last_run_summary}",
             *history_lines,
         ]),
+        visual={
+            "kind": "job_detail",
+            "job_id": truncate_visual_text(job_id, 16),
+            "state": state,
+            "schedule": truncate_visual_text(schedule, 40),
+            "workspace": truncate_visual_text(workspace if isinstance(workspace, str) and workspace else "(none)", 18),
+            "skill": truncate_visual_text(skill if isinstance(skill, str) and skill else "(none)", 18),
+            "history_window": describe_history_window(total, returned, history_offset),
+            "last_run": truncate_visual_text(summarize_job_run_line(job, 34), 34),
+        },
     )
 
 
@@ -3792,6 +3814,82 @@ def render_jobs_summary_visual(
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
 
+def render_job_detail_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    state_value = truncate_visual_text(visual.get("state"), 3)
+    schedule = truncate_visual_text(visual.get("schedule"), 42)
+    workspace = truncate_visual_text(visual.get("workspace"), 18)
+    skill = truncate_visual_text(visual.get("skill"), 18)
+    history_window = truncate_visual_text(visual.get("history_window"), 18)
+    last_run = truncate_visual_text(visual.get("last_run"), 38)
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "JOB DETAIL", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 52, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 44, 20), state_value.upper(), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 144), radius=16, fill=(22, 28, 36))
+    draw.text((22, 72), truncate_visual_text(visual.get("job_id"), 16).upper(), fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, schedule, 22, 94, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=3)
+
+    draw.rounded_rectangle((12, 156, width - 12, 234), radius=16, fill=(22, 28, 36))
+    draw.text((22, 170), "CONTEXT", fill=accent, font=fonts["tiny"])
+    draw.text((22, 188), f"ws: {workspace}", fill=WHISPLAY_FOREGROUND, font=fonts["label"])
+    draw.text((22, 206), f"skill: {skill}", fill=WHISPLAY_FOREGROUND, font=fonts["label"])
+    draw.text((22, 224), f"runs: {history_window}", fill=WHISPLAY_FOREGROUND, font=fonts["label"])
+
+    draw.text((14, 252), "LAST RUN", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, last_run, 14, 270, width - 28, fonts["tiny"], (154, 162, 170), max_lines=1)
+    draw.text((14, height - 22), "short: history · long: next", fill=(154, 162, 170), font=fonts["tiny"])
+
+
+def render_job_history_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    cards = visual.get("cards")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "HISTORY", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 74, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 66, 20), truncate_visual_text(visual.get("window"), 12), fill=accent, font=fonts["tiny"])
+
+    draw.text((14, 58), truncate_visual_text(visual.get("job_id"), 16).upper(), fill=accent, font=fonts["tiny"])
+
+    if not isinstance(cards, list) or not cards:
+        draw.rounded_rectangle((12, 76, width - 12, 212), radius=16, fill=(22, 28, 36))
+        draw_text_block(draw, "No runs yet", 22, 106, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=2)
+        draw.text((14, height - 22), "short: summary  long: next job", fill=(154, 162, 170), font=fonts["tiny"])
+        return
+
+    card_y = 76
+
+    for card in cards[:3]:
+        if not isinstance(card, dict):
+            continue
+
+        draw.rounded_rectangle((12, card_y, width - 12, card_y + 64), radius=14, fill=(22, 28, 36))
+        draw.text((22, card_y + 10), truncate_visual_text(card.get("time"), 18), fill=accent, font=fonts["tiny"])
+        draw.rounded_rectangle((width - 60, card_y + 8, width - 18, card_y + 28), radius=10, fill=(30, 36, 44))
+        draw.text((width - 52, card_y + 13), truncate_visual_text(card.get("status"), 10).upper(), fill=(195, 201, 207), font=fonts["tiny"])
+        draw_text_block(draw, truncate_visual_text(card.get("result"), 38), 22, card_y + 32, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=2)
+        card_y += 72
+
+    draw.text((14, height - 22), "short: summary · long: next", fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -3814,6 +3912,14 @@ def render_state_image(
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "jobs_summary":
         render_jobs_summary_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "job_detail":
+        render_job_detail_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "job_history":
+        render_job_history_visual(draw, state, fonts, width, height, accent)
         return image, accent
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "transcript_debug":
