@@ -119,13 +119,17 @@ const runSmoke = async () => {
   const configPath = join(tmpRoot, "config.yaml");
   const defaultWorkspaceRoot = join(workspaceRoot, "default");
   const insideFilePath = join(defaultWorkspaceRoot, "inside.txt");
+  const attachedRepoRoot = join(tmpRoot, "notes-repo");
+  const attachedRepoFilePath = join(attachedRepoRoot, "repo.txt");
   const outsideFilePath = join(tmpRoot, "outside.txt");
   const codingSkillRoot = join(skillsRoot, "coding");
 
   await mkdir(defaultWorkspaceRoot, { recursive: true });
+  await mkdir(attachedRepoRoot, { recursive: true });
   await mkdir(codingSkillRoot, { recursive: true });
   await writeFile(join(defaultWorkspaceRoot, "CLAUDE.md"), "# default\n", "utf8");
   await writeFile(insideFilePath, "inside\n", "utf8");
+  await writeFile(attachedRepoFilePath, "attached\n", "utf8");
   await writeFile(outsideFilePath, "outside\n", "utf8");
   await writeFile(
     join(codingSkillRoot, "skill.yaml"),
@@ -163,6 +167,16 @@ const runSmoke = async () => {
   const baseUrl = `http://${HOST}:${HOST_PORT}`;
 
   try {
+    const attachRepoResponse = await fetch(`${baseUrl}/api/workspaces/default/repos`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "notes",
+        path: attachedRepoRoot,
+      }),
+    });
+    assert(attachRepoResponse.status === 201, "expected repo attach to return 201");
+
     const insideTalkResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -183,6 +197,27 @@ const runSmoke = async () => {
       "expected inside workspace bash completion",
     );
     assert(!insideErrorEvent, "unexpected error event when reading inside workspace file");
+
+    const attachedTalkResponse = await fetch(`${baseUrl}/api/talk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: "bash: cat repos/notes/repo.txt",
+        tools: ["bash"],
+      }),
+    });
+    assert(attachedTalkResponse.status === 200, "expected attached repo /api/talk to return 200 SSE");
+
+    const attachedEvents = parseSsePayload(await attachedTalkResponse.text());
+    const attachedTokenEvent = attachedEvents.find((event) => event.eventType === "token");
+    const attachedDoneEvent = attachedEvents.find((event) => event.eventType === "done");
+    const attachedErrorEvent = attachedEvents.find((event) => event.eventType === "error");
+    assert(attachedTokenEvent?.data?.text === "attached", "expected attached repo file token");
+    assert(
+      attachedDoneEvent?.data?.summary === "Bash tool completed.",
+      "expected attached repo bash completion",
+    );
+    assert(!attachedErrorEvent, "unexpected error event when reading attached repo file");
 
     const outsideTalkResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
