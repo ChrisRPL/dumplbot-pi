@@ -366,6 +366,41 @@ const runSmoke = async () => {
       "expected home audio toggle to render audio screen",
     );
 
+    const seedDebugResponse = await fetch(`${baseUrl}/api/debug/voice/seed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        transcript_text: "seed preview",
+        audio_size_bytes: 24,
+        error_source: "audio-talk",
+        error_message: "seed error",
+      }),
+    });
+    assert(seedDebugResponse.ok, `debug voice seed route failed: ${seedDebugResponse.status}`);
+    const seedDebugJson = await seedDebugResponse.json();
+    assert(seedDebugJson.transcript.present === true, "expected seeded transcript presence");
+    assert(seedDebugJson.transcript.text === "seed preview", "unexpected seeded transcript text");
+    assert(seedDebugJson.audio.present === true, "expected seeded audio presence");
+    assert(seedDebugJson.audio.size_bytes === 24, "unexpected seeded audio size");
+    assert(seedDebugJson.error.present === true, "expected seeded error presence");
+    assert(seedDebugJson.error.message === "seed error", "unexpected seeded error message");
+
+    const seededVoiceDebugResult = runUiCommand(baseUrl, "--voice-debug-screen");
+    assert(seededVoiceDebugResult.status === 0, "expected seeded voice debug screen to return 0");
+    assert(
+      seededVoiceDebugResult.stdout.includes("seed preview"),
+      "expected seeded voice debug transcript summary",
+    );
+    assert(
+      seededVoiceDebugResult.stdout.includes("seed error"),
+      "expected seeded voice debug error summary",
+    );
+
+    const resetAfterSeedResponse = await fetch(`${baseUrl}/api/debug/voice/clear`, {
+      method: "POST",
+    });
+    assert(resetAfterSeedResponse.ok, `debug voice clear after seed failed: ${resetAfterSeedResponse.status}`);
+
     const transcriptPreviewPath = join(tmpRoot, "preview-transcript.png");
     const transcriptPreviewResult = runPreviewSnapshot(baseUrl, transcriptPreviewPath, "--transcript-screen");
     assert(transcriptPreviewResult.status === 0, "expected transcript preview snapshot to return 0");
