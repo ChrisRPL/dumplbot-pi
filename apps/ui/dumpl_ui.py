@@ -948,9 +948,16 @@ def build_workspace_history_screen_state(
             status=f"{workspace_id} has no history",
             prompt=workspace_id,
             answer="No workspace runs recorded.",
+            visual={
+                "kind": "workspace_history",
+                "workspace_id": truncate_visual_text(workspace_id, 18),
+                "window": describe_history_window(total, returned, history_offset),
+                "cards": [],
+            },
         )
 
     lines: list[str] = []
+    cards: list[dict[str, str]] = []
 
     for entry in history:
         if not isinstance(entry, dict):
@@ -980,12 +987,24 @@ def build_workspace_history_screen_state(
             entry_lines.append(summary)
 
         lines.append("\n".join(entry_lines))
+        cards.append({
+            "time": truncate_visual_text(completed_at, 18),
+            "status": truncate_visual_text(status, 10),
+            "detail": truncate_visual_text(detail, 26),
+            "summary": truncate_visual_text(summary if isinstance(summary, str) and summary else "(no summary)", 34),
+        })
 
     return ScreenState(
         phase="Workspaces",
         status=f"{workspace_id} history ({describe_history_window(total, returned, history_offset)})",
         prompt=workspace_id,
         answer="\n".join(lines) if lines else "No valid history entries.",
+        visual={
+            "kind": "workspace_history",
+            "workspace_id": truncate_visual_text(workspace_id, 18),
+            "window": describe_history_window(total, returned, history_offset),
+            "cards": cards[:3],
+        },
     )
 
 
@@ -1004,9 +1023,16 @@ def build_workspace_files_screen_state(
             status=f"{workspace_id} has no files",
             prompt=workspace_id,
             answer="No workspace project files recorded.",
+            visual={
+                "kind": "workspace_files",
+                "workspace_id": truncate_visual_text(workspace_id, 18),
+                "file_count": 0,
+                "cards": [],
+            },
         )
 
     lines: list[str] = []
+    cards: list[dict[str, str]] = []
 
     for entry in files[:5]:
         if not isinstance(entry, dict):
@@ -1024,6 +1050,11 @@ def build_workspace_files_screen_state(
             summary = f"{summary}\n{size} B"
 
         lines.append(summary)
+        cards.append({
+            "name": truncate_visual_text(Path(path).name or path, 18),
+            "path": truncate_visual_text(path, 24),
+            "size": f"{size} B" if isinstance(size, int) else "(size?)",
+        })
 
     if len(files) > 5:
         lines.append(f"+{len(files) - 5} more")
@@ -1033,6 +1064,13 @@ def build_workspace_files_screen_state(
         status=f"{workspace_id} files ({len(files)})",
         prompt=workspace_id,
         answer="\n".join(lines) if lines else "No valid file entries.",
+        visual={
+            "kind": "workspace_files",
+            "workspace_id": truncate_visual_text(workspace_id, 18),
+            "file_count": len(files),
+            "cards": cards[:3],
+            "remaining_count": max(0, len(cards) - 3),
+        },
     )
 
 
@@ -1051,6 +1089,13 @@ def build_workspace_file_screen_state(
         status=f"{workspace_id} file",
         prompt=path,
         answer=content if isinstance(content, str) and content else "(empty file)",
+        visual={
+            "kind": "workspace_file",
+            "workspace_id": truncate_visual_text(workspace_id, 18),
+            "file_name": truncate_visual_text(Path(path).name or path, 18),
+            "path": truncate_visual_text(path, 26),
+            "body": truncate_visual_text(content if isinstance(content, str) and content else "(empty file)", 220),
+        },
     )
 
 
@@ -4365,6 +4410,118 @@ def render_workspace_detail_visual(
     draw.text((14, height - 22), "short: history · long: files", fill=(154, 162, 170), font=fonts["tiny"])
 
 
+def render_workspace_history_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    cards = visual.get("cards")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "WS HISTORY", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 74, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 66, 20), truncate_visual_text(visual.get("window"), 12), fill=accent, font=fonts["tiny"])
+
+    draw.text((14, 58), truncate_visual_text(visual.get("workspace_id"), 16).upper(), fill=accent, font=fonts["tiny"])
+
+    if not isinstance(cards, list) or not cards:
+        draw.rounded_rectangle((12, 76, width - 12, 212), radius=16, fill=(22, 28, 36))
+        draw_text_block(draw, "No runs yet", 22, 106, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=2)
+        draw.text((14, height - 22), "run a prompt to fill history", fill=(154, 162, 170), font=fonts["tiny"])
+        return
+
+    card_y = 76
+
+    for card in cards[:3]:
+        if not isinstance(card, dict):
+            continue
+
+        draw.rounded_rectangle((12, card_y, width - 12, card_y + 64), radius=14, fill=(22, 28, 36))
+        draw.text((22, card_y + 10), truncate_visual_text(card.get("time"), 18), fill=accent, font=fonts["tiny"])
+        draw.rounded_rectangle((width - 60, card_y + 8, width - 18, card_y + 28), radius=10, fill=(30, 36, 44))
+        draw.text((width - 52, card_y + 13), truncate_visual_text(card.get("status"), 10).upper(), fill=(195, 201, 207), font=fonts["tiny"])
+        draw_text_block(draw, truncate_visual_text(card.get("detail"), 28), 22, card_y + 30, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
+        draw_text_block(draw, truncate_visual_text(card.get("summary"), 34), 22, card_y + 44, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
+        card_y += 72
+
+    draw.text((14, height - 22), "latest runs only", fill=(154, 162, 170), font=fonts["tiny"])
+
+
+def render_workspace_files_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    cards = visual.get("cards")
+    file_count = visual.get("file_count")
+    remaining_count = visual.get("remaining_count")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "WS FILES", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 58, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 48, 20), str(file_count or 0), fill=accent, font=fonts["tiny"])
+
+    draw.text((14, 58), truncate_visual_text(visual.get("workspace_id"), 16).upper(), fill=accent, font=fonts["tiny"])
+
+    if not isinstance(cards, list) or not cards:
+        draw.rounded_rectangle((12, 76, width - 12, 212), radius=16, fill=(22, 28, 36))
+        draw_text_block(draw, "No files yet", 22, 106, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=2)
+        draw.text((14, height - 22), "save notes under workspace", fill=(154, 162, 170), font=fonts["tiny"])
+        return
+
+    card_y = 76
+
+    for card in cards[:3]:
+        if not isinstance(card, dict):
+            continue
+
+        draw.rounded_rectangle((12, card_y, width - 12, card_y + 58), radius=14, fill=(22, 28, 36))
+        draw.text((22, card_y + 10), truncate_visual_text(card.get("name"), 18).upper(), fill=accent, font=fonts["tiny"])
+        draw.text((width - 52, card_y + 10), truncate_visual_text(card.get("size"), 10), fill=(154, 162, 170), font=fonts["tiny"])
+        draw_text_block(draw, truncate_visual_text(card.get("path"), 28), 22, card_y + 28, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=2)
+        card_y += 66
+
+    footer = "file detail shows preview"
+    if isinstance(remaining_count, int) and remaining_count > 0:
+        footer = f"+{remaining_count} more  ·  file detail"
+
+    draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
+
+
+def render_workspace_file_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "WS FILE", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 68, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 59, 20), truncate_visual_text(visual.get("workspace_id"), 10).upper(), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 102), radius=14, fill=(22, 28, 36))
+    draw.text((22, 72), truncate_visual_text(visual.get("file_name"), 18).upper(), fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, truncate_visual_text(visual.get("path"), 28), 22, 86, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+
+    draw.rounded_rectangle((12, 114, width - 12, 268), radius=16, fill=(22, 28, 36))
+    draw.text((22, 128), "PREVIEW", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, truncate_visual_text(visual.get("body"), 220), 22, 148, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=7)
+
+    draw.text((14, height - 22), "workspace file preview", fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -4399,6 +4556,18 @@ def render_state_image(
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "workspace_detail":
         render_workspace_detail_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "workspace_history":
+        render_workspace_history_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "workspace_files":
+        render_workspace_files_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "workspace_file":
+        render_workspace_file_visual(draw, state, fonts, width, height, accent)
         return image, accent
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "jobs_summary":
