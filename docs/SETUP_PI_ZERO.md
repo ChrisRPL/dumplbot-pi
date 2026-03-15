@@ -19,6 +19,8 @@ Use this as the appliance bring-up checklist for a new Raspberry Pi Zero 2 WH.
 6. Place config in `/etc/dumplbot/`.
 7. Enable `dumplbotd.service` and `dumpl-ui.service`.
 
+The installer now prints the next command and the `/setup` URL to open from the same Wi-Fi after install.
+
 ## Required Files
 
 - `/etc/dumplbot/config.yaml`

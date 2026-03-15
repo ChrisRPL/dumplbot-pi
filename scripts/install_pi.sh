@@ -20,6 +20,27 @@ require_command node
 require_command npm
 require_command bwrap
 
+detect_setup_url() {
+  local first_address=""
+  local raw_addresses=""
+
+  raw_addresses="$(hostname -I 2>/dev/null || true)"
+
+  for address in ${raw_addresses}; do
+    if [[ "${address}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      first_address="${address}"
+      break
+    fi
+  done
+
+  if [[ -n "${first_address}" ]]; then
+    printf "http://%s:4123/setup" "${first_address}"
+    return
+  fi
+
+  printf "http://<pi-ip>:4123/setup"
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_ROOT="/opt/dumplbot"
@@ -62,5 +83,10 @@ install -m 0644 "${INSTALL_ROOT}/systemd/dumpl-ui.service" /etc/systemd/system/d
 
 systemctl daemon-reload
 
+SETUP_URL="$(detect_setup_url)"
+
 echo "install complete"
-echo "next: populate ${CONFIG_ROOT}/secrets.env, then enable services"
+echo "next:"
+echo "  sudo systemctl enable --now dumplbotd.service dumpl-ui.service"
+echo "  open ${SETUP_URL} from the same Wi-Fi"
+echo "  save provider keys, defaults, and safety mode"
