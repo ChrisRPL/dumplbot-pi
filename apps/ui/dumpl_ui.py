@@ -392,6 +392,16 @@ def get_setup_system_entry(base_url: str) -> dict[str, Any]:
     return system
 
 
+def get_setup_first_run_entry(base_url: str) -> dict[str, Any]:
+    payload = request_json(base_url, "/api/setup/first-run")
+    first_run = payload.get("first_run")
+
+    if not isinstance(first_run, dict):
+        raise RuntimeError("setup first-run response is invalid")
+
+    return first_run
+
+
 def summarize_runtime_selection(
     runtime: dict[str, Any],
     active_key: str,
@@ -1851,6 +1861,7 @@ def build_home_screen_state(
     runtime: dict[str, Any],
     health: dict[str, Any],
     system: dict[str, Any],
+    first_run: dict[str, Any],
     jobs: list[dict[str, Any]],
     focused_target: Optional[str] = None,
 ) -> ScreenState:
@@ -1860,6 +1871,10 @@ def build_home_screen_state(
     scheduler_enabled = health.get("scheduler_enabled")
     lan_setup_ready = system.get("lan_setup_ready")
     safety_mode = runtime.get("safety_mode")
+    first_run_ready = first_run.get("ready") is True
+    first_run_message = truncate_visual_text(first_run.get("status_message"), 64)
+    next_action_label = truncate_visual_text(first_run.get("next_action_label"), 18)
+    next_action_detail = truncate_visual_text(first_run.get("next_action_detail"), 56)
     nav_lines: list[str] = []
 
     for target in HOME_NAVIGATION_TARGET_SEQUENCE:
@@ -1872,8 +1887,14 @@ def build_home_screen_state(
         f"safety: {safety_mode if isinstance(safety_mode, str) and safety_mode else '(none)'}",
         f"jobs: {enabled_jobs}/{len(jobs)} on",
         f"scheduler: {'on' if scheduler_enabled is True else 'off'}",
-        f"setup: {'lan ready' if lan_setup_ready is True else 'lan pending'}",
+        f"setup: {'ready' if first_run_ready else next_action_label.lower()}",
     ]
+
+    if first_run_message and first_run_message != "(none)":
+        answer_lines.extend([
+            "",
+            first_run_message,
+        ])
 
     if nav_lines:
         answer_lines.extend([
@@ -1883,10 +1904,13 @@ def build_home_screen_state(
 
     return ScreenState(
         phase="Home",
-        status=" | ".join([
-            "daemon ok" if daemon_healthy is True else "daemon issue",
-            "stt ready" if stt_ready is True else "stt missing",
-        ]),
+        status=" | ".join(
+            [
+                "ready" if first_run_ready else "finish setup",
+                "daemon ok" if daemon_healthy is True else "daemon issue",
+                "stt ready" if stt_ready is True else "stt missing",
+            ]
+        ),
         answer="\n".join(answer_lines),
         visual={
             "kind": "home",
@@ -1899,6 +1923,10 @@ def build_home_screen_state(
             "stt_ready": stt_ready is True,
             "scheduler_enabled": scheduler_enabled is True,
             "lan_setup_ready": lan_setup_ready is True,
+            "first_run_ready": first_run_ready,
+            "first_run_message": first_run_message,
+            "next_action_label": next_action_label,
+            "next_action_detail": next_action_detail,
             "focused_target": focused_target or HOME_NAVIGATION_TARGET_SEQUENCE[0],
         },
     )
@@ -2071,10 +2099,11 @@ def run_preview_gallery(
         runtime = get_runtime_config_entry(base_url)
         health = get_setup_health_entry(base_url)
         system = get_setup_system_entry(base_url)
+        first_run = get_setup_first_run_entry(base_url)
         jobs = list_job_entries(base_url)
         debug_voice = get_debug_voice_entry(base_url)
         gallery_entries = [
-            ("home.png", build_home_screen_state(runtime, health, system, jobs, focused_target=None)),
+            ("home.png", build_home_screen_state(runtime, health, system, first_run, jobs, focused_target=None)),
             ("transcript.png", build_transcript_debug_screen_state(debug_voice)),
             ("audio.png", build_audio_debug_screen_state(debug_voice)),
             ("error.png", build_error_debug_screen_state(debug_voice)),
@@ -2143,6 +2172,12 @@ def build_core_preview_gallery_entries() -> list[tuple[str, ScreenState]]:
                 },
                 {
                     "lan_setup_ready": True,
+                },
+                {
+                    "ready": True,
+                    "status_message": "DumplBot is ready for a first talk test.",
+                    "next_action_label": "Voice",
+                    "next_action_detail": "Tap next or hold enter to leave home.",
                 },
                 [
                     {"id": "daily-status", "enabled": True},
@@ -2447,6 +2482,7 @@ def run_home_screen(
                 get_runtime_config_entry(base_url),
                 get_setup_health_entry(base_url),
                 get_setup_system_entry(base_url),
+                get_setup_first_run_entry(base_url),
                 list_job_entries(base_url),
                 focused_target=None,
             )
@@ -2512,6 +2548,7 @@ def render_home_navigation_state(
                 get_runtime_config_entry(base_url),
                 get_setup_health_entry(base_url),
                 get_setup_system_entry(base_url),
+                get_setup_first_run_entry(base_url),
                 list_job_entries(base_url),
                 focused_target=state.focused_target,
             )
@@ -3958,11 +3995,17 @@ def render_home_visual(
     focused_target = truncate_visual_text(visual.get("focused_target"), 18)
     enabled_jobs = visual.get("enabled_jobs")
     job_count = visual.get("job_count")
+    first_run_ready = visual.get("first_run_ready") is True
+    next_action_label = truncate_visual_text(visual.get("next_action_label"), 18)
+    next_action_detail = truncate_visual_text(visual.get("next_action_detail"), 44)
 
     draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
     draw.text((18, 18), "DUMPLBOT", fill=(236, 240, 244), font=fonts["title"])
-    draw.rounded_rectangle((width - 68, 14, width - 18, 36), radius=10, fill=(24, 48, 30))
-    draw.text((width - 58, 20), "HOME", fill=(201, 230, 160), font=fonts["tiny"])
+    badge_fill = (24, 48, 30) if first_run_ready else (75, 61, 23)
+    badge_text = "READY" if first_run_ready else "SETUP"
+    badge_color = (201, 230, 160) if first_run_ready else (244, 215, 131)
+    draw.rounded_rectangle((width - 70, 14, width - 18, 36), radius=10, fill=badge_fill)
+    draw.text((width - 60, 20), badge_text, fill=badge_color, font=fonts["tiny"])
 
     draw_panel_card(draw, 12, 56, 70, 50, "Workspace", workspace, fonts, accent)
     draw_panel_card(draw, 88, 56, 70, 50, "Skill", skill, fonts, accent)
@@ -3973,10 +4016,10 @@ def render_home_visual(
     draw_status_chip(draw, 88, 142, 70, "lan ready" if visual.get("lan_setup_ready") else "lan wait", bool(visual.get("lan_setup_ready")), fonts)
 
     draw.rounded_rectangle((12, 176, width - 12, 262), radius=16, fill=(22, 28, 36))
-    draw.text((22, 188), "NEXT", fill=accent, font=fonts["tiny"])
+    draw.text((22, 188), "READY" if first_run_ready else "NEXT", fill=accent, font=fonts["tiny"])
     draw_text_block(
         draw,
-        focused_target.upper(),
+        (focused_target if first_run_ready else next_action_label).upper(),
         22,
         206,
         width - 44,
@@ -3986,7 +4029,7 @@ def render_home_visual(
     )
     draw_text_block(
         draw,
-        "tap next\nhold enter",
+        "tap next\nhold enter" if first_run_ready else next_action_detail,
         22,
         238,
         width - 44,
