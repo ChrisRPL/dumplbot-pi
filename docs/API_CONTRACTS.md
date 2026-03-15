@@ -138,6 +138,23 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Clear the last transcript, last audio metadata, and last error metadata used by device-side debug screens.
 - Success response reuses the `GET /api/debug/voice` shape with every branch cleared to `present:false`.
 
+### `POST /api/debug/voice/seed`
+
+- Seed preview/debug-friendly transcript/audio/error state without recording hardware audio.
+- Accepted JSON body:
+
+```json
+{
+  "transcript_text":"preview error",
+  "audio_size_bytes":24,
+  "error_source":"audio-talk",
+  "error_message":"preview failure"
+}
+```
+
+- Any omitted branch is cleared before the response is returned.
+- Success response reuses the `GET /api/debug/voice` shape.
+
 ### `GET /api/skills`
 
 - Return installed skills plus policy metadata.
