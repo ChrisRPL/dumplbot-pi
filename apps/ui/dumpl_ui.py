@@ -2564,6 +2564,19 @@ def describe_history_window(
     return f"{start_run}-{end_run}/{total_runs} runs"
 
 
+def summarize_job_run_line(job: dict[str, Any], max_length: int = 30) -> str:
+    last_status = job.get("last_status")
+    last_result = job.get("last_result")
+
+    if isinstance(last_result, str) and last_result.strip():
+        return summarize_debug_value(last_result, "no result", max_length)
+
+    if isinstance(last_status, str) and last_status.strip():
+        return summarize_debug_value(last_status, "never", max_length)
+
+    return "never"
+
+
 def handle_jobs_command(
     base_url: str,
     command: str,
@@ -2688,9 +2701,17 @@ def build_jobs_screen_state(jobs: list[dict[str, Any]]) -> ScreenState:
             phase="Jobs",
             status="No scheduler jobs",
             answer="Create jobs via /api/jobs.",
+            visual={
+                "kind": "jobs_summary",
+                "job_count": 0,
+                "enabled_count": 0,
+                "cards": [],
+            },
         )
 
     lines: list[str] = []
+    cards: list[dict[str, str]] = []
+    enabled_count = 0
 
     for job in jobs[:4]:
         job_id = job.get("id")
@@ -2704,6 +2725,15 @@ def build_jobs_screen_state(jobs: list[dict[str, Any]]) -> ScreenState:
         summary = f"{summary}\n{format_job_run_state(job)}"
 
         lines.append(summary)
+        cards.append({
+            "id": truncate_visual_text(job_id, 16),
+            "schedule": truncate_visual_text(schedule, 24),
+            "run": truncate_visual_text(summarize_job_run_line(job, 30), 30),
+            "state": marker,
+        })
+
+        if enabled:
+            enabled_count += 1
 
     if len(jobs) > 4:
         lines.append(f"+{len(jobs) - 4} more")
@@ -2712,6 +2742,13 @@ def build_jobs_screen_state(jobs: list[dict[str, Any]]) -> ScreenState:
         phase="Jobs",
         status=f"{len(jobs)} scheduler job(s)",
         answer="\n".join(lines),
+        visual={
+            "kind": "jobs_summary",
+            "job_count": len(jobs),
+            "enabled_count": enabled_count,
+            "cards": cards[:2],
+            "remaining_count": max(0, len(cards) - 2),
+        },
     )
 
 
@@ -3683,6 +3720,78 @@ def render_result_visual(
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
 
+def render_jobs_summary_visual(
+    draw: Any,
+    state: ScreenState,
+    fonts: dict[str, Any],
+    width: int,
+    height: int,
+    accent: tuple[int, int, int],
+) -> None:
+    visual = state.visual or {}
+    cards = visual.get("cards")
+    job_count = visual.get("job_count")
+    enabled_count = visual.get("enabled_count")
+    remaining_count = visual.get("remaining_count")
+
+    draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
+    draw.text((18, 18), "SCHEDULER", fill=(236, 240, 244), font=fonts["title"])
+    draw.rounded_rectangle((width - 58, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
+    draw.text((width - 48, 20), str(job_count or 0), fill=accent, font=fonts["tiny"])
+
+    draw.rounded_rectangle((12, 58, width - 12, 106), radius=14, fill=(22, 28, 36))
+    draw.text((22, 72), "ACTIVE", fill=accent, font=fonts["tiny"])
+    draw_text_block(
+        draw,
+        f"{enabled_count or 0} of {job_count or 0} jobs on",
+        22,
+        86,
+        width - 44,
+        fonts["body"],
+        WHISPLAY_FOREGROUND,
+        max_lines=1,
+    )
+
+    if not isinstance(cards, list) or not cards:
+        draw.rounded_rectangle((12, 118, width - 12, 244), radius=16, fill=(22, 28, 36))
+        draw.text((22, 132), "QUEUE", fill=accent, font=fonts["tiny"])
+        draw_text_block(
+            draw,
+            "No jobs yet",
+            22,
+            156,
+            width - 44,
+            fonts["hero"],
+            WHISPLAY_FOREGROUND,
+            max_lines=2,
+        )
+        draw.text((14, height - 22), "add jobs from host or setup", fill=(154, 162, 170), font=fonts["tiny"])
+        return
+
+    card_y = 118
+
+    for card in cards[:2]:
+        if not isinstance(card, dict):
+            continue
+
+        draw.rounded_rectangle((12, card_y, width - 12, card_y + 56), radius=14, fill=(22, 28, 36))
+        draw.text((22, card_y + 10), truncate_visual_text(card.get("id"), 16).upper(), fill=accent, font=fonts["tiny"])
+        chip_fill = (36, 81, 107) if card.get("state") == "on" else (43, 50, 58)
+        chip_text = (227, 245, 251) if card.get("state") == "on" else (195, 201, 207)
+        draw.rounded_rectangle((width - 52, card_y + 8, width - 18, card_y + 28), radius=10, fill=chip_fill)
+        draw.text((width - 43, card_y + 13), truncate_visual_text(card.get("state"), 3).upper(), fill=chip_text, font=fonts["tiny"])
+        draw_text_block(draw, truncate_visual_text(card.get("schedule"), 26), 22, card_y + 24, width - 70, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
+        draw_text_block(draw, truncate_visual_text(card.get("run"), 30), 22, card_y + 38, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
+        card_y += 64
+
+    footer = "short: next view  long: next job"
+
+    if isinstance(remaining_count, int) and remaining_count > 0:
+        footer = f"+{remaining_count} more  ·  next view"
+
+    draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
+
+
 def render_state_image(
     state: ScreenState,
     image_module: Any,
@@ -3701,6 +3810,10 @@ def render_state_image(
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "home":
         render_home_visual(draw, state, fonts, width, height, accent)
+        return image, accent
+
+    if isinstance(state.visual, dict) and state.visual.get("kind") == "jobs_summary":
+        render_jobs_summary_visual(draw, state, fonts, width, height, accent)
         return image, accent
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "transcript_debug":
