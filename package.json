@@ -21,6 +21,7 @@
     "smoke:runner-sandbox-net": "npm run build && node scripts/smoke-runner-sandbox-net.mjs",
     "smoke:runner-sandbox-local": "npm run build && node scripts/smoke-runner-sandbox-local.mjs",
     "smoke:runner-policy-mismatch": "npm run build && node scripts/smoke-runner-policy-mismatch.mjs",
+    "smoke:run-cancel": "npm run build && node scripts/smoke-run-cancel.mjs",
     "smoke:runner-sandbox-launch": "npm run build && node scripts/smoke-runner-sandbox-launch.mjs",
     "smoke:runner-timeout": "npm run build && node scripts/smoke-runner-timeout.mjs",
     "smoke:runner-launch-builder": "npm run build && node scripts/smoke-runner-launch-builder.mjs",
