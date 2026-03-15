@@ -318,6 +318,13 @@ def request_json(
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace").strip()
         raise RuntimeError(detail or f"{method} {path} failed with HTTP {error.code}") from error
+    except urllib.error.URLError as error:
+        reason = getattr(error, "reason", error)
+        detail = str(reason).strip() or str(error)
+        raise RuntimeError(
+            f'cannot reach dumplbotd at {base_url}; start it first with "npm run dev:host" or pass --host-url '
+            f"(request: {method} {path}; detail: {detail})"
+        ) from error
 
 
 def get_runtime_config_entry(base_url: str) -> dict[str, Any]:
