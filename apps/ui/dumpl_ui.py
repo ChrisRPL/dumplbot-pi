@@ -1595,6 +1595,42 @@ def clear_debug_voice_entry(base_url: str) -> dict[str, Any]:
     }
 
 
+def seed_debug_voice_entry(base_url: str, preset: str) -> dict[str, Any]:
+    if preset == "success":
+        payload = {
+            "transcript_text": "preview success",
+            "audio_size_bytes": 24,
+        }
+    elif preset == "error":
+        payload = {
+            "transcript_text": "preview error",
+            "audio_size_bytes": 24,
+            "error_source": "audio-talk",
+            "error_message": "preview failure",
+        }
+    else:
+        raise RuntimeError("debug seed preset is invalid")
+
+    response_payload = request_json(
+        base_url,
+        "/api/debug/voice/seed",
+        method="POST",
+        payload=payload,
+    )
+    transcript = response_payload.get("transcript")
+    audio = response_payload.get("audio")
+    error = response_payload.get("error")
+
+    if not isinstance(transcript, dict) or not isinstance(audio, dict) or not isinstance(error, dict):
+        raise RuntimeError("seed debug voice response is invalid")
+
+    return {
+        "transcript": transcript,
+        "audio": audio,
+        "error": error,
+    }
+
+
 def build_home_screen_state(
     runtime: dict[str, Any],
     health: dict[str, Any],
@@ -1747,6 +1783,26 @@ def run_clear_debug_state(
             ScreenState(
                 phase="Error",
                 status="Clear debug state failed",
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_seed_debug_state(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    preset: str,
+) -> int:
+    try:
+        renderer.render(build_voice_debug_bundle_screen_state(seed_debug_voice_entry(base_url, preset)))
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Seed debug state failed",
+                prompt=preset,
                 error=str(error),
             )
         )
@@ -4033,6 +4089,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--audio-screen", action="store_true", help="Show last audio debug screen and exit")
     parser.add_argument("--error-screen", action="store_true", help="Show last error debug screen and exit")
     parser.add_argument("--voice-debug-screen", action="store_true", help="Show compact transcript/audio/error debug summary and exit")
+    parser.add_argument(
+        "--seed-debug-state",
+        choices=["success", "error"],
+        help="Seed one preview-friendly transcript/audio/error state and show the compact debug screen",
+    )
     parser.add_argument("--clear-debug-state", action="store_true", help="Clear transcript/audio/error debug state and show the empty bundle screen")
     parser.add_argument("--home-button-mode", action="store_true", help="Run button-driven home navigation on the renderer")
     parser.add_argument(
@@ -4300,6 +4361,7 @@ def main() -> int:
                 args.audio_screen,
                 args.error_screen,
                 args.voice_debug_screen,
+                args.seed_debug_state is not None,
                 args.clear_debug_state,
             )
             if value
@@ -4320,6 +4382,7 @@ def main() -> int:
             or args.audio_screen
             or args.error_screen
             or args.voice_debug_screen
+            or args.seed_debug_state is not None
             or args.clear_debug_state
             or args.home_nav_action is not None
             or args.jobs_screen
@@ -4347,6 +4410,7 @@ def main() -> int:
             or args.audio_screen
             or args.error_screen
             or args.voice_debug_screen
+            or args.seed_debug_state is not None
             or args.clear_debug_state
             or args.home_nav_action is not None
             or args.prompt is not None
@@ -4368,6 +4432,7 @@ def main() -> int:
             or args.audio_screen
             or args.error_screen
             or args.voice_debug_screen
+            or args.seed_debug_state is not None
             or args.clear_debug_state
             or args.home_nav_action is not None
         ) and (
@@ -4544,6 +4609,13 @@ def main() -> int:
             return run_voice_debug_bundle_screen(
                 args.host_url,
                 renderer,
+            )
+
+        if args.seed_debug_state is not None:
+            return run_seed_debug_state(
+                args.host_url,
+                renderer,
+                args.seed_debug_state,
             )
 
         if args.clear_debug_state:
