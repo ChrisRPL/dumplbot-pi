@@ -196,6 +196,25 @@ const runPreviewGallery = (baseUrl, outputDir, ...args) => {
   return result;
 };
 
+const runMacPreviewWalkthrough = (baseUrl, outputDir, ...args) => {
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/mac-preview-walkthrough.mjs", "--host-url", baseUrl, "--output-dir", outputDir, ...args],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      encoding: "utf8",
+      timeout: 8000,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  return result;
+};
+
 const uploadAudio = async (baseUrl, fileName, contentType) => {
   const form = new FormData();
   form.append("file", new File([WAVE_BYTES], fileName, { type: contentType }));
@@ -466,6 +485,23 @@ const runSmoke = async () => {
       const dimensions = await readPngDimensions(join(previewGalleryDir, fileName));
       assert(dimensions.width === 510, `expected ${fileName} preview width`);
       assert(dimensions.height === 960, `expected ${fileName} preview height`);
+    }
+
+    const walkthroughGalleryDir = join(tmpRoot, "walkthrough-gallery");
+    const walkthroughResult = runMacPreviewWalkthrough(baseUrl, walkthroughGalleryDir, "--seed", "error");
+    assert(walkthroughResult.status === 0, "expected mac preview walkthrough to return 0");
+    assert(
+      walkthroughResult.stdout.includes(`gallery: ${walkthroughGalleryDir}`),
+      "expected mac preview walkthrough gallery output",
+    );
+    assert(
+      walkthroughResult.stdout.includes("--home-button-mode"),
+      "expected mac preview walkthrough live command output",
+    );
+    for (const fileName of ["home.png", "transcript.png", "audio.png", "error.png", "voice-debug.png"]) {
+      const dimensions = await readPngDimensions(join(walkthroughGalleryDir, fileName));
+      assert(dimensions.width === 510, `expected walkthrough ${fileName} preview width`);
+      assert(dimensions.height === 960, `expected walkthrough ${fileName} preview height`);
     }
 
     const failedTalkResponse = await fetch(
