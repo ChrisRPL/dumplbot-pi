@@ -2197,6 +2197,84 @@ def build_core_preview_gallery_entries() -> list[tuple[str, ScreenState]]:
     ]
 
 
+def build_appliance_preview_gallery_entries() -> list[tuple[str, ScreenState]]:
+    runtime = {
+        "active_workspace": "default",
+        "active_skill": "coding",
+        "safety_mode": "strict",
+    }
+    system = {
+        "lan_setup_ready": True,
+    }
+    jobs = [
+        {"id": "daily-status", "enabled": True},
+        {"id": "weekly-review", "enabled": True},
+    ]
+
+    return [
+        (
+            "home-ready.png",
+            build_home_screen_state(
+                runtime,
+                {
+                    "daemon_healthy": True,
+                    "stt_ready": True,
+                    "scheduler_enabled": True,
+                },
+                system,
+                {
+                    "ready": True,
+                    "status_message": "DumplBot is ready for a first talk test.",
+                    "next_action_label": "Voice",
+                    "next_action_detail": "Tap next or hold enter to leave home.",
+                },
+                jobs,
+                focused_target="voice",
+            ),
+        ),
+        (
+            "home-setup-key.png",
+            build_home_screen_state(
+                runtime,
+                {
+                    "daemon_healthy": True,
+                    "stt_ready": False,
+                    "scheduler_enabled": True,
+                },
+                system,
+                {
+                    "ready": False,
+                    "status_message": "Add an OpenAI key on /setup to enable voice.",
+                    "next_action_label": "Add key",
+                    "next_action_detail": "Open /setup on the same Wi-Fi, then save the OpenAI key.",
+                },
+                jobs,
+                focused_target="voice",
+            ),
+        ),
+        (
+            "home-setup-audio.png",
+            build_home_screen_state(
+                runtime,
+                {
+                    "daemon_healthy": True,
+                    "stt_ready": True,
+                    "scheduler_enabled": True,
+                },
+                system,
+                {
+                    "ready": False,
+                    "status_message": "Mic and speaker still need a quick hardware check.",
+                    "next_action_label": "Check audio",
+                    "next_action_detail": "Record 3 seconds on Pi, then play it back before the first talk test.",
+                },
+                jobs,
+                focused_target="voice",
+            ),
+        ),
+    ]
+
+
 def run_preview_core_gallery(
     renderer: "ConsoleRenderer",
     output_dir: str,
@@ -2224,6 +2302,40 @@ def run_preview_core_gallery(
             ScreenState(
                 phase="Error",
                 status="Core gallery failed",
+                prompt=output_dir,
+                error=str(error),
+            )
+        )
+        return 1
+
+
+def run_preview_appliance_gallery(
+    renderer: "ConsoleRenderer",
+    output_dir: str,
+    scale: int,
+) -> int:
+    try:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+        gallery_entries = build_appliance_preview_gallery_entries()
+
+        for filename, state in gallery_entries:
+            write_preview_gallery_snapshot(output_root / filename, state, scale)
+
+        renderer.render(
+            ScreenState(
+                phase="Preview",
+                status="Appliance gallery saved",
+                prompt=str(output_root),
+                answer="\n".join(filename for filename, _state in gallery_entries),
+            )
+        )
+        return 0
+    except RuntimeError as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Appliance gallery failed",
                 prompt=output_dir,
                 error=str(error),
             )
@@ -6028,6 +6140,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview-snapshot", help="Write one rasterized preview snapshot to PNG")
     parser.add_argument("--preview-gallery", help="Write a compact debug preview gallery to one directory")
     parser.add_argument("--preview-core-gallery", help="Write a host-free core UI gallery to one directory")
+    parser.add_argument("--preview-appliance-gallery", help="Write a host-free first-run appliance gallery to one directory")
     parser.add_argument("--preview-scheduler-gallery", help="Write a host-free scheduler UI gallery to one directory")
     parser.add_argument("--preview-skill-gallery", help="Write a host-free skill UI gallery to one directory")
     parser.add_argument("--preview-workspace-gallery", help="Write a host-free workspace UI gallery to one directory")
@@ -6216,9 +6329,17 @@ def main() -> int:
         ConsoleRenderer().render_notice("Use --preview-gallery or --preview-core-gallery, not both")
         return 1
 
+    if args.preview_appliance_gallery is not None and (
+        args.preview_gallery is not None
+        or args.preview_core_gallery is not None
+    ):
+        ConsoleRenderer().render_notice("Use one preview gallery mode at a time")
+        return 1
+
     if args.preview_scheduler_gallery is not None and (
         args.preview_gallery is not None
         or args.preview_core_gallery is not None
+        or args.preview_appliance_gallery is not None
     ):
         ConsoleRenderer().render_notice("Use one preview gallery mode at a time")
         return 1
@@ -6226,6 +6347,7 @@ def main() -> int:
     if args.preview_skill_gallery is not None and (
         args.preview_gallery is not None
         or args.preview_core_gallery is not None
+        or args.preview_appliance_gallery is not None
         or args.preview_scheduler_gallery is not None
     ):
         ConsoleRenderer().render_notice("Use one preview gallery mode at a time")
@@ -6234,6 +6356,7 @@ def main() -> int:
     if args.preview_workspace_gallery is not None and (
         args.preview_gallery is not None
         or args.preview_core_gallery is not None
+        or args.preview_appliance_gallery is not None
         or args.preview_scheduler_gallery is not None
         or args.preview_skill_gallery is not None
     ):
@@ -6254,6 +6377,14 @@ def main() -> int:
         or args.mock
     ):
         ConsoleRenderer().render_notice("Use --preview-core-gallery separately from --mock/--preview/--preview-snapshot")
+        return 1
+
+    if args.preview_appliance_gallery is not None and (
+        args.preview
+        or args.preview_snapshot is not None
+        or args.mock
+    ):
+        ConsoleRenderer().render_notice("Use --preview-appliance-gallery separately from --mock/--preview/--preview-snapshot")
         return 1
 
     if args.preview_scheduler_gallery is not None and (
@@ -6298,6 +6429,8 @@ def main() -> int:
         renderer = ConsoleRenderer("Preview Gallery")
     elif args.preview_core_gallery is not None:
         renderer = ConsoleRenderer("Core Gallery")
+    elif args.preview_appliance_gallery is not None:
+        renderer = ConsoleRenderer("Appliance Gallery")
     elif args.preview_scheduler_gallery is not None:
         renderer = ConsoleRenderer("Scheduler Gallery")
     elif args.preview_skill_gallery is not None:
@@ -6620,6 +6753,31 @@ def main() -> int:
             renderer.render_notice("Use --preview-core-gallery separately from other screen/action flows")
             return 1
 
+        if args.preview_appliance_gallery is not None and (
+            args.home_screen
+            or args.home_button_mode
+            or args.diagnostics_screen
+            or args.transcript_screen
+            or args.audio_screen
+            or args.error_screen
+            or args.voice_debug_screen
+            or args.seed_debug_state is not None
+            or args.clear_debug_state
+            or args.home_nav_action is not None
+            or args.prompt is not None
+            or selector_mode_active
+            or args.scheduler_screen is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+            or args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or has_job_upsert_arg
+            or selected_job_actions
+        ):
+            renderer.render_notice("Use --preview-appliance-gallery separately from other screen/action flows")
+            return 1
+
         if args.preview_scheduler_gallery is not None and (
             args.home_screen
             or args.home_button_mode
@@ -6917,6 +7075,13 @@ def main() -> int:
             return run_preview_core_gallery(
                 renderer,
                 args.preview_core_gallery,
+                args.preview_scale,
+            )
+
+        if args.preview_appliance_gallery is not None:
+            return run_preview_appliance_gallery(
+                renderer,
+                args.preview_appliance_gallery,
                 args.preview_scale,
             )
 
