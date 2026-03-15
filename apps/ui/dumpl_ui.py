@@ -1809,6 +1809,73 @@ def run_seed_debug_state(
         return 1
 
 
+def write_preview_gallery_snapshot(
+    output_path: Path,
+    state: ScreenState,
+    scale: int,
+) -> None:
+    snapshot_renderer = SnapshotRenderer(str(output_path), scale=scale)
+
+    try:
+        snapshot_renderer.render(state)
+    finally:
+        snapshot_renderer.close()
+
+    if not output_path.exists():
+        raise RuntimeError(f"preview gallery snapshot was not created: {output_path.name}")
+
+
+def run_preview_gallery(
+    base_url: str,
+    renderer: "ConsoleRenderer",
+    output_dir: str,
+    scale: int,
+    seed_preset: Optional[str],
+) -> int:
+    try:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        if seed_preset is not None:
+            seed_debug_voice_entry(base_url, seed_preset)
+
+        runtime = get_runtime_config_entry(base_url)
+        health = get_setup_health_entry(base_url)
+        system = get_setup_system_entry(base_url)
+        jobs = list_job_entries(base_url)
+        debug_voice = get_debug_voice_entry(base_url)
+        gallery_entries = [
+            ("home.png", build_home_screen_state(runtime, health, system, jobs, focused_target=None)),
+            ("transcript.png", build_transcript_debug_screen_state(debug_voice)),
+            ("audio.png", build_audio_debug_screen_state(debug_voice)),
+            ("error.png", build_error_debug_screen_state(debug_voice)),
+            ("voice-debug.png", build_voice_debug_bundle_screen_state(debug_voice)),
+        ]
+
+        for filename, state in gallery_entries:
+            write_preview_gallery_snapshot(output_root / filename, state, scale)
+
+        renderer.render(
+            ScreenState(
+                phase="Preview",
+                status="Gallery saved",
+                prompt=str(output_root),
+                answer="\n".join(filename for filename, _state in gallery_entries),
+            )
+        )
+        return 0
+    except (RuntimeError, urllib.error.URLError) as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Preview gallery failed",
+                prompt=output_dir,
+                error=str(error),
+            )
+        )
+        return 1
+
+
 def run_home_screen(
     base_url: str,
     renderer: "ConsoleRenderer",
@@ -3940,6 +4007,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mock", action="store_true", help="Run the text-only mock client")
     parser.add_argument("--preview", action="store_true", help="Run the desktop preview renderer")
     parser.add_argument("--preview-snapshot", help="Write one rasterized preview snapshot to PNG")
+    parser.add_argument("--preview-gallery", help="Write a compact debug preview gallery to one directory")
     parser.add_argument(
         "--preview-scale",
         type=int,
@@ -4121,6 +4189,14 @@ def main() -> int:
         ConsoleRenderer().render_notice("Use --preview or --preview-snapshot, not both")
         return 1
 
+    if args.preview_gallery is not None and (
+        args.preview
+        or args.preview_snapshot is not None
+        or args.mock
+    ):
+        ConsoleRenderer().render_notice("Use --preview-gallery separately from --mock/--preview/--preview-snapshot")
+        return 1
+
     if args.mock and args.preview:
         ConsoleRenderer().render_notice("Use --mock or --preview, not both")
         return 1
@@ -4135,6 +4211,8 @@ def main() -> int:
         renderer = DesktopPreviewRenderer(scale=args.preview_scale)
     elif args.preview_snapshot is not None:
         renderer = SnapshotRenderer(args.preview_snapshot, scale=args.preview_scale)
+    elif args.preview_gallery is not None:
+        renderer = ConsoleRenderer("Preview Gallery")
     elif args.mock:
         renderer = ConsoleRenderer()
     else:
@@ -4402,6 +4480,30 @@ def main() -> int:
             renderer.render_notice("--home-nav-mode/--home-nav-target require --home-nav-action")
             return 1
 
+        if args.preview_gallery is not None and (
+            args.home_screen
+            or args.home_button_mode
+            or args.diagnostics_screen
+            or args.transcript_screen
+            or args.audio_screen
+            or args.error_screen
+            or args.voice_debug_screen
+            or args.clear_debug_state
+            or args.home_nav_action is not None
+            or args.prompt is not None
+            or selector_mode_active
+            or args.scheduler_screen is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+            or args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or has_job_upsert_arg
+            or selected_job_actions
+        ):
+            renderer.render_notice("Use --preview-gallery separately from other screen/action flows")
+            return 1
+
         if selector_mode_active and (
             args.home_screen
             or args.home_button_mode
@@ -4609,6 +4711,15 @@ def main() -> int:
             return run_voice_debug_bundle_screen(
                 args.host_url,
                 renderer,
+            )
+
+        if args.preview_gallery is not None:
+            return run_preview_gallery(
+                args.host_url,
+                renderer,
+                args.preview_gallery,
+                args.preview_scale,
+                args.seed_debug_state,
             )
 
         if args.seed_debug_state is not None:
