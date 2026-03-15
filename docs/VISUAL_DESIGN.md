@@ -142,6 +142,7 @@ Home:
 - show skill
 - show 4 compact readiness chips max
 - show one large `NEXT` target card
+- when setup is incomplete, swap the normal target card for one recovery action such as `ADD KEY` or `CHECK AUDIO`
 - footer: safety + jobs
 
 Listening:
@@ -216,11 +217,13 @@ Scheduler history:
 - Mac preview and Whisplay must share the same raster composition path.
 - Snapshot output is the review artifact for layout changes.
 - Use `python apps/ui/dumpl_ui.py --preview-core-gallery /tmp/dumplbot-core-gallery` for host-free review of `home`, `listening`, `transcribing`, `thinking`, `tool`, `answer`, and `error`.
+- Use `python apps/ui/dumpl_ui.py --preview-appliance-gallery /tmp/dumplbot-appliance-gallery` for host-free review of first-run `READY`, `ADD KEY`, and `CHECK AUDIO` home states.
 - Use `python apps/ui/dumpl_ui.py --preview-scheduler-gallery /tmp/dumplbot-scheduler-gallery` for host-free review of `scheduler-summary`, `scheduler-detail`, and `scheduler-history`.
 - Use `python apps/ui/dumpl_ui.py --preview-skill-gallery /tmp/dumplbot-skill-gallery` for host-free review of `skill-summary` and `skill-detail`.
 - Use `python apps/ui/dumpl_ui.py --preview-workspace-gallery /tmp/dumplbot-workspace-gallery` for host-free review of `workspace-summary`, `workspace-detail`, `workspace-history`, `workspace-files`, and `workspace-file`.
 - When changing visual hierarchy, regenerate `home`, `transcript`, `audio`, `error`, and `voice-debug` snapshots together.
 - Run `npm run smoke:ui-core-gallery` after core-state raster changes so the PNG set stays locked.
+- Run `npm run smoke:ui-appliance-gallery` after first-run home changes.
 - Run `npm run smoke:ui-scheduler-gallery` after scheduler raster changes.
 - Run `npm run smoke:ui-skill-gallery` after skill raster changes.
 - Run `npm run smoke:ui-workspace-gallery` after workspace raster changes.
@@ -234,6 +237,7 @@ Scheduler history:
 ## Acceptance For UI Polish
 
 - Home fits in one glance.
+- First-run `READY` vs `SETUP` is obvious without reading docs.
 - Debug screens no longer look like terminal transcripts.
 - Active run states are distinguishable at a distance.
 - Renderer screenshots are reviewable without explaining the layout verbally.

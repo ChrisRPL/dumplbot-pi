@@ -28,7 +28,7 @@ Success looks like:
 - first-run success still expects comfort with SSH and systemd
 - README had grown into one long operator note instead of a guided path
 - UI review is stronger now, but final hardware validation is still pending
-- motion/animation intent is not yet implemented in the device renderer
+- motion is only lightly implemented so far; final Pi tuning still pending
 
 ## Plug-And-Play Workstreams
 
@@ -46,6 +46,7 @@ Success looks like:
 - surface missing keys or missing audio hardware in plain language
 - make the happy path obvious: hold, speak, release
 - keep recovery easy: errors should point to one next action only
+- keep Mac-side review easy with host-free appliance screenshots before Pi validation
 
 ### 3. Brand / UI Polish
 
@@ -68,6 +69,11 @@ Avoid:
 - decorative looping animations
 - high-frequency redraw effects
 - motion that makes text harder to read
+
+Current implementation baseline:
+
+- lightweight boot splash and phase splash exist on the live preview/Whisplay renderer
+- snapshot galleries stay static on purpose so visual diffs stay stable
 
 ## Acceptance Criteria
 

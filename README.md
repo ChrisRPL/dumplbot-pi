@@ -121,9 +121,16 @@ node scripts/ui-review-bundle.mjs --output-dir /tmp/dumplbot-ui-review
 open /tmp/dumplbot-ui-review
 ```
 
+Bundle folders:
+
+- `core/` for home + active-run states
+- `appliance/` for first-run `READY`, `ADD KEY`, and `CHECK AUDIO`
+- `scheduler/`, `skills/`, `workspaces/` for the rest of the device surfaces
+
 Individual host-free galleries:
 
 - `python apps/ui/dumpl_ui.py --preview-core-gallery /tmp/dumplbot-core-gallery`
+- `python apps/ui/dumpl_ui.py --preview-appliance-gallery /tmp/dumplbot-appliance-gallery`
 - `python apps/ui/dumpl_ui.py --preview-scheduler-gallery /tmp/dumplbot-scheduler-gallery`
 - `python apps/ui/dumpl_ui.py --preview-skill-gallery /tmp/dumplbot-skill-gallery`
 - `python apps/ui/dumpl_ui.py --preview-workspace-gallery /tmp/dumplbot-workspace-gallery`
@@ -140,6 +147,7 @@ Useful one-off renderer screens:
 UI review checks before Pi validation:
 
 - `npm run smoke:ui-core-gallery`
+- `npm run smoke:ui-appliance-gallery`
 - `npm run smoke:ui-scheduler-gallery`
 - `npm run smoke:ui-skill-gallery`
 - `npm run smoke:ui-workspace-gallery`
@@ -175,6 +183,12 @@ sudo systemctl enable --now dumpl-ui.service
 - choose default workspace + skill
 - choose safety mode
 - confirm daemon / scheduler / STT readiness
+
+What the device should show after that:
+
+- `READY` when voice path is clear and the next action is just talk
+- `SETUP` + `ADD KEY` when the provider key is still missing
+- `SETUP` + `CHECK AUDIO` when Pi mic/speaker bring-up still needs verification
 
 Fresh installs now default `server.host` to `0.0.0.0`, so the setup shell at `/setup` is reachable from the same Wi-Fi and can save default workspace/default skill/safety plus provider keys. The setup page now also shows live bind/configured bind, daemon/scheduler/STT readiness, and exact next-step instructions when an old install still needs rebind + restart.
 

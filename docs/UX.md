@@ -27,6 +27,9 @@ Design for the tiny screen first. Fast feedback beats density.
 - Use wrapped text with predictable paging.
 - Keep desktop preview mode faithful to the real panel aspect ratio; scale up, do not redesign.
 - Keep the home screen compact: current workspace, current skill, scheduler count, and setup readiness should fit in one glance.
+- Keep first-run home states explicit: top badge `READY` or `SETUP`, never ambiguous.
+- When setup is incomplete, home should show one next action only, not a checklist dump.
+- Missing key and missing audio should read like plain-language recovery steps, not backend status codes.
 - Keep workspace and skill selectors short enough that the active entry is obvious at a glance.
 - Keep skill summary screens compact but explanatory: permission, reasoning, and integration readiness should fit without entering detail.
 - Keep workspace and skill detail views to concise summaries, not raw full-file dumps.
@@ -59,6 +62,7 @@ Design for the tiny screen first. Fast feedback beats density.
 ## Home Navigation
 
 - Home screen should show the next target clearly before the user enters it.
+- On first boot, the same home screen should show whether the next action is `voice`, `add key`, or `check audio`.
 - Short press on home should cycle workspace, skill, scheduler, diagnostics, voice, transcript, audio, and error targets.
 - Long press on home should enter the focused target view.
 - From a focused top-level view, one press should get the user back home quickly.
