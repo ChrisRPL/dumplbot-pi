@@ -2564,6 +2564,73 @@ def run_preview_debug_gallery(
         return 1
 
 
+def build_navigation_preview_gallery_entries() -> list[tuple[str, ScreenState]]:
+    return [
+        (
+            "home-open.png",
+            build_home_hold_screen_state(
+                HomeNavigationState(screen_mode="home", focused_target="voice"),
+                0.66,
+            ),
+        ),
+        (
+            "voice-clear.png",
+            build_home_hold_screen_state(
+                HomeNavigationState(screen_mode="voice", focused_target="voice"),
+                0.74,
+            ),
+        ),
+        (
+            "scheduler-summary-next-job.png",
+            build_scheduler_hold_screen_state(
+                SchedulerNavigationState(screen_mode="summary"),
+                0.58,
+            ),
+        ),
+        (
+            "scheduler-detail-next-job.png",
+            build_scheduler_hold_screen_state(
+                SchedulerNavigationState(screen_mode="detail", job_id="daily-status"),
+                0.82,
+            ),
+        ),
+    ]
+
+
+def run_preview_navigation_gallery(
+    renderer: "ConsoleRenderer",
+    output_dir: str,
+    scale: int,
+) -> int:
+    try:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+        gallery_entries = build_navigation_preview_gallery_entries()
+
+        for filename, state in gallery_entries:
+            write_preview_gallery_snapshot(output_root / filename, state, scale)
+
+        renderer.render(
+            ScreenState(
+                phase="Preview",
+                status="Navigation gallery saved",
+                prompt=str(output_root),
+                answer="\n".join(filename for filename, _state in gallery_entries),
+            )
+        )
+        return 0
+    except RuntimeError as error:
+        renderer.render(
+            ScreenState(
+                phase="Error",
+                status="Navigation gallery failed",
+                prompt=output_dir,
+                error=str(error),
+            )
+        )
+        return 1
+
+
 def build_scheduler_preview_gallery_entries() -> list[tuple[str, ScreenState]]:
     jobs = [
         {
@@ -6417,6 +6484,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview-core-gallery", help="Write a host-free core UI gallery to one directory")
     parser.add_argument("--preview-appliance-gallery", help="Write a host-free first-run appliance gallery to one directory")
     parser.add_argument("--preview-debug-gallery", help="Write a host-free debug UI gallery to one directory")
+    parser.add_argument("--preview-navigation-gallery", help="Write a host-free navigation-hold UI gallery to one directory")
     parser.add_argument("--preview-scheduler-gallery", help="Write a host-free scheduler UI gallery to one directory")
     parser.add_argument("--preview-skill-gallery", help="Write a host-free skill UI gallery to one directory")
     parser.add_argument("--preview-workspace-gallery", help="Write a host-free workspace UI gallery to one directory")
@@ -6620,11 +6688,21 @@ def main() -> int:
         ConsoleRenderer().render_notice("Use one preview gallery mode at a time")
         return 1
 
+    if args.preview_navigation_gallery is not None and (
+        args.preview_gallery is not None
+        or args.preview_core_gallery is not None
+        or args.preview_appliance_gallery is not None
+        or args.preview_debug_gallery is not None
+    ):
+        ConsoleRenderer().render_notice("Use one preview gallery mode at a time")
+        return 1
+
     if args.preview_scheduler_gallery is not None and (
         args.preview_gallery is not None
         or args.preview_core_gallery is not None
         or args.preview_appliance_gallery is not None
         or args.preview_debug_gallery is not None
+        or args.preview_navigation_gallery is not None
     ):
         ConsoleRenderer().render_notice("Use one preview gallery mode at a time")
         return 1
@@ -6634,6 +6712,7 @@ def main() -> int:
         or args.preview_core_gallery is not None
         or args.preview_appliance_gallery is not None
         or args.preview_debug_gallery is not None
+        or args.preview_navigation_gallery is not None
         or args.preview_scheduler_gallery is not None
     ):
         ConsoleRenderer().render_notice("Use one preview gallery mode at a time")
@@ -6644,6 +6723,7 @@ def main() -> int:
         or args.preview_core_gallery is not None
         or args.preview_appliance_gallery is not None
         or args.preview_debug_gallery is not None
+        or args.preview_navigation_gallery is not None
         or args.preview_scheduler_gallery is not None
         or args.preview_skill_gallery is not None
     ):
@@ -6680,6 +6760,14 @@ def main() -> int:
         or args.mock
     ):
         ConsoleRenderer().render_notice("Use --preview-debug-gallery separately from --mock/--preview/--preview-snapshot")
+        return 1
+
+    if args.preview_navigation_gallery is not None and (
+        args.preview
+        or args.preview_snapshot is not None
+        or args.mock
+    ):
+        ConsoleRenderer().render_notice("Use --preview-navigation-gallery separately from --mock/--preview/--preview-snapshot")
         return 1
 
     if args.preview_scheduler_gallery is not None and (
@@ -6728,6 +6816,8 @@ def main() -> int:
         renderer = ConsoleRenderer("Appliance Gallery")
     elif args.preview_debug_gallery is not None:
         renderer = ConsoleRenderer("Debug Gallery")
+    elif args.preview_navigation_gallery is not None:
+        renderer = ConsoleRenderer("Navigation Gallery")
     elif args.preview_scheduler_gallery is not None:
         renderer = ConsoleRenderer("Scheduler Gallery")
     elif args.preview_skill_gallery is not None:
@@ -7100,6 +7190,31 @@ def main() -> int:
             renderer.render_notice("Use --preview-debug-gallery separately from other screen/action flows")
             return 1
 
+        if args.preview_navigation_gallery is not None and (
+            args.home_screen
+            or args.home_button_mode
+            or args.diagnostics_screen
+            or args.transcript_screen
+            or args.audio_screen
+            or args.error_screen
+            or args.voice_debug_screen
+            or args.seed_debug_state is not None
+            or args.clear_debug_state
+            or args.home_nav_action is not None
+            or args.prompt is not None
+            or selector_mode_active
+            or args.scheduler_screen is not None
+            or args.scheduler_button_mode
+            or args.scheduler_nav_action is not None
+            or args.jobs_screen
+            or args.job_history is not None
+            or args.job_detail is not None
+            or has_job_upsert_arg
+            or selected_job_actions
+        ):
+            renderer.render_notice("Use --preview-navigation-gallery separately from other screen/action flows")
+            return 1
+
         if args.preview_scheduler_gallery is not None and (
             args.home_screen
             or args.home_button_mode
@@ -7411,6 +7526,13 @@ def main() -> int:
             return run_preview_debug_gallery(
                 renderer,
                 args.preview_debug_gallery,
+                args.preview_scale,
+            )
+
+        if args.preview_navigation_gallery is not None:
+            return run_preview_navigation_gallery(
+                renderer,
+                args.preview_navigation_gallery,
                 args.preview_scale,
             )
 
