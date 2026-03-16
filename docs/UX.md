@@ -44,6 +44,7 @@ Design for the tiny screen first. Fast feedback beats density.
 - Hold starts recording.
 - Release stops and saves.
 - Long press cancels.
+- While the user is holding toward cancel, show visible progress instead of a static hint only.
 - After release starts the remote run, a new long press should request run cancel until the stream finishes.
 - Errors should return to a recoverable idle state quickly.
 

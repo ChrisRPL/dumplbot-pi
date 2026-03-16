@@ -125,12 +125,14 @@ Bundle folders:
 
 - `core/` for home + active-run states
 - `appliance/` for first-run `READY`, `ADD KEY`, and `CHECK AUDIO`
+- `debug/` for transcript, audio, error, and compact voice triage
 - `scheduler/`, `skills/`, `workspaces/` for the rest of the device surfaces
 
 Individual host-free galleries:
 
 - `python apps/ui/dumpl_ui.py --preview-core-gallery /tmp/dumplbot-core-gallery`
 - `python apps/ui/dumpl_ui.py --preview-appliance-gallery /tmp/dumplbot-appliance-gallery`
+- `python apps/ui/dumpl_ui.py --preview-debug-gallery /tmp/dumplbot-debug-gallery`
 - `python apps/ui/dumpl_ui.py --preview-scheduler-gallery /tmp/dumplbot-scheduler-gallery`
 - `python apps/ui/dumpl_ui.py --preview-skill-gallery /tmp/dumplbot-skill-gallery`
 - `python apps/ui/dumpl_ui.py --preview-workspace-gallery /tmp/dumplbot-workspace-gallery`
@@ -148,6 +150,7 @@ UI review checks before Pi validation:
 
 - `npm run smoke:ui-core-gallery`
 - `npm run smoke:ui-appliance-gallery`
+- `npm run smoke:ui-debug-gallery`
 - `npm run smoke:ui-scheduler-gallery`
 - `npm run smoke:ui-skill-gallery`
 - `npm run smoke:ui-workspace-gallery`

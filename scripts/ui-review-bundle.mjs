@@ -93,6 +93,7 @@ const main = async () => {
   const galleryRuns = [
     ["core", "--preview-core-gallery"],
     ["appliance", "--preview-appliance-gallery"],
+    ["debug", "--preview-debug-gallery"],
     ["scheduler", "--preview-scheduler-gallery"],
     ["skills", "--preview-skill-gallery"],
     ["workspaces", "--preview-workspace-gallery"],
@@ -108,6 +109,7 @@ const main = async () => {
   console.log("folders:");
   console.log(`- ${outputRoot}/core`);
   console.log(`- ${outputRoot}/appliance`);
+  console.log(`- ${outputRoot}/debug`);
   console.log(`- ${outputRoot}/scheduler`);
   console.log(`- ${outputRoot}/skills`);
   console.log(`- ${outputRoot}/workspaces`);
