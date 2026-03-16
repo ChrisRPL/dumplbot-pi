@@ -66,6 +66,7 @@ Design for the tiny screen first. Fast feedback beats density.
 - On first boot, the same home screen should show whether the next action is `voice`, `add key`, or `check audio`.
 - Short press on home should cycle workspace, skill, scheduler, diagnostics, voice, transcript, audio, and error targets.
 - Long press on home should enter the focused target view.
+- While long press is building on home, show visible progress for `open`, `clear`, or `return home`.
 - From a focused top-level view, one press should get the user back home quickly.
 - From the focused voice-debug bundle view, long press should clear debug state in place.
 
@@ -73,3 +74,4 @@ Design for the tiny screen first. Fast feedback beats density.
 
 - Short press should cycle scheduler summary, detail, and history.
 - Long press should move to the next job without leaving scheduler mode.
+- While long press is building in scheduler mode, show visible progress toward `next job`.

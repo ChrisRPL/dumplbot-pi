@@ -94,6 +94,7 @@ const main = async () => {
     ["core", "--preview-core-gallery"],
     ["appliance", "--preview-appliance-gallery"],
     ["debug", "--preview-debug-gallery"],
+    ["navigation", "--preview-navigation-gallery"],
     ["scheduler", "--preview-scheduler-gallery"],
     ["skills", "--preview-skill-gallery"],
     ["workspaces", "--preview-workspace-gallery"],
@@ -110,6 +111,7 @@ const main = async () => {
   console.log(`- ${outputRoot}/core`);
   console.log(`- ${outputRoot}/appliance`);
   console.log(`- ${outputRoot}/debug`);
+  console.log(`- ${outputRoot}/navigation`);
   console.log(`- ${outputRoot}/scheduler`);
   console.log(`- ${outputRoot}/skills`);
   console.log(`- ${outputRoot}/workspaces`);

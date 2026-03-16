@@ -11,6 +11,7 @@
     "smoke:ui-core-gallery": "npm run build && node scripts/smoke-ui-core-gallery.mjs",
     "smoke:ui-appliance-gallery": "npm run build && node scripts/smoke-ui-appliance-gallery.mjs",
     "smoke:ui-debug-gallery": "npm run build && node scripts/smoke-ui-debug-gallery.mjs",
+    "smoke:ui-navigation-gallery": "npm run build && node scripts/smoke-ui-navigation-gallery.mjs",
     "smoke:ui-scheduler-gallery": "npm run build && node scripts/smoke-ui-scheduler-gallery.mjs",
     "smoke:ui-skill-gallery": "npm run build && node scripts/smoke-ui-skill-gallery.mjs",
     "smoke:ui-workspace-gallery": "npm run build && node scripts/smoke-ui-workspace-gallery.mjs",

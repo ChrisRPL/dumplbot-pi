@@ -221,6 +221,7 @@ Scheduler history:
 - Use `python apps/ui/dumpl_ui.py --preview-core-gallery /tmp/dumplbot-core-gallery` for host-free review of `home`, `listening`, `transcribing`, `thinking`, `tool`, `answer`, and `error`.
 - Use `python apps/ui/dumpl_ui.py --preview-appliance-gallery /tmp/dumplbot-appliance-gallery` for host-free review of first-run `READY`, `ADD KEY`, and `CHECK AUDIO` home states.
 - Use `python apps/ui/dumpl_ui.py --preview-debug-gallery /tmp/dumplbot-debug-gallery` for host-free review of `transcript`, `audio`, `error`, and `voice-debug`.
+- Use `python apps/ui/dumpl_ui.py --preview-navigation-gallery /tmp/dumplbot-navigation-gallery` for host-free review of home/scheduler long-press affordances.
 - Use `python apps/ui/dumpl_ui.py --preview-scheduler-gallery /tmp/dumplbot-scheduler-gallery` for host-free review of `scheduler-summary`, `scheduler-detail`, and `scheduler-history`.
 - Use `python apps/ui/dumpl_ui.py --preview-skill-gallery /tmp/dumplbot-skill-gallery` for host-free review of `skill-summary` and `skill-detail`.
 - Use `python apps/ui/dumpl_ui.py --preview-workspace-gallery /tmp/dumplbot-workspace-gallery` for host-free review of `workspace-summary`, `workspace-detail`, `workspace-history`, `workspace-files`, and `workspace-file`.
@@ -228,6 +229,7 @@ Scheduler history:
 - Run `npm run smoke:ui-core-gallery` after core-state raster changes so the PNG set stays locked.
 - Run `npm run smoke:ui-appliance-gallery` after first-run home changes.
 - Run `npm run smoke:ui-debug-gallery` after debug raster changes.
+- Run `npm run smoke:ui-navigation-gallery` after home/scheduler long-press changes.
 - Run `npm run smoke:ui-scheduler-gallery` after scheduler raster changes.
 - Run `npm run smoke:ui-skill-gallery` after skill raster changes.
 - Run `npm run smoke:ui-workspace-gallery` after workspace raster changes.
@@ -237,6 +239,7 @@ Scheduler history:
 - short press = browse
 - long press = commit / enter / cancel
 - hint text must be explicit on screens where the button meaning changes
+- when long press has a meaningful action, show progress rather than a static footer alone
 
 ## Acceptance For UI Polish
 

@@ -25,12 +25,12 @@ const readPngDimensions = async (filePath) => {
 };
 
 const runSmoke = async () => {
-  const outputDir = await mkdtemp(join(tmpdir(), "dumplbot-ui-review-bundle-"));
+  const outputDir = await mkdtemp(join(tmpdir(), "dumplbot-ui-navigation-gallery-"));
 
   try {
     const result = spawnSync(
-      "node",
-      ["scripts/ui-review-bundle.mjs", "--output-dir", outputDir],
+      "python3",
+      ["apps/ui/dumpl_ui.py", "--preview-navigation-gallery", outputDir],
       {
         cwd: process.cwd(),
         env: process.env,
@@ -42,24 +42,21 @@ const runSmoke = async () => {
       throw result.error;
     }
 
-    assert(result.status === 0, "expected ui review bundle to return 0");
-    assert(result.stdout.includes("bundle:"), "expected review bundle success output");
+    assert(result.status === 0, "expected preview navigation gallery command to return 0");
+    assert(result.stdout.includes("Navigation gallery saved"), "expected navigation gallery success output");
 
-    for (const [subdir, fileName] of [
-      ["core", "home.png"],
-      ["appliance", "home-ready.png"],
-      ["debug", "voice-debug.png"],
-      ["navigation", "home-open.png"],
-      ["scheduler", "scheduler-summary.png"],
-      ["skills", "skill-summary.png"],
-      ["workspaces", "workspace-summary.png"],
+    for (const fileName of [
+      "home-open.png",
+      "voice-clear.png",
+      "scheduler-summary-next-job.png",
+      "scheduler-detail-next-job.png",
     ]) {
-      const dimensions = await readPngDimensions(join(outputDir, subdir, fileName));
-      assert(dimensions.width === 510, `expected ${subdir}/${fileName} width`);
-      assert(dimensions.height === 960, `expected ${subdir}/${fileName} height`);
+      const dimensions = await readPngDimensions(join(outputDir, fileName));
+      assert(dimensions.width === 510, `expected ${fileName} width`);
+      assert(dimensions.height === 960, `expected ${fileName} height`);
     }
 
-    console.log("ui review bundle smoke ok");
+    console.log("ui navigation gallery smoke ok");
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
