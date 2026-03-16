@@ -1894,6 +1894,86 @@ def build_run_cancel_hold_screen_state(
     )
 
 
+def build_home_hold_screen_state(
+    state: HomeNavigationState,
+    hold_progress: float,
+) -> ScreenState:
+    if state.screen_mode == "home":
+        target_label = truncate_visual_text(state.focused_target, 16)
+        return ScreenState(
+            phase="Home",
+            status="Hold to open",
+            visual={
+                "kind": "stage",
+                "title": "Home",
+                "badge": "open",
+                "lead": f"Open {target_label}",
+                "detail": "Keep holding to enter this view.\nRelease keeps browsing.",
+                "footer": "one-button home",
+                "progress": clamp_progress(hold_progress),
+                "progress_label": "open view",
+            },
+        )
+
+    if state.screen_mode == "voice":
+        return ScreenState(
+            phase="Diagnostics",
+            status="Hold to clear",
+            visual={
+                "kind": "stage",
+                "title": "Voice",
+                "badge": "clear",
+                "lead": "Clear debug",
+                "detail": "Keep holding to clear transcript, audio, and error.\nRelease keeps this screen.",
+                "footer": "voice triage",
+                "progress": clamp_progress(hold_progress),
+                "progress_label": "clear debug",
+            },
+        )
+
+    return ScreenState(
+        phase="Home",
+        status="Hold to return",
+        visual={
+            "kind": "stage",
+            "title": truncate_visual_text(state.screen_mode, 16),
+            "badge": "home",
+            "lead": "Return home",
+            "detail": "Keep holding to jump back home.\nRelease keeps this screen.",
+            "footer": "one-button home",
+            "progress": clamp_progress(hold_progress),
+            "progress_label": "return home",
+        },
+    )
+
+
+def build_scheduler_hold_screen_state(
+    state: SchedulerNavigationState,
+    hold_progress: float,
+) -> ScreenState:
+    lead = "Open next job" if state.screen_mode == "summary" else "Next job"
+    detail = (
+        "Keep holding to focus the next job.\nRelease cycles summary, detail, and history."
+        if state.screen_mode == "summary"
+        else "Keep holding to move to the next job.\nRelease switches screen mode."
+    )
+
+    return ScreenState(
+        phase="Jobs",
+        status="Hold to advance",
+        visual={
+            "kind": "stage",
+            "title": "Scheduler",
+            "badge": "next",
+            "lead": lead,
+            "detail": detail,
+            "footer": "one-button scheduler",
+            "progress": clamp_progress(hold_progress),
+            "progress_label": "next job",
+        },
+    )
+
+
 def seed_debug_voice_entry(base_url: str, preset: str) -> dict[str, Any]:
     if preset == "success":
         payload = {
@@ -2914,8 +2994,15 @@ def run_home_button_loop(
             and was_pressed
             and not long_press_sent
             and pressed_started_at is not None
-            and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
         ):
+            hold_progress = clamp_progress((now - pressed_started_at) / BUTTON_LONG_PRESS_SECONDS)
+
+            if now - pressed_started_at < BUTTON_LONG_PRESS_SECONDS:
+                renderer.render(build_home_hold_screen_state(state, hold_progress))
+                was_pressed = is_pressed
+                time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
+                continue
+
             try:
                 action = "clear-debug" if state.screen_mode == "voice" else "toggle-view"
                 state = cycle_home_navigation_state(state, action)
@@ -3894,8 +3981,15 @@ def run_scheduler_button_loop(
             and was_pressed
             and not long_press_sent
             and pressed_started_at is not None
-            and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
         ):
+            hold_progress = clamp_progress((now - pressed_started_at) / BUTTON_LONG_PRESS_SECONDS)
+
+            if now - pressed_started_at < BUTTON_LONG_PRESS_SECONDS:
+                renderer.render(build_scheduler_hold_screen_state(state, hold_progress))
+                was_pressed = is_pressed
+                time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
+                continue
+
             try:
                 state = cycle_scheduler_navigation_state(list_job_entries(base_url), state, "next-job")
                 render_scheduler_navigation_state(base_url, renderer, state)
