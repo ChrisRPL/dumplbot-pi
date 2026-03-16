@@ -138,7 +138,14 @@ def reduce_button_event(
     return state
 
 
-def build_capture_screen_state(state: CaptureFlowState) -> ScreenState:
+def clamp_progress(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def build_capture_screen_state(
+    state: CaptureFlowState,
+    hold_progress: float = 0.0,
+) -> ScreenState:
     if state.phase == "Listening":
         return ScreenState(
             phase="Listening",
@@ -150,6 +157,8 @@ def build_capture_screen_state(state: CaptureFlowState) -> ScreenState:
                 "lead": "Release to send",
                 "detail": "Keep holding to record.\nLong hold cancels this capture.",
                 "footer": "walkie-talkie mode",
+                "progress": clamp_progress(hold_progress),
+                "progress_label": "hold to cancel",
             },
         )
 
@@ -200,8 +209,9 @@ def build_capture_screen_state(state: CaptureFlowState) -> ScreenState:
 def render_capture_flow(
     renderer: "ConsoleRenderer",
     state: CaptureFlowState,
+    hold_progress: float = 0.0,
 ) -> None:
-    renderer.render(build_capture_screen_state(state))
+    renderer.render(build_capture_screen_state(state, hold_progress=hold_progress))
 
 
 def emit_button_debug(enabled: bool, message: str) -> None:
@@ -1823,6 +1833,27 @@ def clear_debug_voice_entry(base_url: str) -> dict[str, Any]:
     }
 
 
+def build_run_cancel_hold_screen_state(
+    state: ScreenState,
+    hold_progress: float,
+) -> ScreenState:
+    phase_title = truncate_visual_text(state.phase, 16) if isinstance(state.phase, str) and state.phase else "Run"
+    return ScreenState(
+        phase=state.phase or "Thinking",
+        status="Hold to cancel",
+        visual={
+            "kind": "stage",
+            "title": phase_title,
+            "badge": "stop",
+            "lead": "Hold to cancel",
+            "detail": "Keep holding to stop this run.\nRelease keeps streaming.",
+            "footer": "cancel affordance",
+            "progress": clamp_progress(hold_progress),
+            "progress_label": "cancel run",
+        },
+    )
+
+
 def seed_debug_voice_entry(base_url: str, preset: str) -> dict[str, Any]:
     if preset == "success":
         payload = {
@@ -2188,7 +2219,7 @@ def build_core_preview_gallery_entries() -> list[tuple[str, ScreenState]]:
                 focused_target="voice",
             ),
         ),
-        ("listening.png", build_capture_screen_state(CaptureFlowState(phase="Listening"))),
+        ("listening.png", build_capture_screen_state(CaptureFlowState(phase="Listening"), hold_progress=0.58)),
         ("transcribing.png", transcribing_state),
         ("thinking.png", thinking_state),
         ("tool.png", tool_state),
@@ -4296,6 +4327,8 @@ def render_stage_visual(
     width: int,
     height: int,
     accent: tuple[int, int, int],
+    progress: float = 0.0,
+    progress_label: Optional[str] = None,
 ) -> None:
     draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
     draw.text((18, 18), title.upper(), fill=(236, 240, 244), font=fonts["title"])
@@ -4322,8 +4355,26 @@ def render_stage_visual(
         width - 44,
         fonts["label"],
         (174, 182, 190),
-        max_lines=4,
+        max_lines=3,
     )
+
+    progress_fraction = clamp_progress(progress)
+
+    if progress_fraction > 0 or progress_label:
+        progress_label_text = truncate_visual_text(progress_label or "hold", 18).upper()
+        progress_percent = f"{int(progress_fraction * 100):d}%"
+        draw.text((22, 212), progress_label_text, fill=accent, font=fonts["tiny"])
+        progress_bbox = draw.textbbox((0, 0), progress_percent, font=fonts["tiny"])
+        draw.text((width - 22 - (progress_bbox[2] - progress_bbox[0]), 212), progress_percent, fill=(154, 162, 170), font=fonts["tiny"])
+        track_left = 22
+        track_top = 228
+        track_right = width - 22
+        track_bottom = 240
+        draw.rounded_rectangle((track_left, track_top, track_right, track_bottom), radius=6, fill=(14, 19, 24))
+        fill_right = track_left + int((track_right - track_left) * progress_fraction)
+        if fill_right > track_left:
+            draw.rounded_rectangle((track_left, track_top, fill_right, track_bottom), radius=6, fill=accent)
+
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
 
@@ -4960,6 +5011,8 @@ def render_state_image(
             width,
             height,
             accent,
+            progress=visual.get("progress") if isinstance(visual.get("progress"), (int, float)) else 0.0,
+            progress_label=truncate_visual_text(visual.get("progress_label"), 18),
         )
         return image, accent
 
@@ -5764,8 +5817,14 @@ def stream_sse_request(
             and was_pressed
             and not long_press_sent
             and pressed_started_at is not None
-            and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
         ):
+            hold_progress = clamp_progress((now - pressed_started_at) / BUTTON_LONG_PRESS_SECONDS)
+
+            if now - pressed_started_at < BUTTON_LONG_PRESS_SECONDS:
+                renderer.render(build_run_cancel_hold_screen_state(state, hold_progress))
+                was_pressed = is_pressed
+                continue
+
             if run_id:
                 try:
                     request_run_cancel(base_url, run_id)
@@ -5787,6 +5846,8 @@ def stream_sse_request(
                 renderer.render(state)
                 long_press_sent = True
         elif not is_pressed and was_pressed:
+            if not long_press_sent:
+                renderer.render(state)
             pressed_started_at = None
             long_press_sent = False
 
@@ -6085,8 +6146,15 @@ def run_button_capture_loop(
             and was_pressed
             and not long_press_sent
             and pressed_started_at is not None
-            and now - pressed_started_at >= BUTTON_LONG_PRESS_SECONDS
         ):
+            hold_progress = clamp_progress((now - pressed_started_at) / BUTTON_LONG_PRESS_SECONDS)
+
+            if now - pressed_started_at < BUTTON_LONG_PRESS_SECONDS:
+                render_capture_flow(renderer, flow_state, hold_progress=hold_progress)
+                was_pressed = is_pressed
+                time.sleep(BUTTON_POLL_INTERVAL_SECONDS)
+                continue
+
             emit_button_debug(config.button_debug, "long_press")
             flow_state = process_capture_button_event(
                 flow_state,
