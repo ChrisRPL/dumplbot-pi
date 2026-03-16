@@ -432,6 +432,30 @@ def summarize_runtime_selection(
     return "(none)"
 
 
+def summarize_home_next_action_detail(
+    first_run_ready: bool,
+    next_action_label: str,
+    next_action_detail: str,
+) -> str:
+    if first_run_ready:
+        return "short press browse\nlong press open"
+
+    normalized_label = next_action_label.strip().lower()
+
+    if normalized_label == "add key":
+        return "open /setup on wi-fi\nsave openai key"
+
+    if normalized_label == "check audio":
+        return "record 3 sec on pi\nplay it back once"
+
+    collapsed_detail = " ".join(next_action_detail.strip().split())
+
+    if collapsed_detail:
+        return truncate_visual_text(collapsed_detail, 44)
+
+    return "follow setup hint"
+
+
 def get_debug_voice_entry(base_url: str) -> dict[str, Any]:
     payload = request_json(base_url, "/api/debug/voice")
     transcript = payload.get("transcript")
@@ -1770,6 +1794,19 @@ def summarize_debug_value(
     return f"{collapsed_value[:max_length - 3]}..."
 
 
+def summarize_debug_audio_size(value: Any) -> str:
+    if not isinstance(value, int) or value <= 0:
+        return "no wav"
+
+    if value < 1024:
+        return f"{value} B"
+
+    if value < 1024 * 1024:
+        return f"{value / 1024:.1f} KB"
+
+    return f"{value / (1024 * 1024):.1f} MB"
+
+
 def build_voice_debug_bundle_screen_state(debug_voice: dict[str, Any]) -> ScreenState:
     transcript = debug_voice.get("transcript")
     audio = debug_voice.get("audio")
@@ -1787,32 +1824,35 @@ def build_voice_debug_bundle_screen_state(debug_voice: dict[str, Any]) -> Screen
     error_source = error_entry.get("source")
     error_message = error_entry.get("message")
     error_updated_at = error_entry.get("updated_at")
+    heard_summary = summarize_debug_value(transcript_text, "nothing heard", 28)
+    audio_summary = summarize_debug_audio_size(audio_size)
+    error_summary = (
+        summarize_debug_value(f"{error_source}: {error_message or 'issue'}", "clear", 30)
+        if isinstance(error_source, str) and error_source
+        else summarize_debug_value(error_message, "clear", 30)
+    )
 
     return ScreenState(
         phase="Diagnostics",
-        status="Voice debug",
+        status="Voice triage",
         prompt="\n".join([
             f"tx: {Path(transcript_path).name}" if isinstance(transcript_path, str) and transcript_path else "tx: none",
             f"wav: {Path(audio_path).name}" if isinstance(audio_path, str) and audio_path else "wav: none",
             f"err: {error_source}" if isinstance(error_source, str) and error_source else "err: none",
         ]),
         answer="\n".join([
-            f"heard: {summarize_debug_value(transcript_text, '(empty)', 24)} [{summarize_debug_age(transcript_updated_at)}]",
-            (
-                f"audio: {audio_size} B [{summarize_debug_age(audio_updated_at)}]"
-                if isinstance(audio_size, int)
-                else "audio: none"
-            ),
-            f"error: {summarize_debug_value(error_message, 'none', 24)} [{summarize_debug_age(error_updated_at) if isinstance(error_source, str) and error_source else 'none'}]",
+            f"heard: {heard_summary} [{summarize_debug_age(transcript_updated_at)}]",
+            f"audio: {audio_summary} [{summarize_debug_age(audio_updated_at)}]",
+            f"error: {error_summary} [{summarize_debug_age(error_updated_at) if isinstance(error_source, str) and error_source else 'clear'}]",
         ]),
         visual={
             "kind": "voice_debug",
-            "heard": summarize_debug_value(transcript_text, "(empty)", 30),
+            "heard": heard_summary,
             "heard_age": summarize_debug_age(transcript_updated_at),
-            "audio": f"{audio_size} B" if isinstance(audio_size, int) else "none",
+            "audio": audio_summary,
             "audio_age": summarize_debug_age(audio_updated_at),
-            "error": summarize_debug_value(error_message, "none", 30),
-            "error_age": summarize_debug_age(error_updated_at) if isinstance(error_source, str) and error_source else "none",
+            "error": error_summary,
+            "error_age": summarize_debug_age(error_updated_at) if isinstance(error_source, str) and error_source else "clear",
         },
     )
 
@@ -1908,6 +1948,11 @@ def build_home_screen_state(
     first_run_message = truncate_visual_text(first_run.get("status_message"), 64)
     next_action_label = truncate_visual_text(first_run.get("next_action_label"), 18)
     next_action_detail = truncate_visual_text(first_run.get("next_action_detail"), 56)
+    next_action_visual_detail = summarize_home_next_action_detail(
+        first_run_ready,
+        next_action_label,
+        next_action_detail,
+    )
     nav_lines: list[str] = []
 
     for target in HOME_NAVIGATION_TARGET_SEQUENCE:
@@ -1960,6 +2005,7 @@ def build_home_screen_state(
             "first_run_message": first_run_message,
             "next_action_label": next_action_label,
             "next_action_detail": next_action_detail,
+            "next_action_visual_detail": next_action_visual_detail,
             "focused_target": focused_target or HOME_NAVIGATION_TARGET_SEQUENCE[0],
         },
     )
@@ -4199,7 +4245,7 @@ def render_home_visual(
     job_count = visual.get("job_count")
     first_run_ready = visual.get("first_run_ready") is True
     next_action_label = truncate_visual_text(visual.get("next_action_label"), 18)
-    next_action_detail = truncate_visual_text(visual.get("next_action_detail"), 44)
+    next_action_detail = truncate_visual_text(visual.get("next_action_visual_detail"), 44)
 
     draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
     draw.text((18, 18), "DUMPLBOT", fill=(236, 240, 244), font=fonts["title"])
@@ -4231,7 +4277,7 @@ def render_home_visual(
     )
     draw_text_block(
         draw,
-        "tap next\nhold enter" if first_run_ready else next_action_detail,
+        next_action_detail,
         22,
         238,
         width - 44,
@@ -4292,6 +4338,7 @@ def render_voice_debug_visual(
     state: ScreenState,
     fonts: dict[str, Any],
     width: int,
+    height: int,
     accent: tuple[int, int, int],
 ) -> None:
     visual = state.visual if isinstance(state.visual, dict) else {}
@@ -4306,14 +4353,16 @@ def render_voice_debug_visual(
         ("Error", truncate_visual_text(visual.get("error"), 34), truncate_visual_text(visual.get("error_age"), 12)),
     ]
 
-    card_y = 60
+    card_y = 58
 
     for title, value, age in cards:
-        draw.rounded_rectangle((12, card_y, width - 12, card_y + 62), radius=14, fill=(22, 28, 36))
+        draw.rounded_rectangle((12, card_y, width - 12, card_y + 56), radius=14, fill=(22, 28, 36))
         draw.text((22, card_y + 10), title.upper(), fill=accent, font=fonts["tiny"])
-        draw_text_block(draw, value, 22, card_y + 28, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=2)
+        draw_text_block(draw, value, 22, card_y + 26, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=2)
         draw.text((width - 64, card_y + 10), age, fill=(154, 162, 170), font=fonts["tiny"])
-        card_y += 70
+        card_y += 64
+
+    draw.text((14, height - 22), "press back · hold clear", fill=(154, 162, 170), font=fonts["tiny"])
 
 
 def render_stage_visual(
@@ -4995,7 +5044,7 @@ def render_state_image(
         return image, accent
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "voice_debug":
-        render_voice_debug_visual(draw, state, fonts, width, accent)
+        render_voice_debug_visual(draw, state, fonts, width, height, accent)
         return image, accent
 
     if isinstance(state.visual, dict) and state.visual.get("kind") == "stage":
