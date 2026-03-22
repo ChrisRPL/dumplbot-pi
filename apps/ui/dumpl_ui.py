@@ -4543,11 +4543,13 @@ def render_home_visual(
     next_action_detail = truncate_visual_text(visual.get("next_action_visual_detail"), 44)
     detail_text = first_run_message if first_run_ready and first_run_message not in {"", "(none)"} else next_action_detail
     normalized_next_action = next_action_label.strip().lower()
+    home_title = "NEXT TARGET"
 
     if first_run_ready:
         action_left = "browse"
         action_right = "talk" if focused_target.lower() == "voice" else "open"
         if focused_target.lower() == "voice":
+            home_title = "TALK NOW"
             detail_text = "hold to talk"
     elif normalized_next_action == "add key":
         action_left = "setup"
@@ -4576,7 +4578,7 @@ def render_home_visual(
     draw_status_chip(draw, 88, 142, 70, "lan ready" if visual.get("lan_setup_ready") else "lan wait", bool(visual.get("lan_setup_ready")), fonts)
 
     draw.rounded_rectangle((12, 176, width - 12, 272), radius=16, fill=(22, 28, 36))
-    draw.text((22, 188), "NEXT TARGET" if first_run_ready else "SETUP STEP", fill=accent, font=fonts["tiny"])
+    draw.text((22, 188), home_title if first_run_ready else "SETUP STEP", fill=accent, font=fonts["tiny"])
     draw_text_block(
         draw,
         (focused_target if first_run_ready else next_action_label).upper(),
