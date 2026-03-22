@@ -63,6 +63,8 @@ The stepwise build plan now lives in `docs/`:
 
 ## Quick start (dev / laptop)
 
+If your goal is a real Pi install, skip this section and go to `Install on Pi Zero 2 WH`.
+
 1) Copy env and set keys:
 ```bash
 cp .env.example .env
@@ -163,46 +165,66 @@ UI review checks before Pi validation:
 
 ---
 
-## Install on Pi Zero 2 WH (easy path)
+## Install on Pi Zero 2 WH
 
 Detailed checklist: `docs/SETUP_PI_ZERO.md`
 
-1. Flash Raspberry Pi OS Lite, pre-seed Wi-Fi + SSH, boot once.
-2. Install PiSugar / Whisplay drivers and verify LCD, buttons, mic, and speaker.
-3. Install DumplBot:
+This is the normal user path. Goal: finish the shell work once, then do the rest from `/setup` on the same Wi-Fi.
+
+### Before you start
+
+- Raspberry Pi OS Lite on the SD card
+- Wi-Fi + SSH pre-seeded in Raspberry Pi Imager
+- PiSugar / Whisplay drivers installed and the LCD, buttons, mic, and speaker verified once
+
+### 1. Get the repo onto the Pi
 
 ```bash
+git clone https://github.com/steipete/dumplbot-pi.git
+cd dumplbot-pi
 bash scripts/install_pi.sh
 ```
 
-4. Start services:
+The installer now builds the app, installs services, and prints the next-step setup URL.
+
+### 2. Start the services once
 
 ```bash
 sudo systemctl enable --now dumplbotd.service
 sudo systemctl enable --now dumpl-ui.service
 ```
 
-5. Open setup from the same Wi-Fi:
+### 3. Open setup from your phone or laptop on the same Wi-Fi
 
 - `http://<pi-ip>:4123/setup`
 - save provider keys
 - choose default workspace + skill
 - choose safety mode
-- confirm daemon / scheduler / STT readiness
+- follow the first-run checklist until it says setup is complete
 
-What the device should show after that:
+If you only remember one thing, remember this URL:
+
+- `http://<pi-ip>:4123/setup`
+
+### 4. What the device should show after setup
 
 - `READY` when voice path is clear and the next action is just talk
 - `SETUP` + `ADD KEY` when the provider key is still missing
 - `SETUP` + `CHECK AUDIO` when Pi mic/speaker bring-up still needs verification
 
-Fresh installs now default `server.host` to `0.0.0.0`, so the setup shell at `/setup` is reachable from the same Wi-Fi and can save default workspace/default skill/safety plus provider keys. The setup page now also shows live bind/configured bind, daemon/scheduler/STT readiness, and exact next-step instructions when an old install still needs rebind + restart.
+Fresh installs now default `server.host` to `0.0.0.0`, so the setup shell at `/setup` is reachable from the same Wi-Fi. The setup page handles provider keys, default workspace/default skill/safety, readiness checks, and exact next-step instructions when an older install still needs rebind + restart.
 
-6. Quick health check:
+### 5. Quick health check
 
 ```bash
 curl -i http://127.0.0.1:4123/health
 ```
+
+### 6. First real voice test
+
+- hold the button to record
+- release to send
+- if setup is incomplete, the device should stay in `SETUP` and show the next action instead of failing silently
 
 ---
 
