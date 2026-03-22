@@ -39,7 +39,8 @@ const createTranscriptionForm = async (
 
   form.append(
     "file",
-    new File([audioBuffer], basename(audioPath), { type: "audio/wav" }),
+    new Blob([audioBuffer], { type: "audio/wav" }),
+    basename(audioPath),
   );
   form.append("model", config.model);
 
