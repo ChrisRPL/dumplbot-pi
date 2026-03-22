@@ -4839,14 +4839,17 @@ def render_jobs_summary_visual(
         chip_text = (227, 245, 251) if card.get("state") == "on" else (195, 201, 207)
         draw.rounded_rectangle((width - 52, card_y + 8, width - 18, card_y + 28), radius=10, fill=chip_fill)
         draw.text((width - 43, card_y + 13), truncate_visual_text(card.get("state"), 3).upper(), fill=chip_text, font=fonts["tiny"])
-        draw_text_block(draw, truncate_visual_text(card.get("schedule"), 26), 22, card_y + 24, width - 70, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
-        draw_text_block(draw, truncate_visual_text(card.get("run"), 30), 22, card_y + 38, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
+        draw_text_block(draw, truncate_visual_text(card.get("schedule"), 22), 22, card_y + 28, width - 70, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
+        run_text = truncate_visual_text(card.get("run"), 16).upper()
+        run_width = measure_inline_chip_width(draw, run_text, fonts["tiny"])
+        draw.rounded_rectangle((22, card_y + 40, 22 + run_width, card_y + 60), radius=10, fill=(31, 36, 42))
+        draw.text((30, card_y + 45), run_text, fill=(183, 191, 198), font=fonts["tiny"])
         card_y += 64
 
-    footer = "short: next view  long: next job"
+    footer = "hold next job"
 
     if isinstance(remaining_count, int) and remaining_count > 0:
-        footer = f"+{remaining_count} more  ·  next view"
+        footer = f"+{remaining_count} more  ·  hold next"
 
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
@@ -5102,14 +5105,17 @@ def render_workspace_summary_visual(
         chip_text = (227, 245, 251) if card.get("state") == "active" else (195, 201, 207)
         draw.rounded_rectangle((width - 60, card_y + 8, width - 18, card_y + 28), radius=10, fill=chip_fill)
         draw.text((width - 52, card_y + 13), truncate_visual_text(card.get("skill"), 10).upper(), fill=chip_text, font=fonts["tiny"])
-        draw_text_block(draw, truncate_visual_text(card.get("repos"), 18), 22, card_y + 30, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
-        draw_text_block(draw, truncate_visual_text(card.get("notes"), 18), 22, card_y + 44, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
+        repo_text = truncate_visual_text(card.get("repos"), 12).upper()
+        repo_width = measure_inline_chip_width(draw, repo_text, fonts["tiny"])
+        draw.rounded_rectangle((22, card_y + 32, 22 + repo_width, card_y + 52), radius=10, fill=(31, 36, 42))
+        draw.text((30, card_y + 37), repo_text, fill=(183, 191, 198), font=fonts["tiny"])
+        draw_text_block(draw, truncate_visual_text(card.get("notes"), 16), 22, card_y + 50, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
         card_y += 72
 
-    footer = "workspace detail shows repos"
+    footer = "hold for detail"
 
     if isinstance(remaining_count, int) and remaining_count > 0:
-        footer = f"+{remaining_count} more  ·  workspace detail"
+        footer = f"+{remaining_count} more  ·  hold detail"
 
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
