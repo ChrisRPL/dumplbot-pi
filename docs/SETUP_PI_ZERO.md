@@ -67,8 +67,9 @@ Run these on the Mac before the final hardware pass:
 1. `npm run smoke:audio-routes`
 2. `npm run smoke:runner-sandbox-local`
 3. `node scripts/mac-preview-walkthrough.mjs --output-dir /tmp/dumplbot-mac-preview --seed error`
-4. inspect `/tmp/dumplbot-mac-preview/*.png`
-5. run the printed live preview command and exercise home -> diagnostics/voice/transcript/audio/error navigation
+4. `node scripts/ui-review-bundle.mjs --output-dir /tmp/dumplbot-ui-review-final`
+5. inspect `/tmp/dumplbot-mac-preview/*.png` and `/tmp/dumplbot-ui-review-final/`
+6. run the printed live preview command and exercise home -> diagnostics/voice/transcript/audio/error navigation
 
 ## Final Pi Validation Order
 

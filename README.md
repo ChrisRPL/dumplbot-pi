@@ -199,6 +199,8 @@ sudo systemctl enable --now dumpl-ui.service
 curl -i http://127.0.0.1:4123/health
 ```
 
+If you used that block, skip straight to step 3.
+
 ### 2. Start the services once
 
 ```bash
