@@ -187,6 +187,18 @@ bash scripts/install_pi.sh
 
 The installer now builds the app, installs services, and prints the next-step setup URL.
 
+Copy-paste first boot session:
+
+```bash
+ssh pi@<pi-ip>
+git clone https://github.com/steipete/dumplbot-pi.git
+cd dumplbot-pi
+bash scripts/install_pi.sh
+sudo systemctl enable --now dumplbotd.service
+sudo systemctl enable --now dumpl-ui.service
+curl -i http://127.0.0.1:4123/health
+```
+
 ### 2. Start the services once
 
 ```bash
