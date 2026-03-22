@@ -5006,29 +5006,31 @@ def render_skill_detail_visual(
     draw.rounded_rectangle((width - 60, 14, width - 18, 36), radius=10, fill=chip_fill)
     draw.text((width - 52, 20), state_value.upper(), fill=chip_text, font=fonts["tiny"])
 
-    draw.rounded_rectangle((12, 58, width - 12, 112), radius=16, fill=(22, 28, 36))
+    draw.rounded_rectangle((12, 58, width - 12, 118), radius=16, fill=(22, 28, 36))
     draw.text((22, 72), "SKILL", fill=accent, font=fonts["tiny"])
     draw_text_block(draw, skill_id.upper(), 22, 88, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=1)
-    draw.text((22, 102), readiness, fill=(154, 162, 170), font=fonts["tiny"])
+    readiness_width = measure_inline_chip_width(draw, readiness.upper(), fonts["tiny"])
+    draw.rounded_rectangle((width - 18 - readiness_width, 86, width - 18, 106), radius=10, fill=(31, 36, 42))
+    draw.text((width - 18 - readiness_width + 8, 91), readiness.upper(), fill=(183, 191, 198), font=fonts["tiny"])
 
-    draw.rounded_rectangle((12, 124, 82, 172), radius=14, fill=(16, 23, 29))
-    draw.text((22, 136), "PERMISSION", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, permission, 22, 152, 50, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+    draw.rounded_rectangle((12, 130, 82, 178), radius=14, fill=(16, 23, 29))
+    draw.text((22, 142), "PERMISSION", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, permission, 22, 158, 50, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
 
-    draw.rounded_rectangle((88, 124, width - 12, 172), radius=14, fill=(16, 23, 29))
-    draw.text((98, 136), "REASONING", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, reasoning, 98, 152, width - 110, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+    draw.rounded_rectangle((88, 130, width - 12, 178), radius=14, fill=(16, 23, 29))
+    draw.text((98, 142), "REASONING", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, reasoning, 98, 158, width - 110, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
 
-    draw.rounded_rectangle((12, 184, width - 12, 220), radius=14, fill=(22, 28, 36))
-    draw.text((22, 196), "INTEGRATIONS", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, integrations, 22, 210, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+    draw.rounded_rectangle((12, 190, width - 12, 232), radius=14, fill=(22, 28, 36))
+    draw.text((22, 202), "INTEGRATIONS", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, integrations, 22, 218, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
 
-    draw.rounded_rectangle((12, 230, width - 12, 286), radius=14, fill=(22, 28, 36))
-    draw.text((22, 242), "PRELUDE", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, prelude, 22, 258, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=2)
+    draw.rounded_rectangle((12, 242, width - 12, 284), radius=14, fill=(22, 28, 36))
+    draw.text((22, 254), "PRELUDE", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, prelude, 22, 268, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
 
-    footer = f"tools {tool_count or 0} · bash {bash_count or 0}"
-    draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
+    tools_width = draw_inline_chip(draw, 12, height - 28, f"TOOLS {tool_count or 0}", fonts["tiny"], (18, 24, 30), (154, 162, 170))
+    draw_inline_chip(draw, 20 + tools_width, height - 28, f"BASH {bash_count or 0}", fonts["tiny"], (31, 36, 42), (183, 191, 198))
 
 
 def render_workspace_summary_visual(
@@ -5107,24 +5109,28 @@ def render_workspace_detail_visual(
     draw.rounded_rectangle((width - 60, 14, width - 18, 36), radius=10, fill=chip_fill)
     draw.text((width - 52, 20), state_value.upper(), fill=chip_text, font=fonts["tiny"])
 
-    draw.rounded_rectangle((12, 58, width - 12, 112), radius=16, fill=(22, 28, 36))
+    draw.rounded_rectangle((12, 58, width - 12, 118), radius=16, fill=(22, 28, 36))
     draw.text((22, 72), "ID", fill=accent, font=fonts["tiny"])
     draw_text_block(draw, workspace_id.upper(), 22, 88, width - 44, fonts["hero"], WHISPLAY_FOREGROUND, max_lines=1)
-    draw.text((22, 102), f"{repo_count or 0} repos attached", fill=(154, 162, 170), font=fonts["tiny"])
+    repo_badge = f"{repo_count or 0} REPO" if (repo_count or 0) == 1 else f"{repo_count or 0} REPOS"
+    repo_badge_width = measure_inline_chip_width(draw, repo_badge, fonts["tiny"])
+    draw.rounded_rectangle((width - 18 - repo_badge_width, 86, width - 18, 106), radius=10, fill=(31, 36, 42))
+    draw.text((width - 18 - repo_badge_width + 8, 91), repo_badge, fill=(183, 191, 198), font=fonts["tiny"])
 
-    draw.rounded_rectangle((12, 124, 82, 172), radius=14, fill=(16, 23, 29))
-    draw.text((22, 136), "SKILL", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, default_skill, 22, 152, 50, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+    draw.rounded_rectangle((12, 130, 82, 178), radius=14, fill=(16, 23, 29))
+    draw.text((22, 142), "SKILL", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, default_skill, 22, 158, 50, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
 
-    draw.rounded_rectangle((88, 124, width - 12, 172), radius=14, fill=(16, 23, 29))
-    draw.text((98, 136), "NOTES", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, instructions, 98, 152, width - 110, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+    draw.rounded_rectangle((88, 130, width - 12, 178), radius=14, fill=(16, 23, 29))
+    draw.text((98, 142), "NOTES", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, instructions, 98, 158, width - 110, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
 
-    draw.rounded_rectangle((12, 184, width - 12, 228), radius=14, fill=(22, 28, 36))
-    draw.text((22, 196), "REPOS", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, repos, 22, 212, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=2)
+    draw.rounded_rectangle((12, 190, width - 12, 248), radius=14, fill=(22, 28, 36))
+    draw.text((22, 202), "REPOS", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, repos, 22, 220, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=2)
 
-    draw.text((14, height - 22), "short: history · long: files", fill=(154, 162, 170), font=fonts["tiny"])
+    history_width = draw_inline_chip(draw, 12, height - 28, "HISTORY", fonts["tiny"], (18, 24, 30), (154, 162, 170))
+    draw_inline_chip(draw, 20 + history_width, height - 28, "FILES", fonts["tiny"], (31, 36, 42), (183, 191, 198))
 
 
 def render_workspace_history_visual(
