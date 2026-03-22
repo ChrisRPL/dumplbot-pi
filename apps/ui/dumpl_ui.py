@@ -39,19 +39,19 @@ JOB_HISTORY_COMMAND_LIMIT = 8
 JOB_HISTORY_SCREEN_LIMIT = 4
 JOB_DETAIL_HISTORY_LIMIT = 3
 WHISPLAY_PHASE_RGB = {
-    "Home": (48, 56, 16),
-    "Idle": (0, 64, 16),
-    "Diagnostics": (72, 48, 0),
+    "Home": (182, 205, 109),
+    "Idle": (124, 207, 106),
+    "Diagnostics": (196, 155, 46),
     "Jobs": (100, 210, 199),
-    "Workspaces": (24, 56, 96),
-    "Skills": (56, 72, 24),
-    "Listening": (0, 48, 96),
-    "Transcribing": (0, 64, 96),
-    "Thinking": (96, 72, 0),
-    "Tool": (96, 40, 0),
-    "Answer": (32, 80, 24),
-    "Saved": (0, 72, 32),
-    "Error": (96, 0, 0),
+    "Workspaces": (98, 192, 255),
+    "Skills": (124, 207, 106),
+    "Listening": (98, 192, 255),
+    "Transcribing": (100, 210, 199),
+    "Thinking": (242, 193, 78),
+    "Tool": (242, 140, 40),
+    "Answer": (124, 207, 106),
+    "Saved": (124, 207, 106),
+    "Error": (255, 122, 89),
 }
 
 
@@ -443,10 +443,10 @@ def summarize_home_next_action_detail(
     normalized_label = next_action_label.strip().lower()
 
     if normalized_label == "add key":
-        return "open /setup on wi-fi\nsave openai key"
+        return "open setup on wi-fi"
 
     if normalized_label == "check audio":
-        return "record 3 sec on pi\nplay it back once"
+        return "record and play 3 sec"
 
     collapsed_detail = " ".join(next_action_detail.strip().split())
 
@@ -4104,15 +4104,15 @@ def stream_audio_talk(
 ) -> ScreenState:
     state = ScreenState(
         phase="Transcribing",
-        status="Uploading audio",
+        status="Sending capture",
         transcript=audio_id,
         visual={
             "kind": "stage",
             "title": "Transcribing",
             "badge": "wav",
-            "lead": "Uploading audio",
+            "lead": "Sending capture",
             "detail": truncate_visual_text(audio_id, 48),
-            "footer": "sending wav to host",
+            "footer": "hold to cancel",
         },
     )
     payload: dict[str, str] = {}
@@ -4145,15 +4145,15 @@ def run_audio_talk_from_file(
 ) -> ScreenState:
     state = ScreenState(
         phase="Saved",
-        status="Uploading audio",
+        status="Sending capture",
         transcript=audio_path,
         visual={
             "kind": "stage",
             "title": "Saved",
             "badge": "wav",
-            "lead": "Uploading audio",
+            "lead": "Sending capture",
             "detail": truncate_visual_text(audio_path, 64),
-            "footer": "sending capture to host",
+            "footer": "hold to cancel",
         },
     )
     renderer.render(state)
@@ -4170,7 +4170,7 @@ def run_audio_talk_from_file(
             "badge": "wav",
             "lead": "Upload failed",
             "detail": str(error),
-            "footer": "check host connection",
+            "footer": "check host on wi-fi",
         }
         renderer.render(state)
         return state
@@ -5981,13 +5981,13 @@ def apply_stream_event(
     if event_type == "stt":
         transcript = str(data.get("text") or "")
         state.phase = "Transcribing"
-        state.status = "Captured transcript"
+        state.status = "Speech captured"
         state.transcript = transcript or state.transcript
         state.visual = {
             "kind": "stage",
             "title": "Transcribing",
             "badge": "stt",
-            "lead": "Captured speech",
+            "lead": "Speech captured",
             "detail": truncate_visual_text(transcript or state.transcript or "(empty transcript)", 72),
             "footer": "hold to cancel",
         }
@@ -6054,13 +6054,13 @@ def apply_stream_event(
 def build_prompt_state(prompt: str) -> ScreenState:
     return ScreenState(
         phase="Thinking",
-        status="Connecting to dumplbotd",
+        status="Starting run",
         prompt=prompt,
         visual={
             "kind": "stage",
             "title": "Thinking",
             "badge": "run",
-            "lead": "Connecting",
+            "lead": "Starting run",
             "detail": truncate_visual_text(prompt, 64),
             "footer": "hold to cancel",
         },
@@ -6081,7 +6081,7 @@ def set_run_cancel_pending_visual(state: ScreenState) -> None:
         "title": "Canceling",
         "badge": "stop",
         "lead": "Stopping run",
-        "detail": "Waiting for the runner to exit cleanly.",
+        "detail": "Letting the run stop cleanly.",
         "footer": "cancel requested",
     }
 
@@ -6139,7 +6139,7 @@ def stream_sse_request(
                 "kind": "run_error",
                 "badge": "net",
                 "body": str(payload),
-                "footer": "check dumplbotd and retry",
+                "footer": "check host and retry",
             }
             renderer.render(state)
             break
