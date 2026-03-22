@@ -1098,8 +1098,8 @@ def build_workspace_files_screen_state(
         lines.append(summary)
         cards.append({
             "name": truncate_visual_text(Path(path).name or path, 18),
-            "path": truncate_visual_text(path, 24),
-            "size": f"{size} B" if isinstance(size, int) else "(size?)",
+            "path": visual_parent_path(path, 18),
+            "size": visual_size_label(size),
         })
 
     if len(files) > 5:
@@ -1139,7 +1139,7 @@ def build_workspace_file_screen_state(
             "kind": "workspace_file",
             "workspace_id": truncate_visual_text(workspace_id, 18),
             "file_name": truncate_visual_text(Path(path).name or path, 18),
-            "path": truncate_visual_text(path, 26),
+            "path": visual_parent_path(path, 20),
             "body": truncate_visual_text(content if isinstance(content, str) and content else "(empty file)", 220),
         },
     )
@@ -4440,6 +4440,31 @@ def visual_path_name(path_value: Any) -> str:
     return truncate_visual_text(Path(path_value).name, 18)
 
 
+def visual_parent_path(path_value: Any, max_length: int = 18) -> str:
+    if not isinstance(path_value, str) or not path_value:
+        return "(root)"
+
+    parent = Path(path_value).parent.as_posix()
+
+    if parent in {"", "."}:
+        return "workspace root"
+
+    return truncate_visual_text(parent, max_length)
+
+
+def visual_size_label(size_value: Any) -> str:
+    if not isinstance(size_value, int) or size_value < 0:
+        return "(size?)"
+
+    if size_value < 1024:
+        return f"{size_value} B"
+
+    if size_value < 1024 * 1024:
+        return f"{size_value / 1024:.1f} KB"
+
+    return f"{size_value / (1024 * 1024):.1f} MB"
+
+
 def build_brand_splash_state(
     phase: str,
     badge: str,
@@ -4521,7 +4546,9 @@ def render_home_visual(
 
     if first_run_ready:
         action_left = "browse"
-        action_right = "open"
+        action_right = "talk" if focused_target.lower() == "voice" else "open"
+        if focused_target.lower() == "voice":
+            detail_text = "hold to talk"
     elif normalized_next_action == "add key":
         action_left = "setup"
         action_right = "save key"
@@ -5254,13 +5281,16 @@ def render_workspace_files_visual(
 
         draw.rounded_rectangle((12, card_y, width - 12, card_y + 58), radius=14, fill=(22, 28, 36))
         draw.text((22, card_y + 10), truncate_visual_text(card.get("name"), 18).upper(), fill=accent, font=fonts["tiny"])
-        draw.text((width - 52, card_y + 10), truncate_visual_text(card.get("size"), 10), fill=(154, 162, 170), font=fonts["tiny"])
-        draw_text_block(draw, truncate_visual_text(card.get("path"), 28), 22, card_y + 28, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=2)
+        size_text = truncate_visual_text(card.get("size"), 10).upper()
+        size_width = measure_inline_chip_width(draw, size_text, fonts["tiny"])
+        draw.rounded_rectangle((width - 18 - size_width, card_y + 8, width - 18, card_y + 28), radius=10, fill=(31, 36, 42))
+        draw.text((width - 18 - size_width + 8, card_y + 13), size_text, fill=(183, 191, 198), font=fonts["tiny"])
+        draw_text_block(draw, truncate_visual_text(card.get("path"), 24), 22, card_y + 32, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
         card_y += 66
 
-    footer = "file detail shows preview"
+    footer = "hold for detail"
     if isinstance(remaining_count, int) and remaining_count > 0:
-        footer = f"+{remaining_count} more  ·  file detail"
+        footer = f"+{remaining_count} more  ·  hold detail"
 
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
@@ -5280,15 +5310,19 @@ def render_workspace_file_visual(
     draw.rounded_rectangle((width - 68, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
     draw.text((width - 59, 20), truncate_visual_text(visual.get("workspace_id"), 10).upper(), fill=accent, font=fonts["tiny"])
 
-    draw.rounded_rectangle((12, 58, width - 12, 102), radius=14, fill=(22, 28, 36))
+    draw.rounded_rectangle((12, 58, width - 12, 108), radius=14, fill=(22, 28, 36))
     draw.text((22, 72), truncate_visual_text(visual.get("file_name"), 18).upper(), fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, truncate_visual_text(visual.get("path"), 28), 22, 86, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+    path_text = truncate_visual_text(visual.get("path"), 20).upper()
+    path_width = measure_inline_chip_width(draw, path_text, fonts["tiny"])
+    draw.rounded_rectangle((22, 84, 22 + path_width, 104), radius=10, fill=(31, 36, 42))
+    draw.text((30, 89), path_text, fill=(183, 191, 198), font=fonts["tiny"])
 
-    draw.rounded_rectangle((12, 114, width - 12, 268), radius=16, fill=(22, 28, 36))
-    draw.text((22, 128), "PREVIEW", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, truncate_visual_text(visual.get("body"), 220), 22, 148, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=7)
+    draw.rounded_rectangle((12, 120, width - 12, 274), radius=16, fill=(22, 28, 36))
+    draw.text((22, 134), "PREVIEW", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, truncate_visual_text(visual.get("body"), 220), 22, 154, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=7)
 
-    draw.text((14, height - 22), "workspace file preview", fill=(154, 162, 170), font=fonts["tiny"])
+    preview_width = draw_inline_chip(draw, 12, height - 28, "PREVIEW", fonts["tiny"], (18, 24, 30), (154, 162, 170))
+    draw_inline_chip(draw, 20 + preview_width, height - 28, "WORKSPACE", fonts["tiny"], (31, 36, 42), (183, 191, 198))
 
 
 def render_state_image(
