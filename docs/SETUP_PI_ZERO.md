@@ -9,22 +9,36 @@ Use this as the appliance bring-up checklist for a new Raspberry Pi Zero 2 WH.
 - Wi-Fi pre-seeded or hotspot available.
 - PiSugar 3 and Whisplay HAT installed.
 
-## Install Order
+## Fast Path
+
+Normal goal: do shell setup once, then finish from `/setup` on the same Wi-Fi.
 
 1. Flash Raspberry Pi OS Lite.
 2. Boot once and confirm SSH.
 3. Install PiSugar / Whisplay driver stack using PiSugar-provided scripts.
 4. Verify LCD, buttons, mic, and speaker before DumplBot install.
-5. Run `scripts/install_pi.sh`.
-6. Place config in `/etc/dumplbot/`.
-7. Enable `dumplbotd.service` and `dumpl-ui.service`.
+5. Clone the repo and run `bash scripts/install_pi.sh`.
+6. Start `dumplbotd.service` and `dumpl-ui.service`.
+7. Open `http://<pi-ip>:4123/setup` from your phone or laptop on the same Wi-Fi.
+8. Save provider keys, choose default workspace/skill/safety, and clear the first-run checklist.
 
-The installer now prints the next command and the `/setup` URL to open from the same Wi-Fi after install.
+If you only remember one URL, remember:
+
+- `http://<pi-ip>:4123/setup`
+
+The installer now builds the app, installs services, and prints the `/setup` URL after install.
 
 ## Required Files
 
 - `/etc/dumplbot/config.yaml`
 - `/etc/dumplbot/secrets.env`
+
+## What Good Looks Like
+
+- device shows `READY` when voice is ready for a real talk test
+- device shows `SETUP` + `ADD KEY` when the provider key is still missing
+- device shows `SETUP` + `CHECK AUDIO` when Pi audio bring-up still needs one quick verification pass
+- `/setup` shows daemon, scheduler, and STT readiness without exposing secret values
 
 ## Smoke Checks
 
@@ -51,9 +65,9 @@ Keep the Pi pass hardware-first:
 1. verify LCD, buttons, battery state, Wi-Fi, mic, and speaker
 2. install with `bash scripts/install_pi.sh`
 3. start `dumplbotd.service`, then `dumpl-ui.service`
-4. confirm `curl -i http://127.0.0.1:4123/health`
-5. run `npm run smoke:runner-sandbox-local`
-6. verify `/setup` from the same LAN and confirm key/setup status
+4. open `/setup` from the same Wi-Fi and clear the first-run checklist
+5. confirm `curl -i http://127.0.0.1:4123/health`
+6. run `npm run smoke:runner-sandbox-local`
 7. verify one push-to-talk loop end to end
 8. verify one workspace file/history flow and one scheduler run
 9. reboot once and confirm the system returns to idle cleanly
