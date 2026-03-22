@@ -42,7 +42,7 @@ WHISPLAY_PHASE_RGB = {
     "Home": (48, 56, 16),
     "Idle": (0, 64, 16),
     "Diagnostics": (72, 48, 0),
-    "Jobs": (0, 56, 72),
+    "Jobs": (100, 210, 199),
     "Workspaces": (24, 56, 96),
     "Skills": (56, 72, 24),
     "Listening": (0, 48, 96),
@@ -4858,19 +4858,24 @@ def render_job_detail_visual(
     draw.rounded_rectangle((width - 52, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
     draw.text((width - 44, 20), state_value.upper(), fill=accent, font=fonts["tiny"])
 
-    draw.rounded_rectangle((12, 58, width - 12, 144), radius=16, fill=(22, 28, 36))
-    draw.text((22, 72), truncate_visual_text(visual.get("job_id"), 16).upper(), fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, schedule, 22, 94, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=3)
+    draw.rounded_rectangle((12, 58, width - 12, 132), radius=16, fill=(22, 28, 36))
+    draw.text((22, 72), "SCHEDULE", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, truncate_visual_text(visual.get("job_id"), 16).upper(), 22, 88, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
+    draw_text_block(draw, schedule, 22, 102, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=2)
 
-    draw.rounded_rectangle((12, 156, width - 12, 234), radius=16, fill=(22, 28, 36))
-    draw.text((22, 170), "CONTEXT", fill=accent, font=fonts["tiny"])
-    draw.text((22, 188), f"ws: {workspace}", fill=WHISPLAY_FOREGROUND, font=fonts["label"])
-    draw.text((22, 206), f"skill: {skill}", fill=WHISPLAY_FOREGROUND, font=fonts["label"])
-    draw.text((22, 224), f"runs: {history_window}", fill=WHISPLAY_FOREGROUND, font=fonts["label"])
+    draw_panel_card(draw, 12, 144, 70, 48, "Workspace", workspace, fonts, accent, body_fill=(16, 23, 29))
+    draw_panel_card(draw, 88, 144, 70, 48, "Skill", skill, fonts, accent, body_fill=(16, 23, 29))
 
-    draw.text((14, 252), "LAST RUN", fill=accent, font=fonts["tiny"])
-    draw_text_block(draw, last_run, 14, 270, width - 28, fonts["tiny"], (154, 162, 170), max_lines=1)
-    draw.text((14, height - 22), "short: history · long: next", fill=(154, 162, 170), font=fonts["tiny"])
+    draw.rounded_rectangle((12, 204, width - 12, 244), radius=14, fill=(22, 28, 36))
+    draw.text((22, 218), "HISTORY", fill=accent, font=fonts["tiny"])
+    draw_inline_chip(draw, width - 84, 212, history_window.upper(), fonts["tiny"], (31, 36, 42), (183, 191, 198))
+
+    draw.rounded_rectangle((12, 254, width - 12, 286), radius=14, fill=(22, 28, 36))
+    draw.text((22, 266), "LAST RUN", fill=accent, font=fonts["tiny"])
+    draw_text_block(draw, last_run, 22, 278, width - 44, fonts["tiny"], WHISPLAY_FOREGROUND, max_lines=1)
+
+    history_chip_width = draw_inline_chip(draw, 12, height - 28, "HISTORY", fonts["tiny"], (18, 24, 30), (154, 162, 170))
+    draw_inline_chip(draw, 20 + history_chip_width, height - 28, "NEXT JOB", fonts["tiny"], (33, 40, 46), (195, 201, 207))
 
 
 def render_job_history_visual(
