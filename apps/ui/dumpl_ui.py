@@ -3644,7 +3644,7 @@ def build_job_history_screen_state(
 
         lines.append(summary)
         cards.append({
-            "time": truncate_visual_text(completed_at, 18),
+            "time": format_visual_timestamp(completed_at),
             "status": truncate_visual_text(status, 12),
             "result": truncate_visual_text(result if isinstance(result, str) and result else "no result", 34),
         })
@@ -4322,6 +4322,20 @@ def compact_badge_value(value: Any, max_length: int = 8) -> str:
     return truncate_visual_text(value, max_length)
 
 
+def format_visual_timestamp(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return "(unknown)"
+
+    normalized = value.replace("Z", "+00:00")
+
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return truncate_visual_text(value, 18)
+
+    return parsed.strftime("%b %d %H:%M")
+
+
 def draw_text_block(
     draw: Any,
     text: str,
@@ -4908,10 +4922,21 @@ def render_job_history_visual(
         if not isinstance(card, dict):
             continue
 
+        status_text = truncate_visual_text(card.get("status"), 10).upper()
+        status_fill = (30, 36, 44)
+        status_text_fill = (195, 201, 207)
+
+        if status_text == "SUCCESS":
+            status_fill = (24, 48, 30)
+            status_text_fill = (201, 230, 160)
+        elif status_text == "ERROR":
+            status_fill = (75, 42, 32)
+            status_text_fill = (255, 210, 198)
+
         draw.rounded_rectangle((12, card_y, width - 12, card_y + 64), radius=14, fill=(22, 28, 36))
-        draw.text((22, card_y + 10), truncate_visual_text(card.get("time"), 18), fill=accent, font=fonts["tiny"])
-        draw.rounded_rectangle((width - 60, card_y + 8, width - 18, card_y + 28), radius=10, fill=(30, 36, 44))
-        draw.text((width - 52, card_y + 13), truncate_visual_text(card.get("status"), 10).upper(), fill=(195, 201, 207), font=fonts["tiny"])
+        draw.text((22, card_y + 10), truncate_visual_text(card.get("time"), 16), fill=accent, font=fonts["tiny"])
+        draw.rounded_rectangle((width - 60, card_y + 8, width - 18, card_y + 28), radius=10, fill=status_fill)
+        draw.text((width - 52, card_y + 13), status_text, fill=status_text_fill, font=fonts["tiny"])
         draw_text_block(draw, truncate_visual_text(card.get("result"), 38), 22, card_y + 32, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=2)
         card_y += 72
 
