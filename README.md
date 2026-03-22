@@ -177,26 +177,39 @@ This is the normal user path. Goal: finish the shell work once, then do the rest
 - Wi-Fi + SSH pre-seeded in Raspberry Pi Imager
 - PiSugar / Whisplay drivers installed and the LCD, buttons, mic, and speaker verified once
 
-### 1. Get the repo onto the Pi
+### 1. SSH into the Pi and run the installer
 
 ```bash
+ssh <pi-user>@<pi-ip>
 git clone https://github.com/steipete/dumplbot-pi.git
 cd dumplbot-pi
 bash scripts/install_pi.sh
 ```
 
-The installer now builds the app, installs services, and prints the next-step setup URL.
+What that installer does for you:
+
+1. asks for `sudo` if it needs it
+2. installs the base Pi packages DumplBot needs (`nodejs`, `npm`, `bubblewrap`, `python3-pil`, `alsa-utils`, `rsync`, `curl`, `git`)
+3. copies the app into `/opt/dumplbot`
+4. builds the Node runtime
+5. creates `/etc/dumplbot/config.yaml` and `/etc/dumplbot/secrets.env` if they do not exist yet
+6. renders systemd units for your current Pi login user
+7. installs `dumplbot-healthcheck`
+8. prints the `/setup` URL for the current Pi IP
+
+If you created a custom Raspberry Pi username in Imager, use that username in the SSH command above. The installer no longer assumes the user is `pi`.
 
 Copy-paste first boot session:
 
 ```bash
-ssh pi@<pi-ip>
+ssh <pi-user>@<pi-ip>
 git clone https://github.com/steipete/dumplbot-pi.git
 cd dumplbot-pi
 bash scripts/install_pi.sh
 sudo systemctl enable --now dumplbotd.service
 sudo systemctl enable --now dumpl-ui.service
 curl -i http://127.0.0.1:4123/health
+dumplbot-healthcheck
 ```
 
 If you used that block, skip straight to step 3.
@@ -210,11 +223,25 @@ sudo systemctl enable --now dumpl-ui.service
 
 ### 3. Open setup from your phone or laptop on the same Wi-Fi
 
+Open:
+
 - `http://<pi-ip>:4123/setup`
-- save provider keys
-- choose default workspace + skill
-- choose safety mode
-- follow the first-run checklist until it says setup is complete
+
+Then do these in order:
+
+1. save your OpenAI key
+2. leave the default workspace as `default` unless you already created another one
+3. leave the default skill as `coding` for the first test
+4. leave safety mode at `balanced` for the first test
+5. press `Save setup`
+6. read the `What to do next` checklist and clear any remaining missing step
+
+Your first-run goal is simple:
+
+1. `Same-Wi-Fi setup` done
+2. `Default workspace and skill` done
+3. `Voice key` done
+4. `Voice path` done
 
 If you only remember one thing, remember this URL:
 
@@ -232,13 +259,30 @@ Fresh installs now default `server.host` to `0.0.0.0`, so the setup shell at `/s
 
 ```bash
 curl -i http://127.0.0.1:4123/health
+dumplbot-healthcheck
 ```
 
 ### 6. First real voice test
 
-- hold the button to record
-- release to send
-- if setup is incomplete, the device should stay in `SETUP` and show the next action instead of failing silently
+1. wait for the device to show `READY`
+2. if the focused home target is `voice`, the bottom action should read `TALK NOW`
+3. hold the hardware button
+4. speak a short sentence
+5. release the button
+6. watch the device move through `Listening` -> `Transcribing` -> `Thinking` -> streamed answer
+7. if something is missing, the device should stay in `SETUP` and tell you what to fix next instead of failing silently
+
+### 7. If the first test fails
+
+Run these on the Pi first:
+
+```bash
+dumplbot-healthcheck
+sudo systemctl --no-pager --full status dumplbotd.service dumpl-ui.service
+journalctl -u dumplbotd.service -u dumpl-ui.service -n 120 --no-pager
+```
+
+Then re-open `/setup` and check the first-run checklist again.
 
 ---
 
