@@ -1034,7 +1034,7 @@ def build_workspace_history_screen_state(
 
         lines.append("\n".join(entry_lines))
         cards.append({
-            "time": truncate_visual_text(completed_at, 18),
+            "time": format_visual_timestamp(completed_at),
             "status": truncate_visual_text(status, 10),
             "detail": truncate_visual_text(detail, 26),
             "summary": truncate_visual_text(summary if isinstance(summary, str) and summary else "(no summary)", 34),
@@ -4993,14 +4993,17 @@ def render_skills_summary_visual(
         chip_text = (227, 245, 251) if card.get("state") == "active" else (195, 201, 207)
         draw.rounded_rectangle((width - 68, card_y + 8, width - 18, card_y + 28), radius=10, fill=chip_fill)
         draw.text((width - 61, card_y + 13), truncate_visual_text(card.get("permission"), 8).upper(), fill=chip_text, font=fonts["tiny"])
-        draw_text_block(draw, truncate_visual_text(card.get("reasoning"), 16), 22, card_y + 30, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
-        draw_text_block(draw, truncate_visual_text(card.get("readiness"), 18), 22, card_y + 44, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
+        draw_text_block(draw, truncate_visual_text(card.get("reasoning"), 16), 22, card_y + 32, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
+        readiness_text = truncate_visual_text(card.get("readiness"), 14).upper()
+        readiness_width = measure_inline_chip_width(draw, readiness_text, fonts["tiny"])
+        draw.rounded_rectangle((22, card_y + 42, 22 + readiness_width, card_y + 62), radius=10, fill=(31, 36, 42))
+        draw.text((30, card_y + 47), readiness_text, fill=(183, 191, 198), font=fonts["tiny"])
         card_y += 72
 
-    footer = "skill detail shows policy"
+    footer = "hold for detail"
 
     if isinstance(remaining_count, int) and remaining_count > 0:
-        footer = f"+{remaining_count} more  ·  skill detail"
+        footer = f"+{remaining_count} more  ·  hold detail"
 
     draw.text((14, height - 22), footer, fill=(154, 162, 170), font=fonts["tiny"])
 
@@ -5188,15 +5191,27 @@ def render_workspace_history_visual(
         if not isinstance(card, dict):
             continue
 
+        status_text = truncate_visual_text(card.get("status"), 10).upper()
+        status_fill = (30, 36, 44)
+        status_text_fill = (195, 201, 207)
+
+        if status_text == "SUCCESS":
+            status_fill = (24, 48, 30)
+            status_text_fill = (201, 230, 160)
+        elif status_text == "ERROR":
+            status_fill = (75, 42, 32)
+            status_text_fill = (255, 210, 198)
+
         draw.rounded_rectangle((12, card_y, width - 12, card_y + 64), radius=14, fill=(22, 28, 36))
-        draw.text((22, card_y + 10), truncate_visual_text(card.get("time"), 18), fill=accent, font=fonts["tiny"])
-        draw.rounded_rectangle((width - 60, card_y + 8, width - 18, card_y + 28), radius=10, fill=(30, 36, 44))
-        draw.text((width - 52, card_y + 13), truncate_visual_text(card.get("status"), 10).upper(), fill=(195, 201, 207), font=fonts["tiny"])
+        draw.text((22, card_y + 10), truncate_visual_text(card.get("time"), 16), fill=accent, font=fonts["tiny"])
+        draw.rounded_rectangle((width - 60, card_y + 8, width - 18, card_y + 28), radius=10, fill=status_fill)
+        draw.text((width - 52, card_y + 13), status_text, fill=status_text_fill, font=fonts["tiny"])
         draw_text_block(draw, truncate_visual_text(card.get("detail"), 28), 22, card_y + 30, width - 44, fonts["label"], WHISPLAY_FOREGROUND, max_lines=1)
         draw_text_block(draw, truncate_visual_text(card.get("summary"), 34), 22, card_y + 44, width - 44, fonts["tiny"], (154, 162, 170), max_lines=1)
         card_y += 72
 
-    draw.text((14, height - 22), "latest runs only", fill=(154, 162, 170), font=fonts["tiny"])
+    latest_width = draw_inline_chip(draw, 12, height - 28, "LATEST", fonts["tiny"], (18, 24, 30), (154, 162, 170))
+    draw_inline_chip(draw, 20 + latest_width, height - 28, "RUNS", fonts["tiny"], (31, 36, 42), (183, 191, 198))
 
 
 def render_workspace_files_visual(
