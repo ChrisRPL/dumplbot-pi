@@ -4363,6 +4363,36 @@ def draw_status_chip(
     draw.text((x + 8, y + 5), label, fill=text_fill, font=fonts["tiny"])
 
 
+def draw_inline_chip(
+    draw: Any,
+    x: int,
+    y: int,
+    text: str,
+    font: Any,
+    fill: tuple[int, int, int],
+    text_fill: tuple[int, int, int],
+    radius: int = 10,
+    padding_x: int = 8,
+    padding_y: int = 5,
+) -> int:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    width = (bbox[2] - bbox[0]) + (padding_x * 2)
+    height = (bbox[3] - bbox[1]) + (padding_y * 2)
+    draw.rounded_rectangle((x, y, x + width, y + height), radius=radius, fill=fill)
+    draw.text((x + padding_x, y + padding_y - 1), text, fill=text_fill, font=font)
+    return width
+
+
+def measure_inline_chip_width(
+    draw: Any,
+    text: str,
+    font: Any,
+    padding_x: int = 8,
+) -> int:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return (bbox[2] - bbox[0]) + (padding_x * 2)
+
+
 def draw_panel_card(
     draw: Any,
     x: int,
@@ -4469,8 +4499,24 @@ def render_home_visual(
     enabled_jobs = visual.get("enabled_jobs")
     job_count = visual.get("job_count")
     first_run_ready = visual.get("first_run_ready") is True
+    first_run_message = truncate_visual_text(visual.get("first_run_message"), 52)
     next_action_label = truncate_visual_text(visual.get("next_action_label"), 18)
     next_action_detail = truncate_visual_text(visual.get("next_action_visual_detail"), 44)
+    detail_text = first_run_message if first_run_ready and first_run_message not in {"", "(none)"} else next_action_detail
+    normalized_next_action = next_action_label.strip().lower()
+
+    if first_run_ready:
+        action_left = "browse"
+        action_right = "open"
+    elif normalized_next_action == "add key":
+        action_left = "setup"
+        action_right = "save key"
+    elif normalized_next_action == "check audio":
+        action_left = "setup"
+        action_right = "test audio"
+    else:
+        action_left = "setup"
+        action_right = "next"
 
     draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
     draw.text((18, 18), "DUMPLBOT", fill=(236, 240, 244), font=fonts["title"])
@@ -4488,8 +4534,8 @@ def render_home_visual(
     draw_status_chip(draw, 12, 142, 70, "sched on" if visual.get("scheduler_enabled") else "sched off", bool(visual.get("scheduler_enabled")), fonts)
     draw_status_chip(draw, 88, 142, 70, "lan ready" if visual.get("lan_setup_ready") else "lan wait", bool(visual.get("lan_setup_ready")), fonts)
 
-    draw.rounded_rectangle((12, 176, width - 12, 262), radius=16, fill=(22, 28, 36))
-    draw.text((22, 188), "READY" if first_run_ready else "NEXT", fill=accent, font=fonts["tiny"])
+    draw.rounded_rectangle((12, 176, width - 12, 272), radius=16, fill=(22, 28, 36))
+    draw.text((22, 188), "NEXT TARGET" if first_run_ready else "SETUP STEP", fill=accent, font=fonts["tiny"])
     draw_text_block(
         draw,
         (focused_target if first_run_ready else next_action_label).upper(),
@@ -4502,24 +4548,52 @@ def render_home_visual(
     )
     draw_text_block(
         draw,
-        next_action_detail,
+        detail_text,
         22,
-        238,
+        236,
         width - 44,
         fonts["tiny"],
         (160, 170, 180),
-        max_lines=2,
+        max_lines=1,
+    )
+    action_y = 252
+    left_width = draw_inline_chip(
+        draw,
+        22,
+        action_y,
+        action_left.upper(),
+        fonts["tiny"],
+        (27, 44, 58),
+        (213, 233, 241),
+    )
+    draw_inline_chip(
+        draw,
+        30 + left_width,
+        action_y,
+        action_right.upper(),
+        fonts["tiny"],
+        (31, 36, 42),
+        (183, 191, 198),
     )
 
-    footer_text = f"safety {safety}"
+    safety_text = f"SAFETY {truncate_visual_text(safety.upper(), 8)}"
     jobs_text = (
-        f"jobs {enabled_jobs}/{job_count}"
+        f"JOBS {enabled_jobs}/{job_count}"
         if isinstance(enabled_jobs, int) and isinstance(job_count, int)
-        else "jobs (unknown)"
+        else "JOBS ?"
     )
-    draw.text((14, height - 22), footer_text, fill=(154, 162, 170), font=fonts["tiny"])
-    jobs_bbox = draw.textbbox((0, 0), jobs_text, font=fonts["tiny"])
-    draw.text((width - 14 - (jobs_bbox[2] - jobs_bbox[0]), height - 22), jobs_text, fill=(154, 162, 170), font=fonts["tiny"])
+    footer_y = height - 28
+    draw_inline_chip(draw, 12, footer_y, safety_text, fonts["tiny"], (18, 24, 30), (154, 162, 170))
+    jobs_width = draw.textbbox((0, 0), jobs_text, font=fonts["tiny"])
+    draw_inline_chip(
+        draw,
+        width - 12 - ((jobs_width[2] - jobs_width[0]) + 16),
+        footer_y,
+        jobs_text,
+        fonts["tiny"],
+        (18, 24, 30),
+        (154, 162, 170),
+    )
 
 
 def render_detail_visual(
@@ -4567,27 +4641,34 @@ def render_voice_debug_visual(
     accent: tuple[int, int, int],
 ) -> None:
     visual = state.visual if isinstance(state.visual, dict) else {}
+    heard_value = truncate_visual_text(visual.get("heard"), 34)
+    audio_value = truncate_visual_text(visual.get("audio"), 34)
+    error_value = truncate_visual_text(visual.get("error"), 34)
     draw.rounded_rectangle((10, 8, width - 10, 42), radius=14, fill=(18, 34, 48))
     draw.text((18, 18), "VOICE DEBUG", fill=(236, 240, 244), font=fonts["title"])
     draw.rounded_rectangle((width - 66, 14, width - 18, 36), radius=10, fill=(22, 28, 36))
     draw.text((width - 55, 20), "TRIAGE", fill=accent, font=fonts["tiny"])
 
     cards = [
-        ("Heard", truncate_visual_text(visual.get("heard"), 34), truncate_visual_text(visual.get("heard_age"), 12)),
-        ("Audio", truncate_visual_text(visual.get("audio"), 34), truncate_visual_text(visual.get("audio_age"), 12)),
-        ("Error", truncate_visual_text(visual.get("error"), 34), truncate_visual_text(visual.get("error_age"), 12)),
+        ("Heard", heard_value, truncate_visual_text(visual.get("heard_age"), 12), (85, 133, 69)),
+        ("Audio", audio_value, truncate_visual_text(visual.get("audio_age"), 12), (98, 192, 255)),
+        ("Error", error_value, truncate_visual_text(visual.get("error_age"), 12), (255, 122, 89) if error_value != "clear" else (79, 89, 99)),
     ]
 
     card_y = 58
 
-    for title, value, age in cards:
+    for title, value, age, card_accent in cards:
         draw.rounded_rectangle((12, card_y, width - 12, card_y + 56), radius=14, fill=(22, 28, 36))
-        draw.text((22, card_y + 10), title.upper(), fill=accent, font=fonts["tiny"])
-        draw_text_block(draw, value, 22, card_y + 26, width - 44, fonts["body"], WHISPLAY_FOREGROUND, max_lines=2)
-        draw.text((width - 64, card_y + 10), age, fill=(154, 162, 170), font=fonts["tiny"])
+        draw.rounded_rectangle((18, card_y + 10, 22, card_y + 44), radius=2, fill=card_accent)
+        draw.text((28, card_y + 10), title.upper(), fill=card_accent, font=fonts["tiny"])
+        age_width = measure_inline_chip_width(draw, age.upper(), fonts["tiny"])
+        draw.rounded_rectangle((width - 18 - age_width, card_y + 8, width - 18, card_y + 28), radius=10, fill=(30, 36, 44))
+        draw.text((width - 18 - age_width + 8, card_y + 13), age.upper(), fill=(154, 162, 170), font=fonts["tiny"])
+        draw_text_block(draw, value, 28, card_y + 28, width - 56, fonts["body"], WHISPLAY_FOREGROUND, max_lines=2)
         card_y += 64
 
-    draw.text((14, height - 22), "press back · hold clear", fill=(154, 162, 170), font=fonts["tiny"])
+    back_width = draw_inline_chip(draw, 12, height - 28, "TAP BACK", fonts["tiny"], (18, 24, 30), (154, 162, 170))
+    draw_inline_chip(draw, 20 + back_width, height - 28, "HOLD CLEAR", fonts["tiny"], (33, 40, 46), (195, 201, 207))
 
 
 def render_stage_visual(
