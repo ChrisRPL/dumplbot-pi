@@ -211,8 +211,20 @@ Scheduler detail:
 Scheduler history:
 
 - 3 stacked run cards max
-- time left, status chip right, result line below
+- compact time label left, status chip right, result line below
 - keep footer hints short
+
+Skill summary:
+
+- active skill card first
+- permission chip right
+- reasoning stays one short line
+- readiness belongs in a compact chip, not a second loose sentence
+
+Workspace history:
+
+- reuse the same compact timestamp + status-chip treatment as scheduler history
+- one detail line plus one summary line max
 
 ## Preview Rules
 

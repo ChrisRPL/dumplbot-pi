@@ -26,7 +26,7 @@ Success looks like:
 - hardware drivers still require manual bring-up and verification
 - config lives across `config.yaml` and `secrets.env`
 - first-run success still expects comfort with SSH and systemd
-- README had grown into one long operator note instead of a guided path
+- README and `SETUP_PI_ZERO.md` are much clearer now, but the final Pi pass still needs to prove the flow feels easy in practice
 - UI review is stronger now, but final hardware validation is still pending
 - motion is only lightly implemented so far; final Pi tuning still pending
 
@@ -39,6 +39,12 @@ Success looks like:
 - make `/setup` the default place to finish config
 - reduce required shell steps after `scripts/install_pi.sh`
 - make old-install restart/rebind hints explicit and copy-paste ready
+
+Current baseline:
+
+- install docs now point to a same-Wi-Fi `/setup` finish path
+- first-run device states now distinguish `READY`, `ADD KEY`, and `CHECK AUDIO`
+- next proof still needed: a real Pi user should be able to follow the path without extra operator knowledge
 
 ### 2. Onboarding UX
 
