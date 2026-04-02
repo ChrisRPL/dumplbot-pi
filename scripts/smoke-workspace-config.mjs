@@ -732,7 +732,7 @@ const runSmoke = async () => {
       "expected UI skill summary active skill output",
     );
     assert(
-      skillSummaryResult.stdout.includes("high | tools:4 | ready:1/2"),
+      skillSummaryResult.stdout.includes("high | tools:4 | ready 1/2"),
       "expected UI skill summary compact metadata output",
     );
 

@@ -301,7 +301,7 @@ const runSmoke = async () => {
       "expected home screen jobs summary",
     );
     assert(
-      homeScreenResult.stdout.includes("setup: lan pending"),
+      homeScreenResult.stdout.includes("setup: same-wi-fi setup"),
       "expected home screen lan setup summary",
     );
 
