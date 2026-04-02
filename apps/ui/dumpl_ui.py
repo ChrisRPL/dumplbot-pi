@@ -6650,7 +6650,7 @@ def run_button_capture_loop(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="DumplBot device UI scaffold")
+    parser = argparse.ArgumentParser(description="DumplBot device UI")
     parser.add_argument("--mock", action="store_true", help="Run the text-only mock client")
     parser.add_argument("--preview", action="store_true", help="Run the desktop preview renderer")
     parser.add_argument("--preview-snapshot", help="Write one rasterized preview snapshot to PNG")

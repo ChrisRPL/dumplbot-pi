@@ -1,1 +1,2 @@
-# Stdlib-only scaffold for now.
+# Needed for Whisplay raster rendering and Mac preview galleries.
+Pillow>=10,<12
