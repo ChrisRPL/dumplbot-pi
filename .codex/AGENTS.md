@@ -2,23 +2,23 @@
 
 ## Current Repo Reality
 
-- The repo is now scaffold-first. Core paths such as `apps/`, `scripts/`, `systemd/`, `skills/`, `config/`, and `workspaces/` exist, but most app logic is still missing.
+- The repo now has the main runtime surfaces, installer/setup flow, scheduler/workspace UI, and Pi bring-up docs in place.
 - Confirm files exist before building commands, tests, or automation around README examples.
-- Until code lands, favor docs, scaffolds, tests, and agent instruction assets over speculative implementation.
+- Favor committed code plus docs over older future-facing assumptions.
 - The new `docs/` folder is now the stepwise spec set; use it before inventing structure.
 
 ## System Model
 
 - `dumpl-ui`: device UI for buttons, audio capture, and the tiny display. The README implies a Python implementation.
 - `dumplbotd`: local daemon for API, orchestration, scheduler, and policy.
-- `agent-runner`: single-run executor that streams events back to the daemon.
+- `agent-runner`: single-run executor that streams events back to the daemon; bash/tool policy path is real, freeform model-backed replies are still limited.
 - Main happy path: button press -> capture audio -> transcribe -> plan and execute -> stream output back.
 
 ## Operational Touchpoints
 
-- Planned install entrypoint: `bash scripts/install_pi.sh`.
-- Planned systemd units: `dumplbotd.service`, `dumpl-ui.service`.
-- Planned config surfaces: `/etc/dumplbot/config.yaml`, `/etc/dumplbot/secrets.env`.
+- Install entrypoint: `bash scripts/install_pi.sh`.
+- Systemd units: `dumplbotd.service`, `dumpl-ui.service`.
+- Config surfaces: `/etc/dumplbot/config.yaml`, `/etc/dumplbot/secrets.env`.
 - README dev loop is mixed-runtime: Node.js for daemon-side work, Python for the UI mock loop.
 
 ## Engineering Bias

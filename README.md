@@ -12,7 +12,7 @@ Push-to-talk → transcribe → agent uses real tools (files/shell/web) → resp
 
 A **portable, always-with-you agent** that can **talk, code, run tools, and schedule jobs**—without needing a desktop “agent box”.
 
-Current repo status: text + voice flow, sandbox/policy baseline, workspace/skill foundations, and LAN setup UX are committed; scheduler polish and broader repo-attach follow-on work remain.
+Current repo status: text + voice flow, sandbox/policy baseline, workspace/scheduler/skill surfaces, and LAN setup UX are committed; biggest remaining gaps are final Pi validation and fuller model-backed runner behavior.
 
 ---
 

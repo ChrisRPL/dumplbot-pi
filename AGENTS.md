@@ -5,20 +5,20 @@ Read first: [.codex/AGENTS.md](.codex/AGENTS.md)
 ## Scope
 
 - Repo = DumplBot, a pocket voice agent and on-device coding assistant for Raspberry Pi Zero 2 WH.
-- Current tree includes docs plus early runtime scaffolding, but the main app logic is still largely unimplemented.
+- Current tree includes the main runtime surfaces, installer/setup flow, scheduler/workspace UI, and Pi bring-up docs.
 - Treat `docs/` as the source of truth for implementation order; use `README.md` for product intent.
 - Treat `docs/` as the implementation source of truth for stepwise build work.
 
 ## Product Facts
 
 - Hardware target: Raspberry Pi Zero 2 WH, PiSugar 3, PiSugar Whisplay HAT.
-- Planned runtime surfaces: `dumpl-ui`, `dumplbotd`, `agent-runner`.
-- Planned config files: `/etc/dumplbot/config.yaml`, `/etc/dumplbot/secrets.env`.
-- Planned workspace instructions: `workspaces/<name>/CLAUDE.md`.
+- Runtime surfaces: `dumpl-ui`, `dumplbotd`, `agent-runner`.
+- Config files: `/etc/dumplbot/config.yaml`, `/etc/dumplbot/secrets.env`.
+- Workspace instructions: `workspaces/<name>/CLAUDE.md`.
 
 ## Agent Bias
 
-- Prefer doc-first and scaffolding work until source files exist.
+- Prefer committed code plus docs over older future-facing assumptions.
 - Keep Pi constraints visible: low memory, low CPU, no Docker assumptions.
 - For runtime work, verify the full path: push-to-talk -> STT -> tools -> streamed reply.
 - If a README-mentioned path is missing, do not invent it; note the gap and work from committed files only.
