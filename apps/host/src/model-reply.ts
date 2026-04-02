@@ -38,6 +38,7 @@ type ResponsesStreamEvent = {
 const DEFAULT_BASE_URL = "https://api.openai.com";
 const DEFAULT_MODEL = "gpt-5-mini";
 const DEFAULT_MAX_OUTPUT_TOKENS = 600;
+const DEFAULT_MAX_RUN_SECONDS = 180;
 
 const getResponsesUrl = (baseUrl: string): URL =>
   new URL("/v1/responses", baseUrl);
@@ -202,10 +203,15 @@ export const loadModelReplyRuntimeConfig = async (): Promise<ModelReplyRuntimeCo
 export async function* streamModelReplyEvents(
   input: ModelReplyInput,
   config: ModelReplyRuntimeConfig,
+  maxRunSeconds = DEFAULT_MAX_RUN_SECONDS,
   controlHooks?: RunnerControlHooks,
 ): AsyncGenerator<DumplEvent> {
   const abortController = new AbortController();
+  const resolvedMaxRunSeconds = Number.isFinite(maxRunSeconds) && maxRunSeconds > 0
+    ? Math.floor(maxRunSeconds)
+    : DEFAULT_MAX_RUN_SECONDS;
   let settled = false;
+  let timedOut = false;
 
   const settle = (): void => {
     if (settled) {
@@ -219,6 +225,12 @@ export async function* streamModelReplyEvents(
   controlHooks?.onCancelReady?.(() => {
     abortController.abort();
   });
+
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    abortController.abort();
+  }, resolvedMaxRunSeconds * 1000);
+  timeout.unref();
 
   if (!config.apiKey.trim()) {
     yield toErrorEvent("OPENAI_API_KEY is required for freeform replies");
@@ -290,7 +302,11 @@ export async function* streamModelReplyEvents(
     yield doneEvent;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      yield toErrorEvent("run canceled");
+      yield toErrorEvent(
+        timedOut
+          ? `runner timed out after ${resolvedMaxRunSeconds}s`
+          : "run canceled",
+      );
       settle();
       return;
     }
@@ -298,6 +314,7 @@ export async function* streamModelReplyEvents(
     const message = error instanceof Error ? error.message : "model reply failed";
     yield toErrorEvent(message);
   } finally {
+    clearTimeout(timeout);
     settle();
   }
 }

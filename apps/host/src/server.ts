@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import type {
   DumplDoneEvent,
@@ -15,7 +17,10 @@ import { parseSingleWavUpload, readRequestBuffer } from "./audio-upload";
 import { clearLastAudio, getStoredAudioPath, readLastAudio, storeAudioBuffer } from "./audio-store";
 import { clearLastDebugError, readLastDebugError, writeLastDebugError } from "./error-store";
 import { isLanClientAddress, isLanOnlySetupPath } from "./lan-only";
+import type { ModelReplyInput, ModelReplyRuntimeConfig } from "./model-reply";
+import { loadModelReplyRuntimeConfig, streamModelReplyEvents } from "./model-reply";
 import type { RunnerInput, RunnerLaunchOptions } from "./runner";
+import type { RunnerControlHooks } from "./runner";
 import { streamRunnerEvents } from "./runner";
 import {
   loadHostRuntimeConfig,
@@ -528,6 +533,8 @@ const resolveWorkspace = async (
 
 type ResolvedSkill = {
   id: string;
+  promptPrelude: string;
+  modelReasoning: "low" | "medium" | "high";
   toolAllowlist: string[];
   bashCommandPrefixAllowlist: string[];
   permissionMode: "strict" | "balanced" | "permissive";
@@ -591,6 +598,8 @@ const resolveSkill = async (
   const skill = await loadSkill(skillId);
   return {
     id: skill.id,
+    promptPrelude: skill.promptPrelude,
+    modelReasoning: skill.model.reasoning,
     toolAllowlist: [...skill.toolAllowlist],
     bashCommandPrefixAllowlist: [...skill.bashCommandPrefixAllowlist],
     permissionMode: skill.permissionMode,
@@ -693,6 +702,53 @@ type SkillPreludeInput = {
   toolAllowlist: string[];
 };
 
+const BASH_PROMPT_PREFIX = "bash:";
+
+const isBashPrompt = (prompt: string): boolean =>
+  prompt.trim().startsWith(BASH_PROMPT_PREFIX);
+
+const hasRunnerEntrypointOverride = (): boolean =>
+  typeof process.env.DUMPLBOT_RUNNER_ENTRYPOINT === "string"
+  && process.env.DUMPLBOT_RUNNER_ENTRYPOINT.trim().length > 0;
+
+const shouldUseRunnerPrompt = (prompt: string): boolean =>
+  isBashPrompt(prompt) || hasRunnerEntrypointOverride();
+
+const loadWorkspaceInstructions = async (workspacePath: string): Promise<string> => {
+  try {
+    return (await readFile(join(workspacePath, "CLAUDE.md"), "utf8")).trim();
+  } catch (error) {
+    const isMissingFile =
+      error instanceof Error
+      && "code" in error
+      && error.code === "ENOENT";
+
+    if (isMissingFile) {
+      return "";
+    }
+
+    throw error;
+  }
+};
+
+const buildModelReplyInstructions = (
+  workspaceId: string,
+  workspaceInstructions: string,
+  skill: Pick<ResolvedSkill, "promptPrelude">,
+): string => {
+  const sections = [
+    skill.promptPrelude.trim(),
+    "Reply for a tiny device screen. Be concise, concrete, and directly useful.",
+    `Active workspace: ${workspaceId}`,
+  ].filter((entry) => entry.length > 0);
+
+  if (workspaceInstructions.trim().length > 0) {
+    sections.push(`Workspace instructions:\n${workspaceInstructions.trim()}`);
+  }
+
+  return sections.join("\n\n");
+};
+
 const buildSkillPreludeEvents = (skill: SkillPreludeInput): DumplEvent[] => {
   const statusEvent: DumplStatusEvent = {
     type: "status",
@@ -712,6 +768,10 @@ type StreamTalkOutcome = {
   status: "success" | "error";
   summary: string;
 };
+
+type TalkEventSourceFactory = (
+  controlHooks: RunnerControlHooks,
+) => AsyncIterable<DumplEvent>;
 
 const logWorkspaceHistoryWriteFailure = (
   workspaceId: string,
@@ -1914,11 +1974,9 @@ const handleConfigUpdate = async (
   sendJson(response, 200, await getConfigResponsePayload());
 };
 
-const streamTalkResponse = async (
+const streamTalkEventSource = async (
   response: ServerResponse,
-  input: RunnerInput,
-  launchOptions: RunnerLaunchOptions,
-  maxRunSeconds: number,
+  buildEventSource: TalkEventSourceFactory,
   preludeEvents: DumplEvent[] = [],
   assumeHeadersSent = false,
   runId = randomUUID(),
@@ -1945,19 +2003,14 @@ const streamTalkResponse = async (
   let sawTerminalEvent = false;
   let outcome: StreamTalkOutcome | null = null;
 
-  for await (const event of streamRunnerEvents(
-    input,
-    launchOptions,
-    maxRunSeconds,
-    {
+  for await (const event of buildEventSource({
       onCancelReady: (cancel) => {
         activeRunCancels.set(runId, cancel);
       },
       onSettled: () => {
         activeRunCancels.delete(runId);
       },
-    },
-  )) {
+    })) {
     if (event.type === "done") {
       sawTerminalEvent = true;
       outcome = {
@@ -2001,6 +2054,50 @@ const streamTalkResponse = async (
     summary: "Run finished",
   };
 };
+
+const streamTalkResponse = async (
+  response: ServerResponse,
+  input: RunnerInput,
+  launchOptions: RunnerLaunchOptions,
+  maxRunSeconds: number,
+  preludeEvents: DumplEvent[] = [],
+  assumeHeadersSent = false,
+  runId = randomUUID(),
+): Promise<StreamTalkOutcome> =>
+  streamTalkEventSource(
+    response,
+    (controlHooks) => streamRunnerEvents(
+      input,
+      launchOptions,
+      maxRunSeconds,
+      controlHooks,
+    ),
+    preludeEvents,
+    assumeHeadersSent,
+    runId,
+  );
+
+const streamModelTalkResponse = async (
+  response: ServerResponse,
+  input: ModelReplyInput,
+  config: ModelReplyRuntimeConfig,
+  maxRunSeconds: number,
+  preludeEvents: DumplEvent[] = [],
+  assumeHeadersSent = false,
+  runId = randomUUID(),
+): Promise<StreamTalkOutcome> =>
+  streamTalkEventSource(
+    response,
+    (controlHooks) => streamModelReplyEvents(
+      input,
+      config,
+      maxRunSeconds,
+      controlHooks,
+    ),
+    preludeEvents,
+    assumeHeadersSent,
+    runId,
+  );
 
 const handleRunCancel = async (
   runId: string,
@@ -2071,32 +2168,57 @@ const handleTalk = async (request: IncomingMessage, response: ServerResponse): P
       return;
     }
 
-  const [runtimeConfig, sandboxConfig] = await Promise.all([
-    loadHostRuntimeConfig(),
-    loadHostSandboxConfig(),
-  ]);
+  const runtimeConfig = await loadHostRuntimeConfig();
   const runId = randomUUID();
-
-  const runOutcome = await streamTalkResponse(response, {
-    prompt,
-    workspace: resolvedWorkspace.id,
-    skill: resolvedSkill.id,
-    toolAllowlist,
-    policy: {
-      workspace: resolvedWorkspace.id,
-      skill: resolvedSkill.id,
-      toolAllowlist,
-      bashCommandPrefixAllowlist,
-      permissionMode: resolvedSkill.permissionMode,
-    },
-  }, {
-    sandbox: sandboxConfig,
-    workspacePath: resolvedWorkspace.path,
-    attachedRepoPaths: resolvedWorkspace.attachedRepoPaths,
-  }, runtimeConfig.maxRunSeconds, buildSkillPreludeEvents({
+  const preludeEvents = buildSkillPreludeEvents({
     id: resolvedSkill.id,
     toolAllowlist,
-  }), false, runId);
+  });
+  const runOutcome = shouldUseRunnerPrompt(prompt)
+    ? await (async (): Promise<StreamTalkOutcome> => {
+      const sandboxConfig = await loadHostSandboxConfig();
+      return streamTalkResponse(response, {
+        prompt,
+        workspace: resolvedWorkspace.id,
+        skill: resolvedSkill.id,
+        toolAllowlist,
+        policy: {
+          workspace: resolvedWorkspace.id,
+          skill: resolvedSkill.id,
+          toolAllowlist,
+          bashCommandPrefixAllowlist,
+          permissionMode: resolvedSkill.permissionMode,
+        },
+      }, {
+        sandbox: sandboxConfig,
+        workspacePath: resolvedWorkspace.path,
+        attachedRepoPaths: resolvedWorkspace.attachedRepoPaths,
+      }, runtimeConfig.maxRunSeconds, preludeEvents, false, runId);
+    })()
+    : await (async (): Promise<StreamTalkOutcome> => {
+      const [modelReplyConfig, workspaceInstructions] = await Promise.all([
+        loadModelReplyRuntimeConfig(),
+        loadWorkspaceInstructions(resolvedWorkspace.path),
+      ]);
+
+      return streamModelTalkResponse(
+        response,
+        {
+          prompt,
+          instructions: buildModelReplyInstructions(
+            resolvedWorkspace.id,
+            workspaceInstructions,
+            resolvedSkill,
+          ),
+          reasoningEffort: resolvedSkill.modelReasoning,
+        },
+        modelReplyConfig,
+        runtimeConfig.maxRunSeconds,
+        preludeEvents,
+        false,
+        runId,
+      );
+    })();
 
   if (runOutcome.status === "error") {
     await recordDebugError("talk", runOutcome.summary);
@@ -2225,10 +2347,7 @@ const handleAudioTalk = async (
       return;
     }
 
-  const [runtimeConfig, sandboxConfig] = await Promise.all([
-    loadHostRuntimeConfig(),
-    loadHostSandboxConfig(),
-  ]);
+  const runtimeConfig = await loadHostRuntimeConfig();
   const runId = randomUUID();
 
   sendSseHeaders(response, { "x-dumplbot-run-id": runId });
@@ -2254,34 +2373,63 @@ const handleAudioTalk = async (
     };
     writeSseEvent(response, sttEvent);
 
-    const runOutcome = await streamTalkResponse(
-      response,
-      {
-        prompt,
-        workspace: resolvedWorkspace.id,
-        skill: resolvedSkill.id,
-        toolAllowlist,
-        policy: {
-          workspace: resolvedWorkspace.id,
-          skill: resolvedSkill.id,
-          toolAllowlist,
-          bashCommandPrefixAllowlist,
-          permissionMode: resolvedSkill.permissionMode,
-        },
-      },
-      {
-        sandbox: sandboxConfig,
-        workspacePath: resolvedWorkspace.path,
-        attachedRepoPaths: resolvedWorkspace.attachedRepoPaths,
-      },
-      runtimeConfig.maxRunSeconds,
-      buildSkillPreludeEvents({
-        id: resolvedSkill.id,
-        toolAllowlist,
-      }),
-      true,
-      runId,
-    );
+    const preludeEvents = buildSkillPreludeEvents({
+      id: resolvedSkill.id,
+      toolAllowlist,
+    });
+    const runOutcome = shouldUseRunnerPrompt(prompt)
+      ? await (async (): Promise<StreamTalkOutcome> => {
+        const sandboxConfig = await loadHostSandboxConfig();
+        return streamTalkResponse(
+          response,
+          {
+            prompt,
+            workspace: resolvedWorkspace.id,
+            skill: resolvedSkill.id,
+            toolAllowlist,
+            policy: {
+              workspace: resolvedWorkspace.id,
+              skill: resolvedSkill.id,
+              toolAllowlist,
+              bashCommandPrefixAllowlist,
+              permissionMode: resolvedSkill.permissionMode,
+            },
+          },
+          {
+            sandbox: sandboxConfig,
+            workspacePath: resolvedWorkspace.path,
+            attachedRepoPaths: resolvedWorkspace.attachedRepoPaths,
+          },
+          runtimeConfig.maxRunSeconds,
+          preludeEvents,
+          true,
+          runId,
+        );
+      })()
+      : await (async (): Promise<StreamTalkOutcome> => {
+        const [modelReplyConfig, workspaceInstructions] = await Promise.all([
+          loadModelReplyRuntimeConfig(),
+          loadWorkspaceInstructions(resolvedWorkspace.path),
+        ]);
+
+        return streamModelTalkResponse(
+          response,
+          {
+            prompt,
+            instructions: buildModelReplyInstructions(
+              resolvedWorkspace.id,
+              workspaceInstructions,
+              resolvedSkill,
+            ),
+            reasoningEffort: resolvedSkill.modelReasoning,
+          },
+          modelReplyConfig,
+          runtimeConfig.maxRunSeconds,
+          preludeEvents,
+          true,
+          runId,
+        );
+      })();
 
     if (runOutcome.status === "error") {
       await recordDebugError("audio-talk", runOutcome.summary);
