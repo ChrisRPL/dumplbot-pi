@@ -56,7 +56,7 @@ const fail = (message: string): never => {
   throw new Error(message);
 };
 
-const buildScaffoldEvents = (input: RunnerInput): Array<DumplStatusEvent | DumplToolEvent | DumplTokenEvent | DumplDoneEvent> => [
+const buildFallbackEvents = (input: RunnerInput): Array<DumplStatusEvent | DumplToolEvent | DumplTokenEvent | DumplDoneEvent> => [
   {
     type: "status",
     message: `Runner started for ${input.workspace ?? "default"}`,
@@ -68,11 +68,11 @@ const buildScaffoldEvents = (input: RunnerInput): Array<DumplStatusEvent | Dumpl
   },
   {
     type: "token",
-    text: `Scaffold response placeholder for: ${input.prompt}`,
+    text: `Model-backed freeform replies are not wired in this build for prompt: ${input.prompt}`,
   },
   {
     type: "done",
-    summary: "Runner scaffold completed.",
+    summary: "Runner completed with fallback output.",
   },
 ];
 
@@ -337,7 +337,7 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  for (const event of buildScaffoldEvents(input)) {
+  for (const event of buildFallbackEvents(input)) {
     if (event.type === "tool") {
       assertToolAllowedByPolicy(input.policy, event.name);
     }

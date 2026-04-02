@@ -132,4 +132,4 @@ Keep the Pi pass hardware-first:
 
 - If Whisplay hardware is unstable, stop before adding app complexity.
 - If audio capture fails, keep text-only mode moving while hardware debug continues.
-- If installer files are missing from the repo, add scaffolding before pretending appliance install exists.
+- If installer files are missing from the repo, add the missing install path before pretending appliance install exists.

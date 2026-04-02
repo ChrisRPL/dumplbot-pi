@@ -308,7 +308,7 @@ The daemon streams events back to the UI over Server-Sent Events.
       "skill":"coding",
       "source":"text",
       "status":"success",
-      "summary":"Runner scaffold completed."
+      "summary":"Runner completed with fallback output."
     }
   ]
 }
@@ -733,7 +733,7 @@ The daemon streams events back to the UI over Server-Sent Events.
   - `permissionMode: "strict"` rejects `bash` in `toolAllowlist`.
   - `bash` policies require non-empty `bashCommandPrefixAllowlist`.
   - `bash` tool events must match an allowed command prefix.
-  - current scaffold runner executes prompts with `bash: ...` as direct argv processes, without shell expansion.
+  - current runner executes prompts with `bash: ...` as direct argv processes, without shell expansion.
   - non-internal tool events are blocked if not listed in `policy.toolAllowlist`.
 - Runner rejects mismatches between top-level allowlist and policy allowlist.
 - Output: JSONL over stdout.
