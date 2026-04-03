@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
 const HOST = "127.0.0.1";
 const HOST_PORT = 4135;
+const MODEL_PORT = 4136;
 const SSE_DELIMITER = "\n\n";
 const WAVE_BYTES = Buffer.from("RIFFtestWAVEfmt ");
 
@@ -36,6 +38,13 @@ const parseSsePayload = (payload) =>
       return { eventType, data };
     });
 
+const collectTokenText = (events) =>
+  events
+    .filter((event) => event.eventType === "token")
+    .map((event) => String(event.data?.text ?? ""))
+    .join("")
+    .trim();
+
 const waitForServerReady = (childProcess) =>
   new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -59,6 +68,70 @@ const waitForServerReady = (childProcess) =>
     });
   });
 
+const readJsonBody = (request) =>
+  new Promise((resolve, reject) => {
+    const chunks = [];
+
+    request.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    request.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on("error", reject);
+  });
+
+const writeFakeResponseEvent = (response, payload) => {
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
+const startFakeModelServer = async () => {
+  const server = createServer(async (request, response) => {
+    if (request.method !== "POST" || request.url !== "/v1/responses") {
+      response.statusCode = 404;
+      response.end("not found");
+      return;
+    }
+
+    const payload = await readJsonBody(request);
+    const instructions = String(payload.instructions ?? "");
+    const workspaceMatch = instructions.match(/Active workspace:\s*([^\n]+)/u);
+    const workspaceId = workspaceMatch?.[1]?.trim() ?? "unknown";
+    const skillId = instructions.includes("research mode")
+      ? "research"
+      : instructions.includes("coding mode")
+      ? "coding"
+      : "unknown";
+    const replyText = `${workspaceId}|${skillId}`;
+
+    response.writeHead(200, {
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+    });
+
+    writeFakeResponseEvent(response, {
+      type: "response.output_text.delta",
+      delta: replyText,
+    });
+    writeFakeResponseEvent(response, {
+      type: "response.completed",
+    });
+    response.end();
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(MODEL_PORT, HOST, resolve);
+  });
+
+  return server;
+};
+
 const startHostServer = async (tmpRoot, workspaceRoot, configPath, secretsPath) => {
   const childProcess = spawn(
     process.execPath,
@@ -74,6 +147,7 @@ const startHostServer = async (tmpRoot, workspaceRoot, configPath, secretsPath) 
         DUMPLBOT_CONFIG_PATH: configPath,
         DUMPLBOT_SECRETS_PATH: secretsPath,
         DUMPLBOT_SANDBOX_ENABLED: "false",
+        DUMPLBOT_MODEL_BASE_URL: `http://${HOST}:${MODEL_PORT}`,
       },
     },
   );
@@ -92,6 +166,24 @@ const stopHostServer = async (childProcess) => {
     childProcess.once("exit", resolve);
     setTimeout(() => resolve(), 3000);
   });
+};
+
+const waitForWorkspaceHistory = async (baseUrl, workspaceId, expectedCount) => {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await fetch(`${baseUrl}/api/workspaces/${workspaceId}/history`);
+
+    if (response.ok) {
+      const payload = await response.json();
+
+      if (payload.total >= expectedCount) {
+        return payload;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error(`workspace ${workspaceId} history did not reach ${expectedCount} entries in time`);
 };
 
 const runUiCommand = (baseUrl, ...args) => {
@@ -138,6 +230,7 @@ const runSmoke = async () => {
     "utf8",
   );
 
+  const fakeModelServer = await startFakeModelServer();
   const hostServer = await startHostServer(tmpRoot, workspaceRoot, configPath, secretsPath);
   const baseUrl = `http://${HOST}:${HOST_PORT}`;
 
@@ -299,11 +392,8 @@ const runSmoke = async () => {
     const activePolicyToolEvent = talkWithActiveEvents.find(
       (event) => event.eventType === "tool" && event.data?.name === "skill-policy",
     );
-    const activeRunnerStatusEvent = talkWithActiveEvents.find(
-      (event) => event.eventType === "status" && event.data?.message === "Runner started for alpha",
-    );
-    const activePlannerToolEvent = talkWithActiveEvents.find(
-      (event) => event.eventType === "tool" && event.data?.name === "planner",
+    const activeThinkingEvent = talkWithActiveEvents.find(
+      (event) => event.eventType === "status" && event.data?.message === "Thinking",
     );
     assert(
       activeSkillStatusEvent,
@@ -314,20 +404,15 @@ const runSmoke = async () => {
       "talk did not emit skill-policy tool prelude",
     );
     assert(
-      activeRunnerStatusEvent?.data?.message === "Runner started for alpha",
-      "talk did not use active workspace",
+      activeThinkingEvent,
+      "talk did not enter model thinking state",
     );
     assert(
-      activePlannerToolEvent?.data?.detail === "research",
-      "talk did not use workspace default skill",
+      collectTokenText(talkWithActiveEvents) === "alpha|research",
+      "talk did not use active workspace + workspace default skill",
     );
 
-    const alphaHistoryAfterFirstTalkResponse = await fetch(`${baseUrl}/api/workspaces/alpha/history`);
-    assert(
-      alphaHistoryAfterFirstTalkResponse.status === 200,
-      "expected workspace history route to return 200",
-    );
-    const alphaHistoryAfterFirstTalkPayload = await alphaHistoryAfterFirstTalkResponse.json();
+    const alphaHistoryAfterFirstTalkPayload = await waitForWorkspaceHistory(baseUrl, "alpha", 1);
     assert(alphaHistoryAfterFirstTalkPayload.workspace_id === "alpha", "unexpected workspace history id");
     assert(alphaHistoryAfterFirstTalkPayload.total === 1, "expected one alpha history entry after first talk");
     assert(alphaHistoryAfterFirstTalkPayload.returned === 1, "expected one returned alpha history entry");
@@ -354,19 +439,9 @@ const runSmoke = async () => {
       "expected /api/talk override to return 200",
     );
     const talkWithOverrideEvents = parseSsePayload(await talkWithOverrideResponse.text());
-    const overrideRunnerStatusEvent = talkWithOverrideEvents.find(
-      (event) => event.eventType === "status" && event.data?.message === "Runner started for default",
-    );
-    const overridePlannerToolEvent = talkWithOverrideEvents.find(
-      (event) => event.eventType === "tool" && event.data?.name === "planner",
-    );
     assert(
-      overrideRunnerStatusEvent?.data?.message === "Runner started for default",
-      "talk override did not use requested workspace",
-    );
-    assert(
-      overridePlannerToolEvent?.data?.detail === "research",
-      "talk override did not use requested skill",
+      collectTokenText(talkWithOverrideEvents) === "default|research",
+      "talk override did not use requested workspace + skill",
     );
 
     const talkWithMissingSkillResponse = await fetch(`${baseUrl}/api/talk`, {
@@ -412,13 +487,12 @@ const runSmoke = async () => {
       "expected /api/talk with active skill to return 200",
     );
     const talkWithActiveSkillEvents = parseSsePayload(await talkWithActiveSkillResponse.text());
-    const activeSkillToolEvent = talkWithActiveSkillEvents.find(
-      (event) => event.eventType === "tool" && event.data?.name === "planner",
-    );
     assert(
-      activeSkillToolEvent?.data?.detail === "research",
+      collectTokenText(talkWithActiveSkillEvents) === "alpha|research",
       "talk did not use active skill fallback",
     );
+
+    await waitForWorkspaceHistory(baseUrl, "alpha", 2);
 
     const alphaHistoryPagedResponse = await fetch(`${baseUrl}/api/workspaces/alpha/history?limit=1`);
     assert(alphaHistoryPagedResponse.status === 200, "expected paged alpha history route to return 200");
@@ -797,11 +871,8 @@ const runSmoke = async () => {
       "expected /api/talk after clear to return 200",
     );
     const talkAfterClearEvents = parseSsePayload(await talkAfterClearResponse.text());
-    const clearedStatusEvent = talkAfterClearEvents.find(
-      (event) => event.eventType === "status" && event.data?.message === "Runner started for default",
-    );
     assert(
-      clearedStatusEvent?.data?.message === "Runner started for default",
+      collectTokenText(talkAfterClearEvents) === "default|coding",
       "talk did not fall back to default workspace after clear",
     );
 
@@ -851,6 +922,9 @@ const runSmoke = async () => {
     console.log("workspace config smoke ok");
   } finally {
     await stopHostServer(hostServer);
+    await new Promise((resolve) => {
+      fakeModelServer.close(resolve);
+    });
     await rm(tmpRoot, { recursive: true, force: true });
   }
 };

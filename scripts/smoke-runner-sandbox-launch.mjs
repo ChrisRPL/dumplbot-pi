@@ -112,7 +112,9 @@ const runSmoke = async () => {
       "prompt_prelude: |",
       "  Coding skill fixture.",
       "tool_allowlist:",
-      "  - read_file",
+      "  - bash",
+      "bash_prefix_allowlist:",
+      "  - echo",
       "permission_mode: balanced",
       "model:",
       "  reasoning: medium",
@@ -138,7 +140,7 @@ const runSmoke = async () => {
     const talkResponse = await fetch(`${baseUrl}/api/talk`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "ping" }),
+      body: JSON.stringify({ text: "bash: echo ping", tools: ["bash"] }),
     });
     assert(talkResponse.status === 200, "expected /api/talk to return 200 SSE");
 

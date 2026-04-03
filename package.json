@@ -9,6 +9,7 @@
     "smoke:audio-routes": "npm run build && node scripts/smoke-audio-routes.mjs",
     "smoke:audio-strict-policy": "npm run build && node scripts/smoke-audio-strict-policy.mjs",
     "smoke:install-pi": "node scripts/smoke-install-pi.mjs",
+    "smoke:model-reply": "npm run build && node scripts/smoke-model-reply.mjs",
     "smoke:ui-core-gallery": "npm run build && node scripts/smoke-ui-core-gallery.mjs",
     "smoke:ui-appliance-gallery": "npm run build && node scripts/smoke-ui-appliance-gallery.mjs",
     "smoke:ui-debug-gallery": "npm run build && node scripts/smoke-ui-debug-gallery.mjs",

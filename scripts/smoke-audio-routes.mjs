@@ -74,26 +74,81 @@ const waitForServerReady = (childProcess) =>
     });
   });
 
-const startFakeSttServer = async () => {
+const readJsonBody = (request) =>
+  new Promise((resolve, reject) => {
+    const chunks = [];
+
+    request.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    request.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on("error", reject);
+  });
+
+const writeFakeResponseEvent = (response, payload) => {
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
+const startFakeOpenAiServer = async () => {
   let transcriptionRequestCount = 0;
 
   const fakeServer = createServer((request, response) => {
-    if (request.method !== "POST" || request.url !== "/v1/audio/transcriptions") {
+    if (request.method === "POST" && request.url === "/v1/audio/transcriptions") {
+      request.resume();
+      request.on("end", () => {
+        transcriptionRequestCount += 1;
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({
+          text: transcriptionRequestCount === 3
+            ? ""
+            : "smoke route transcript",
+        }));
+      });
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/v1/responses") {
+      void readJsonBody(request).then((payload) => {
+        response.writeHead(200, {
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "content-type": "text/event-stream; charset=utf-8",
+        });
+
+        const replyText = payload.input === "smoke route transcript"
+          ? "smoke model reply"
+          : "smoke fallback reply";
+        for (const chunk of replyText.split(" ")) {
+          writeFakeResponseEvent(response, {
+            type: "response.output_text.delta",
+            delta: `${chunk} `,
+          });
+        }
+        writeFakeResponseEvent(response, {
+          type: "response.completed",
+        });
+        response.end();
+      }).catch((error) => {
+        response.statusCode = 500;
+        response.end(error instanceof Error ? error.message : "invalid fake request");
+      });
+      return;
+    }
+
+    if (request.method !== "POST") {
       response.statusCode = 404;
       response.end("not found");
       return;
     }
 
-    request.resume();
-    request.on("end", () => {
-      transcriptionRequestCount += 1;
-      response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({
-        text: transcriptionRequestCount === 3
-          ? ""
-          : "smoke route transcript",
-      }));
-    });
+    response.statusCode = 404;
+    response.end("not found");
   });
 
   await new Promise((resolve, reject) => {
@@ -234,7 +289,7 @@ const runSmoke = async () => {
   await mkdir(defaultWorkspaceRoot, { recursive: true });
   await writeFile(join(defaultWorkspaceRoot, "CLAUDE.md"), "# default\n", "utf8");
   await writeFile(wavePath, WAVE_BYTES);
-  const fakeSttServer = await startFakeSttServer();
+  const fakeOpenAiServer = await startFakeOpenAiServer();
   const hostServer = await startHostServer(tmpRoot, workspaceRoot);
   const baseUrl = `http://${HOST}:${HOST_PORT}`;
 
@@ -278,6 +333,12 @@ const runSmoke = async () => {
     );
     assert(events[1].eventType === "stt", "missing stt event");
     assert(events[1].data.text === "smoke route transcript", "unexpected stt text");
+    const talkTokenText = events
+      .filter((event) => event.eventType === "token")
+      .map((event) => String(event.data?.text ?? ""))
+      .join("")
+      .trim();
+    assert(talkTokenText === "smoke model reply", "unexpected audio talk token text");
     assert(events.some((event) => event.eventType === "done"), "missing done event");
 
     const missingTalkResponse = await fetch(
@@ -574,7 +635,7 @@ const runSmoke = async () => {
     const normalizedVoiceDebugOutput = voiceDebugScreenResult.stdout.replace(/\s+/g, " ");
     assert(voiceDebugScreenResult.status === 0, "expected voice debug screen to return 0");
     assert(
-      voiceDebugScreenResult.stdout.includes("Voice debug"),
+      voiceDebugScreenResult.stdout.includes("Voice triage"),
       "expected voice debug screen status",
     );
     assert(
@@ -582,7 +643,7 @@ const runSmoke = async () => {
       "expected voice debug screen error summary",
     );
     assert(
-      normalizedVoiceDebugOutput.includes("error: transcription returne"),
+      normalizedVoiceDebugOutput.includes("error: audio-talk: transcription"),
       "expected voice debug screen error message",
     );
 
@@ -597,7 +658,7 @@ const runSmoke = async () => {
     );
     assert(homeVoiceViewResult.status === 0, "expected home voice toggle to return 0");
     assert(
-      homeVoiceViewResult.stdout.includes("Voice debug"),
+      homeVoiceViewResult.stdout.includes("Voice triage"),
       "expected home voice toggle to render voice debug screen",
     );
     assert(
@@ -608,19 +669,19 @@ const runSmoke = async () => {
     const clearDebugStateResult = runUiCommand(baseUrl, "--clear-debug-state");
     assert(clearDebugStateResult.status === 0, "expected clear debug state to return 0");
     assert(
-      clearDebugStateResult.stdout.includes("Voice debug"),
+      clearDebugStateResult.stdout.includes("Voice triage"),
       "expected clear debug state to render voice debug screen",
     );
     assert(
-      clearDebugStateResult.stdout.includes("heard: (empty)"),
+      clearDebugStateResult.stdout.includes("heard: nothing heard"),
       "expected clear debug state to clear transcript summary",
     );
     assert(
-      clearDebugStateResult.stdout.includes("audio: none"),
+      clearDebugStateResult.stdout.includes("audio: no wav"),
       "expected clear debug state to clear audio summary",
     );
     assert(
-      clearDebugStateResult.stdout.includes("error: none"),
+      clearDebugStateResult.stdout.includes("error: clear"),
       "expected clear debug state to clear error summary",
     );
 
@@ -635,7 +696,7 @@ const runSmoke = async () => {
     );
     assert(homeVoiceClearResult.status === 0, "expected home voice clear to return 0");
     assert(
-      homeVoiceClearResult.stdout.includes("error: none"),
+      homeVoiceClearResult.stdout.includes("error: clear"),
       "expected home voice clear to keep empty bundle state",
     );
 
@@ -679,7 +740,7 @@ const runSmoke = async () => {
     console.log("audio route smoke ok");
   } finally {
     await stopHostServer(hostServer);
-    await new Promise((resolve) => fakeSttServer.close(resolve));
+    await new Promise((resolve) => fakeOpenAiServer.close(resolve));
     await rm(tmpRoot, { recursive: true, force: true });
   }
 };
