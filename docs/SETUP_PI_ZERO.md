@@ -73,6 +73,7 @@ Do this in order from your phone or laptop:
 1. open `http://<pi-ip>:4123/setup`
 2. confirm the page loads and the host bind says same-Wi-Fi setup is reachable
 3. save your OpenAI key
+   This powers Whisper STT and normal freeform replies.
 4. set `default workspace` to `default`
 5. set `default skill` to `coding`
 6. leave `safety mode` at `balanced` for the first run

@@ -70,15 +70,18 @@ The daemon streams events back to the UI over Server-Sent Events.
 - Response headers include `x-dumplbot-run-id: <run-id>` for active-run cancel support.
 - Workspace selection order when `workspace` is omitted: `active_workspace` from `/api/config`, then `runtime.default_workspace`.
 - Skill selection order when `skill` is omitted: `active_skill` from `/api/config`, then workspace `default_skill`, then `runtime.default_skill`.
-- Host emits skill prelude metadata before runner events:
+- Host emits skill prelude metadata before streamed run events:
   - `status`: `Using skill <skill-id>`
   - `tool`: `{"name":"skill-policy","detail":"<comma-separated allowlist>"}`
+- Non-`bash:` prompts use the host-side OpenAI responses path with the selected skill prelude plus workspace `CLAUDE.md` instructions.
+- `bash:` prompts still use the sandboxed `agent-runner` path.
+- When a non-`bash:` prompt arrives without an OpenAI key, the stream terminates with `error`: `{"message":"OPENAI_API_KEY is required for freeform replies"}`.
 - Policy denials are streamed as terminal SSE events (HTTP `200`) instead of JSON errors:
   - `status`: `{"message":"Policy check failed","phase":"policy"}`
   - `error`: `{"code":"<policy-code>","message":"<policy-message>"}`
 - Host enforces `runtime.max_run_seconds` per run.
   - Timeout is streamed as terminal SSE `error`: `{"message":"runner timed out after <N>s"}`
-- Successful and terminal runner outcomes append workspace-local run history under `workspaces/<id>/.dumplbot-history.json`.
+- Successful and terminal run outcomes append workspace-local run history under `workspaces/<id>/.dumplbot-history.json`.
 - Current policy denial codes:
   - `policy_tools_denied`
   - `policy_tools_invalid`
@@ -97,12 +100,13 @@ The daemon streams events back to the UI over Server-Sent Events.
 ```
 
 - Follow-up: either hand the client to `/api/talk` or expose a dedicated audio-run stream path later.
+- After STT, non-`bash:` prompts use the same host-side OpenAI responses path as `/api/talk`; `bash:` prompts still use the sandboxed `agent-runner`.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"workspace not found"}` when workspace selection is invalid.
 - `POST /api/audio/:audioId/talk` returns `404` with `{"error":"skill not found"}` when skill selection is invalid.
 - `POST /api/audio/:audioId/talk` response headers include `x-dumplbot-run-id: <run-id>` for active-run cancel support.
 - `POST /api/audio/:audioId/talk` uses the same policy-denial SSE mapping as `/api/talk`.
 - `POST /api/audio/:audioId/talk` uses the same timeout SSE mapping as `/api/talk`.
-- Successful and terminal runner outcomes append workspace-local run history under `workspaces/<id>/.dumplbot-history.json`.
+- Successful and terminal run outcomes append workspace-local run history under `workspaces/<id>/.dumplbot-history.json`.
 
 ### `POST /api/runs/:runId/cancel`
 
@@ -308,7 +312,7 @@ The daemon streams events back to the UI over Server-Sent Events.
       "skill":"coding",
       "source":"text",
       "status":"success",
-      "summary":"Runner completed with fallback output."
+      "summary":"Model reply completed."
     }
   ]
 }

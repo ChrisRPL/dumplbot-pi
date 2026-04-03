@@ -12,7 +12,7 @@ Push-to-talk → transcribe → agent uses real tools (files/shell/web) → resp
 
 A **portable, always-with-you agent** that can **talk, code, run tools, and schedule jobs**—without needing a desktop “agent box”.
 
-Current repo status: text + voice flow, sandbox/policy baseline, workspace/scheduler/skill surfaces, and LAN setup UX are committed; biggest remaining gaps are final Pi validation and fuller model-backed runner behavior.
+Current repo status: text + voice flow, sandbox/policy baseline, workspace/scheduler/skill surfaces, and LAN setup UX are committed; biggest remaining gaps are final Pi validation and richer tool-using agent behavior inside `agent-runner`.
 
 ---
 
@@ -68,7 +68,7 @@ If your goal is a real Pi install, skip this section and go to `Install on Pi Ze
 1) Copy env and set keys:
 ```bash
 cp .env.example .env
-# set ANTHROPIC_API_KEY (and OPENAI_API_KEY for STT when enabled)
+# set ANTHROPIC_API_KEY (optional) and OPENAI_API_KEY for STT + normal freeform replies
 ```
 
 2. Install + build:
@@ -230,6 +230,7 @@ Open:
 Then do these in order:
 
 1. save your OpenAI key
+   This powers Whisper STT and normal freeform replies.
 2. leave the default workspace as `default` unless you already created another one
 3. leave the default skill as `coding` for the first test
 4. leave safety mode at `balanced` for the first test
